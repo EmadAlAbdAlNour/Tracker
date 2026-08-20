@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787205174113,
+      "tag": "0000_daily_madripoor",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787207092115,
+      "tag": "0001_sudden_the_anarchist",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1755700000000,
+      "tag": "0002_phase4_location_tracking",
+      "breakpoints": true
+    }
+  ]
+}

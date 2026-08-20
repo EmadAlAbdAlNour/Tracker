@@ -1,7 +1,7 @@
 // Cross-platform preinstall check for workspace
 // - removes package-lock.json and yarn.lock if present
 // - ensures pnpm is the package manager (if npm_config_user_agent is present)
-const fs = require('fs');
+import fs from 'fs';
 try {
   try { fs.unlinkSync('package-lock.json'); } catch (e) {}
   try { fs.unlinkSync('yarn.lock'); } catch (e) {}
