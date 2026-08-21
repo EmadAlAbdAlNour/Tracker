@@ -3,16 +3,20 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "preinstall": "node ./scripts/preinstall-check.js",
+    "build": "pnpm run typecheck && pnpm -r --filter \"!./artifacts/mockup-sandbox\" --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --filter \"!./artifacts/mockup-sandbox\" --if-present run typecheck",
+    "test": "pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run test"
   },
   "private": true,
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1"
   },
   "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.62.4",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.5",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }

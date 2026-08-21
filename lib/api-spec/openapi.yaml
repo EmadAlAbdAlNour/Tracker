@@ -1,36 +1,408 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 0.2.0
+  description: Production authentication and driver management API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication and session operations
+  - name: users
+    description: User account data
+  - name: drivers
+    description: Driver operations
+  - name: devices
+    description: Driver device registration
+  - name: shifts
+    description: Driver shift operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
-          description: Healthy
+          description: Server is running
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authentication succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSuccessResponse"
+  /auth/refresh:
+    post:
+      operationId: refreshTokens
+      tags: [auth]
+      summary: Rotate refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Tokens rotated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSuccessResponse"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout and revoke refresh token
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Return the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+  /users/me:
+    get:
+      operationId: getMyUser
+      tags: [users]
+      summary: Return current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user profile
+  /drivers/me:
+    get:
+      operationId: getCurrentDriver
+      tags: [drivers]
+      summary: Return the authenticated driver's profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current driver profile
+  /drivers/me/device:
+    get:
+      operationId: getDriverDevice
+      tags: [devices]
+      summary: Return the registered driver device
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Device record
+  /drivers/me/shifts:
+    get:
+      operationId: listDriverShifts
+      tags: [shifts]
+      summary: Return the authenticated driver's shift history
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [ACTIVE, COMPLETED]
+      responses:
+        "200":
+          description: Shift history
+  /drivers/me/shifts/start:
+    post:
+      operationId: startDriverShift
+      tags: [shifts]
+      summary: Start a new driver shift
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Shift started
+  /drivers/me/shifts/end:
+    post:
+      operationId: endDriverShift
+      tags: [shifts]
+      summary: End an active driver shift
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Shift ended
+  /drivers/{id}/shifts:
+    get:
+      operationId: getDriverShiftsById
+      tags: [shifts]
+      summary: Get a driver's shifts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Driver shift list
+  /devices/register:
+    post:
+      operationId: registerDevice
+      tags: [devices]
+      summary: Register or update the driver device
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegisterRequest"
+      responses:
+        "200":
+          description: Device registered
+  /drivers:
+    get:
+      operationId: listDrivers
+      tags: [drivers]
+      summary: List drivers
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Drivers list
+    post:
+      operationId: createDriver
+      tags: [drivers]
+      summary: Create a driver
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriverCreateRequest"
+      responses:
+        "201":
+          description: Driver created
+  /drivers/{id}:
+    get:
+      operationId: getDriver
+      tags: [drivers]
+      summary: Get a driver by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Driver record
+    patch:
+      operationId: updateDriver
+      tags: [drivers]
+      summary: Update a driver
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriverUpdateRequest"
+      responses:
+        "200":
+          description: Driver updated
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthStatus:
       type: object
+      required: [status, database]
       properties:
         status:
           type: string
-      required:
-        - status
+        database:
+          type: string
+    LoginRequest:
+      type: object
+      required: [emailOrPhone, password]
+      properties:
+        emailOrPhone:
+          type: string
+        password:
+          type: string
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    AuthSuccessResponse:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    CurrentUserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+    User:
+      type: object
+      required: [id, name, email, role, active]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [ADMIN, MANAGER, DRIVER]
+        active:
+          type: boolean
+    DriverCreateRequest:
+      type: object
+      required: [name, email, employeeId, password]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        employeeId:
+          type: string
+        password:
+          type: string
+        active:
+          type: boolean
+    DriverUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        employeeId:
+          type: string
+        active:
+          type: boolean
+        password:
+          type: string
+    DeviceRegisterRequest:
+      type: object
+      required: [platform]
+      properties:
+        platform:
+          type: string
+        deviceIdentifier:
+          type: string
+        appVersion:
+          type: string
+    Shift:
+      type: object
+      required: [id, driverId, status, startedAt]
+      properties:
+        id:
+          type: string
+        driverId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, COMPLETED]
 

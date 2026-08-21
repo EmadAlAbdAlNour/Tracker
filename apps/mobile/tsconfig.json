@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "lib": ["es2022"],
+    "moduleResolution": "bundler",
+    "types": ["node", "react", "react-native"],
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"]
+}
