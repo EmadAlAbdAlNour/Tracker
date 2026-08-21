@@ -1,5 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import * as SecureStore from 'expo-secure-store';
 import * as TaskManager from 'expo-task-manager';
 
 export const LOCATION_TASK_NAME = 'tracker-driver-location-task';
@@ -24,7 +24,7 @@ export type QueuedLocationPoint = {
 
 async function readQueue(): Promise<QueuedLocationPoint[]> {
   try {
-    const value = await SecureStore.getItemAsync(LOCATION_QUEUE_KEY);
+    const value = await AsyncStorage.getItem(LOCATION_QUEUE_KEY);
     if (!value) return [];
     const parsed = JSON.parse(value) as QueuedLocationPoint[];
     if (!Array.isArray(parsed)) return [];
@@ -41,7 +41,7 @@ async function readQueue(): Promise<QueuedLocationPoint[]> {
 
 async function writeQueue(items: QueuedLocationPoint[]): Promise<void> {
   try {
-    await SecureStore.setItemAsync(LOCATION_QUEUE_KEY, JSON.stringify(items));
+    await AsyncStorage.setItem(LOCATION_QUEUE_KEY, JSON.stringify(items));
   } catch (error) {
     console.warn('Unable to persist queued location points', error);
   }
