@@ -1,5 +1,6 @@
 'use client';
 
+import { Activity, BriefcaseBusiness, Gauge, UserCircle2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiClient, type DriverSummary, type SessionUser } from '@/lib/api';
 import { PageHeader, StatCard } from '@/components/dashboard-shell';
@@ -42,10 +43,10 @@ export default function DashboardOverviewPage() {
       <PageHeader title="Overview" subtitle="Live fleet status from the existing Tracker API" />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Drivers" value={String(drivers.length)} detail="Drivers in the tracker roster" icon={undefined as any} />
-        <StatCard label="Active Drivers" value={String(activeDrivers)} detail="Driver profiles currently enabled" icon={undefined as any} />
-        <StatCard label="Online / Tracking" value={String(onlineDrivers)} detail="Drivers with active tracking status" icon={undefined as any} />
-        <StatCard label="Current User" value={user?.role ?? '—'} detail={user ? user.name : 'User profile'} icon={undefined as any} />
+        <StatCard label="Total Drivers" value={String(drivers.length)} detail="Drivers in the tracker roster" icon={BriefcaseBusiness} />
+        <StatCard label="Active Drivers" value={String(activeDrivers)} detail="Driver profiles currently enabled" icon={Activity} />
+        <StatCard label="Online / Tracking" value={String(onlineDrivers)} detail="Drivers with active tracking status" icon={Gauge} />
+        <StatCard label="Current User" value={user?.role ?? '—'} detail={user ? user.name : 'User profile'} icon={UserCircle2} />
       </div>
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">

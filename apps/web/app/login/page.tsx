@@ -9,7 +9,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { setTokens } = useAuth();
   const [email, setEmail] = useState('admin@tracker.local');
-  const [password, setPassword] = useState('admin123');
+  const [password, setPassword] = useState('Password123!');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
