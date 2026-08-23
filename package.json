@@ -10,12 +10,12 @@
     "test": "pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run test"
   },
   "private": true,
-  "dependencies": {},
   "devDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.62.4",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
-  }
+  },
+  "packageManager": "pnpm@11.22.0"
 }
