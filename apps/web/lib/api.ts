@@ -250,7 +250,7 @@ export async function getCurrentUser(): Promise<SessionUser> {
 }
 
 export async function listDrivers(): Promise<DriverSummary[]> {
-  const payload = await apiRequest<ApiListResponse<DriverSummary>>('/api/drivers?page=1&limit=200');
+  const payload = await apiRequest<ApiListResponse<DriverSummary>>('/api/drivers?page=1&limit=100');
   return payload.items;
 }
 

@@ -22,19 +22,9 @@ import { createError } from "../lib/errors";
 const env = getEnv();
 
 export async function loginUser(emailOrPhone: string, password: string) {
-  // TEMPORARY DIAGNOSTIC LOGGING: remove after production auth diagnosis.
   const normalizedLoginInput = emailOrPhone.trim();
-  console.log("[TEMP LOGIN DEBUG] normalized login input", {
-    emailOrPhone: normalizedLoginInput,
-  });
 
   const user = await getUserByEmailOrPhone(normalizedLoginInput);
-  console.log("[TEMP LOGIN DEBUG] user lookup result", {
-    found: !!user,
-    userId: user?.id ?? null,
-    userEmail: user?.email ?? null,
-    active: user?.active ?? null,
-  });
 
   if (!user) {
     throw createError(401, "AUTH_INVALID_CREDENTIALS", "Invalid credentials");
@@ -45,9 +35,6 @@ export async function loginUser(emailOrPhone: string, password: string) {
   }
 
   const isValid = await verifyPassword(password, user.passwordHash);
-  console.log("[TEMP LOGIN DEBUG] verifyPassword result", {
-    isValid,
-  });
 
   if (!isValid) {
     throw createError(401, "AUTH_INVALID_CREDENTIALS", "Invalid credentials");
