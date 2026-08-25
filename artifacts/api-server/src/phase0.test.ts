@@ -133,10 +133,11 @@ describe('Phase0 regression tests (auth, authorization, pagination, CORS)', () =
     expect(res.headers['access-control-allow-origin']).toBe('http://allowed.example.com');
   });
 
-  it('CORS - disallowed origin is rejected (error)', async () => {
+  it('CORS - disallowed origin is rejected (no header)', async () => {
     const res = await agent.get('/api/healthz').set('Origin', 'http://evil.example.com');
-    // CORS rejection will be handled as an error; status should not be 200
-    expect(res.status).not.toBe(200);
+    // CORS rejection means no Access-Control-Allow-Origin header; status is still 200
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+    expect(res.status).toBe(200);
   });
 });
 

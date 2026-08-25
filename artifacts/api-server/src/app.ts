@@ -48,15 +48,22 @@ app.use(
 app.disable("x-powered-by");
 const corsAllowed = process.env.CORS_ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? [];
 
+// Log CORS configuration (public information only; no secrets logged)
+if (corsAllowed.length > 0) {
+  logger.info(`CORS configured with ${corsAllowed.length} allowed origins`);
+} else {
+  logger.warn('CORS_ALLOWED_ORIGINS not configured; browser requests will be rejected by default');
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g., mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
-      // If no origins configured, deny browser access by default
-      if (corsAllowed.length === 0) return callback(new Error('CORS origin not allowed'), false);
+      // If no origins configured, deny browser access by default (return false, not error)
+      if (corsAllowed.length === 0) return callback(null, false);
       if (corsAllowed.includes(origin)) return callback(null, true);
-      return callback(new Error('CORS origin not allowed'), false);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
