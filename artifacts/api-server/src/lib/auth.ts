@@ -11,7 +11,7 @@ export type SafeUser = {
   name: string;
   email: string;
   phone: string | null;
-  role: "ADMIN" | "MANAGER" | "DRIVER";
+  role: "ADMIN" | "MANAGER" | "DRIVER" | "CALL_CENTER";
   active: boolean;
 };
 
@@ -90,11 +90,12 @@ export async function revokeRefreshTokenByHash(tokenHash: string): Promise<void>
     .where(and(eq(refreshTokensTable.tokenHash, tokenHash), isNull(refreshTokensTable.revokedAt)));
 }
 
-export async function storeRefreshToken(userId: string, rawRefreshToken: string): Promise<void> {
+export async function storeRefreshToken(userId: string, rawRefreshToken: string, deviceId?: string | null): Promise<void> {
   const hashed = hashRefreshToken(rawRefreshToken);
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-  await db.insert(refreshTokensTable).values({ userId, tokenHash: hashed, expiresAt });
+  // deviceId may not be present in some compiled table typings in dependent projects; cast to any to avoid TS typing friction
+  await db.insert(refreshTokensTable).values({ userId, tokenHash: hashed, expiresAt, deviceId: deviceId ?? null } as any);
 }
 
 export async function revokeUserRefreshTokens(userId: string): Promise<void> {
@@ -102,6 +103,13 @@ export async function revokeUserRefreshTokens(userId: string): Promise<void> {
     .update(refreshTokensTable)
     .set({ revokedAt: new Date() })
     .where(and(eq(refreshTokensTable.userId, userId), isNull(refreshTokensTable.revokedAt)));
+}
+
+export async function revokeRefreshTokensByDevice(deviceId: string): Promise<void> {
+  await db
+    .update(refreshTokensTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq((refreshTokensTable as any).deviceId, deviceId), isNull(refreshTokensTable.revokedAt)));
 }
 
 export async function findValidRefreshToken(rawToken: string, userId: string) {

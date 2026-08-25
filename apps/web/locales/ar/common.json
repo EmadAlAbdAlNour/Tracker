@@ -1,0 +1,15 @@
+{
+  "nav": {
+    "overview": "نظرة عامة",
+    "drivers": "السائقون",
+    "devices": "الأجهزة",
+    "users": "المستخدمون",
+    "map": "خريطة مباشرة",
+    "settings": "الإعدادات"
+  },
+  "app": {
+    "title": "Tracker Admin",
+    "administration": "إدارة",
+    "logout": "تسجيل الخروج"
+  }
+}

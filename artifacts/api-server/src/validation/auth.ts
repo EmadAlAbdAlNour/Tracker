@@ -3,6 +3,13 @@ import { z } from "zod";
 export const loginSchema = z.object({
   emailOrPhone: z.string().trim().min(3).max(255),
   password: z.string().min(8).max(200),
+  device: z
+    .object({
+      platform: z.string().trim().min(1).max(50),
+      deviceIdentifier: z.string().trim().min(1).max(255).optional().or(z.literal("")),
+      appVersion: z.string().trim().min(1).max(50).optional().or(z.literal("")),
+    })
+    .optional(),
 });
 
 export const refreshTokenSchema = z.object({
@@ -55,6 +62,8 @@ export const locationPointSchema = z.object({
   }),
   source: z.string().trim().min(1).max(50).default("mobile"),
 });
+
+export const locationBatchSchema = z.array(locationPointSchema).min(1).max(20);
 
 export const shiftListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

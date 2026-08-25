@@ -2,7 +2,7 @@ import { pgTable, index, uniqueIndex, foreignKey, uuid, text, timestamp, unique,
 import { sql } from "drizzle-orm"
 
 export const shiftStatus = pgEnum("shift_status", ['ACTIVE', 'COMPLETED'])
-export const userRole = pgEnum("user_role", ['ADMIN', 'MANAGER', 'DRIVER'])
+export const userRole = pgEnum("user_role", ['ADMIN', 'MANAGER', 'DRIVER', 'CALL_CENTER'])
 
 
 export const devices = pgTable("devices", {
@@ -12,6 +12,7 @@ export const devices = pgTable("devices", {
 	deviceIdentifier: text("device_identifier"),
 	appVersion: text("app_version"),
 	lastSeen: timestamp("last_seen", { withTimezone: true, mode: 'string' }),
+	authorized: boolean("authorized").default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	lastLocationAt: timestamp("last_location_at", { withTimezone: true, mode: 'string' }),
@@ -24,6 +25,7 @@ export const devices = pgTable("devices", {
 			foreignColumns: [drivers.id],
 			name: "devices_driver_id_drivers_id_fk"
 		}).onDelete("cascade"),
+	uniqueIndex("devices_driver_one_authorized_idx").using("btree", table.driverId.asc().nullsLast().op("uuid_ops")).where(sql`(authorized = true)`),
 ]);
 
 export const drivers = pgTable("drivers", {
@@ -66,16 +68,23 @@ export const refreshTokens = pgTable("refresh_tokens", {
 	tokenHash: text("token_hash").notNull(),
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
 	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	deviceId: uuid("device_id"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	index("refresh_tokens_expires_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
 	uniqueIndex("refresh_tokens_hash_idx").using("btree", table.tokenHash.asc().nullsLast().op("text_ops")),
 	index("refresh_tokens_user_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
+	index("refresh_tokens_device_idx").using("btree", table.deviceId.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
 			columns: [table.userId],
 			foreignColumns: [users.id],
 			name: "refresh_tokens_user_id_users_id_fk"
 		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.deviceId],
+			foreignColumns: [devices.id],
+			name: "refresh_tokens_device_id_devices_id_fk"
+		}).onDelete("set null"),
 ]);
 
 export const shifts = pgTable("shifts", {

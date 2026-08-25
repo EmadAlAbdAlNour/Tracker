@@ -20,10 +20,17 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     }
 
     const token = authHeader.slice("Bearer ".length).trim();
-    const payload = jwt.verify(token, env.jwtSecret) as { sub?: string; role?: string };
-    if (!payload.sub) {
-      throw createError(401, "AUTH_INVALID_TOKEN", "Invalid token");
-    }
+        let payload: { sub?: string; role?: string } | undefined;
+        try {
+          payload = jwt.verify(token, env.jwtSecret) as { sub?: string; role?: string };
+        } catch (err) {
+          next(createError(401, "AUTH_INVALID_TOKEN", "Invalid token"));
+          return;
+        }
+
+        if (!payload?.sub) {
+          throw createError(401, "AUTH_INVALID_TOKEN", "Invalid token");
+        }
 
     const user = await getUserById(payload.sub);
     if (!user) {

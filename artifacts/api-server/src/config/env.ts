@@ -58,6 +58,14 @@ export function getEnv(): AppEnv {
           : values.jwtRefreshSecret;
 
     if (!value) {
+      // During automated tests, provide safe defaults instead of throwing to enable in-test DB setup.
+      if (nodeEnv === 'test') {
+        if (key === 'DATABASE_URL') values.databaseUrl = process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/tracker_test';
+        if (key === 'JWT_SECRET') values.jwtSecret = process.env.JWT_SECRET ?? 'test-jwt-secret';
+        if (key === 'JWT_REFRESH_SECRET') values.jwtRefreshSecret = process.env.JWT_REFRESH_SECRET ?? 'test-refresh-secret';
+        continue;
+      }
+
       throw new Error(`${key} must be set in the environment.`);
     }
   }

@@ -10,7 +10,7 @@ const router = Router();
 router.post("/login", async (req, res, next) => {
   try {
     const body = loginSchema.parse(req.body);
-    const result = await loginUser(body.emailOrPhone, body.password);
+    const result = await loginUser(body.emailOrPhone, body.password, body.device);
     res.status(200).json({
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,

@@ -1,0 +1,15 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "drivers": "Drivers",
+    "devices": "Devices",
+    "users": "Users",
+    "map": "Live Map",
+    "settings": "Settings"
+  },
+  "app": {
+    "title": "Tracker Admin",
+    "administration": "Administration",
+    "logout": "Logout"
+  }
+}

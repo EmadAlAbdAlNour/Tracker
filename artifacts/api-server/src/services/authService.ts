@@ -21,7 +21,7 @@ import { createError } from "../lib/errors";
 
 const env = getEnv();
 
-export async function loginUser(emailOrPhone: string, password: string) {
+export async function loginUser(emailOrPhone: string, password: string, device?: { platform: string; deviceIdentifier?: string | null; appVersion?: string | null }) {
   const normalizedLoginInput = emailOrPhone.trim();
 
   const user = await getUserByEmailOrPhone(normalizedLoginInput);
@@ -43,7 +43,43 @@ export async function loginUser(emailOrPhone: string, password: string) {
   const jti = randomUUID();
   const accessToken = signAccessToken(user.id, user.role);
   const refreshToken = signRefreshToken(user.id, user.role, jti);
-  await storeRefreshToken(user.id, refreshToken);
+
+  // Device binding enforcement for DRIVER role
+  if (user.role === "DRIVER") {
+    if (!device || !device.platform || !device.deviceIdentifier) {
+      throw createError(400, "AUTH_DEVICE_REQUIRED", "Driver login requires device information");
+    }
+
+    const driver = await getDriverByUserId(user.id);
+    if (!driver) {
+      throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+    }
+
+    // current authorized device (if any)
+    const authorized = await db
+      .select()
+      .from(devicesTable)
+      .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)))
+      .limit(1);
+
+    // upsert/update device metadata (do not change authorized flag here)
+    const registeredDevice = await registerDriverDevice(user.id, device);
+
+    if (!authorized[0]) {
+      // no authorized device exists => bind this device
+      await db.update(devicesTable).set({ authorized: true, updatedAt: new Date() } as any).where(eq(devicesTable.id, registeredDevice.id));
+      await storeRefreshToken(user.id, refreshToken, registeredDevice.id);
+    } else if (authorized[0].id === registeredDevice.id) {
+      // same authorized device re-logging in
+      await storeRefreshToken(user.id, refreshToken, registeredDevice.id);
+    } else {
+      // another device is authorized -> reject
+      throw createError(403, "AUTH_DEVICE_MISMATCH", "This account is linked to another device. An administrator must reset the device.");
+    }
+  } else {
+    // non-driver: allow optional device info but do not bind tokens to devices
+    await storeRefreshToken(user.id, refreshToken, null);
+  }
 
   return {
     user: sanitizeUser(user),
@@ -51,6 +87,7 @@ export async function loginUser(emailOrPhone: string, password: string) {
     refreshToken,
   };
 }
+
 
 export async function refreshSession(rawRefreshToken: string) {
   const payload = getTokenPayload(rawRefreshToken, env.jwtRefreshSecret);
@@ -71,13 +108,22 @@ export async function refreshSession(rawRefreshToken: string) {
     throw createError(401, "AUTH_INVALID_TOKEN", "Refresh token is invalid or revoked");
   }
 
+  // If the token is device-bound, verify device still exists and is authorized
+  if ((validRefreshToken as any).deviceId) {
+    const deviceRow = await db.select().from(devicesTable).where(eq(devicesTable.id, (validRefreshToken as any).deviceId)).limit(1);
+    if (!deviceRow[0] || !(deviceRow[0] as any).authorized) {
+      throw createError(401, "AUTH_INVALID_DEVICE", "Device not authorized");
+    }
+  }
+
   const refreshHash = hashRefreshToken(rawRefreshToken);
   await revokeRefreshTokenByHash(refreshHash);
 
   const nextJti = randomUUID();
   const accessToken = signAccessToken(user.id, user.role);
   const newRefreshToken = signRefreshToken(user.id, user.role, nextJti);
-  await storeRefreshToken(user.id, newRefreshToken);
+  // inherit device binding if present
+  await storeRefreshToken(user.id, newRefreshToken, (validRefreshToken as any).deviceId ?? null);
 
   return {
     user: sanitizeUser(user),
@@ -166,8 +212,12 @@ export async function createDriverRecord(input: {
   };
 }
 
-export async function listDrivers() {
-  const rows = await db
+export async function listDrivers(options?: { page?: number; limit?: number }) {
+  const page = options?.page ?? 1;
+  const limit = options?.limit ?? 20;
+  const offset = (Math.max(1, page) - 1) * limit;
+
+  const items = await db
     .select({
       id: driversTable.id,
       userId: driversTable.userId,
@@ -181,9 +231,18 @@ export async function listDrivers() {
       role: usersTable.role,
     })
     .from(driversTable)
+    .innerJoin(usersTable, eq(usersTable.id, driversTable.userId))
+    .limit(limit)
+    .offset(offset);
+
+  const totalRow = await db
+    .select({ total: sql`count(1)` })
+    .from(driversTable)
     .innerJoin(usersTable, eq(usersTable.id, driversTable.userId));
 
-  return rows;
+  const total = Number((totalRow[0] as any)?.total ?? 0);
+
+  return { items, total };
 }
 
 export async function getDriverById(driverId: string) {
@@ -315,7 +374,16 @@ export async function getCurrentDriverProfile(userId: string) {
   };
 }
 
+let __testRegisterDriverDeviceOverride: null | ((userId: string, input: { platform: string; deviceIdentifier?: string | null; appVersion?: string | null }) => Promise<any>) = null;
+export function __setTestRegisterDriverDeviceOverride(fn: null | ((userId: string, input: { platform: string; deviceIdentifier?: string | null; appVersion?: string | null }) => Promise<any>)) {
+  __testRegisterDriverDeviceOverride = fn;
+}
+
 export async function registerDriverDevice(userId: string, input: { platform: string; deviceIdentifier?: string | null; appVersion?: string | null }) {
+  // testing hook: allow tests to override device registration behavior without touching DB
+  if (__testRegisterDriverDeviceOverride) {
+    return await __testRegisterDriverDeviceOverride(userId, input);
+  }
   const driver = await getDriverByUserId(userId);
   if (!driver) {
     throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
@@ -344,6 +412,36 @@ export async function registerDriverDevice(userId: string, input: { platform: st
         .where(and(eq(devicesTable.driverId, driver.id), eq(devicesTable.platform, normalizedPlatform)))
         .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.updatedAt))
         .limit(1);
+
+  // check for currently authorized device for this driver
+  const authorized = await db
+    .select()
+    .from(devicesTable)
+    .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)))
+    .limit(1);
+
+  if (authorized[0]) {
+    // if the existing device matches the authorized device -> allow update
+    if (existingDevice[0] && existingDevice[0].id === authorized[0].id) {
+      const [updatedAuth] = await db
+        .update(devicesTable)
+        .set({
+          deviceIdentifier: normalizedIdentifier ?? existingDevice[0].deviceIdentifier,
+          appVersion: normalizedAppVersion ?? existingDevice[0].appVersion,
+          lastSeen: now,
+          updatedAt: now,
+        })
+        .where(eq(devicesTable.id, existingDevice[0].id))
+        .returning();
+
+      return updatedAuth ?? existingDevice[0];
+    }
+
+    // authorized device exists and differs -> registration of a different device is forbidden
+    if (!existingDevice[0] || existingDevice[0].id !== authorized[0].id) {
+      throw createError(403, "AUTH_DEVICE_MISMATCH", "This account is linked to another device. An administrator must reset the device.");
+    }
+  }
 
   if (existingDevice[0]) {
     const [updated] = await db
@@ -393,6 +491,30 @@ export async function getDriverDevice(userId: string) {
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+export async function resetDriverDeviceByDriverId(driverId: string) {
+  // find authorized device for driver
+  const authorized = await db
+    .select()
+    .from(devicesTable)
+    .where(and(eq(devicesTable.driverId, driverId), eq((devicesTable as any).authorized, true)))
+    .limit(1);
+
+  if (!authorized[0]) {
+    throw createError(404, "DEVICE_NOT_FOUND", "No authorized device found for this driver");
+  }
+
+  const deviceId = authorized[0].id;
+
+  // mark unauthorized
+  await db.update(devicesTable).set({ authorized: false, updatedAt: new Date() } as any).where(eq(devicesTable.id, deviceId));
+
+  // revoke all refresh tokens associated with that device
+  const { revokeRefreshTokensByDevice } = await import("../lib/auth");
+  await revokeRefreshTokensByDevice(deviceId);
+
+  return true;
 }
 
 export async function submitDriverLocation(
@@ -482,6 +604,104 @@ export async function submitDriverLocation(
     .where(eq(devicesTable.driverId, driver.id));
 
   return point;
+}
+
+export async function submitDriverLocationBatch(userId: string, inputs: Array<{
+  clientLocationId?: string | null;
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+  altitude?: number | null;
+  speed?: number | null;
+  heading?: number | null;
+  recordedAt: string;
+  source?: string;
+}>) {
+  const driver = await getDriverByUserId(userId);
+  if (!driver) {
+    throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+  }
+
+  if (!driver.active) {
+    throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
+  }
+
+  const activeShift = await db
+    .select()
+    .from(shiftsTable)
+    .where(and(eq(shiftsTable.driverId, driver.id), eq(shiftsTable.status, "ACTIVE")))
+    .orderBy(desc(shiftsTable.startedAt))
+    .limit(1);
+
+  if (!activeShift[0]) {
+    throw createError(409, "SHIFT_NOT_ACTIVE", "Driver is not on an active shift");
+  }
+
+  if (!Array.isArray(inputs) || inputs.length === 0) {
+    throw createError(400, "INVALID_BATCH", "Batch must contain at least one point");
+  }
+
+  if (inputs.length > 20) {
+    throw createError(400, "BATCH_TOO_LARGE", "Batch size exceeds maximum of 20 points");
+  }
+
+  // validate timestamps and coerce numbers
+  const now = new Date();
+  const values: any[] = [];
+  const placeholders: string[] = [];
+  let idx = 1;
+  for (const it of inputs) {
+    const recordedAt = new Date(it.recordedAt);
+    if (Number.isNaN(recordedAt.getTime())) {
+      throw createError(400, "INVALID_TIMESTAMP", "recordedAt must be a valid timestamp");
+    }
+    const clientId = it.clientLocationId?.trim() || null;
+    placeholders.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
+    // driver_id, shift_id, client_location_id, latitude, longitude, accuracy, altitude, speed, heading, recorded_at, received_at, source, created_at
+    values.push(driver.id, activeShift[0].id, clientId, Number(it.latitude), Number(it.longitude), it.accuracy == null ? null : Number(it.accuracy), it.altitude == null ? null : Number(it.altitude), it.speed == null ? null : Number(it.speed), it.heading == null ? null : Number(it.heading));
+    // push recordedAt, receivedAt, source, createdAt separately to keep placeholders mapping
+    // we'll append them after loop to match the placeholders construction
+  }
+
+  // Build full SQL with correct number of placeholders per row
+  // We'll build values array again accommodating recordedAt, receivedAt, source, createdAt per row
+  const fullValues: any[] = [];
+  const rowPlaceholders: string[] = [];
+  let p = 1;
+  for (const it of inputs) {
+    const clientId = it.clientLocationId?.trim() || null;
+    const recordedAt = new Date(it.recordedAt);
+    const receivedAt = new Date();
+    const source = it.source?.trim() || 'mobile';
+    const createdAt = receivedAt;
+
+    // placeholders: driver_id, shift_id, client_location_id, latitude, longitude, accuracy, altitude, speed, heading, recorded_at, received_at, source, created_at
+    const ph = `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++})`;
+    rowPlaceholders.push(ph);
+    fullValues.push(driver.id, activeShift[0].id, clientId, Number(it.latitude), Number(it.longitude), it.accuracy == null ? null : Number(it.accuracy), it.altitude == null ? null : Number(it.altitude), it.speed == null ? null : Number(it.speed), it.heading == null ? null : Number(it.heading), recordedAt, receivedAt, source, createdAt);
+  }
+
+  const sqlText = `INSERT INTO location_points (driver_id, shift_id, client_location_id, latitude, longitude, accuracy, altitude, speed, heading, recorded_at, received_at, source, created_at) VALUES ${rowPlaceholders.join(', ')} ON CONFLICT (driver_id, client_location_id) WHERE client_location_id IS NOT NULL DO NOTHING RETURNING client_location_id`;
+
+  // Use raw pool query to perform the bulk insert with ON CONFLICT DO NOTHING
+  const { pool } = await import("@workspace/db");
+  const result = await pool.query(sqlText, fullValues);
+
+  const insertedClientIds = (result.rows ?? []).map((r: any) => r.client_location_id).filter(Boolean);
+  const accepted = insertedClientIds.length;
+  const duplicates = inputs.length - accepted;
+
+  // update devices lastSeen/lastLocationAt
+  await db
+    .update(devicesTable)
+    .set({
+      lastSeen: now,
+      lastLocationAt: now,
+      updatedAt: now,
+    })
+    .where(eq(devicesTable.driverId, driver.id));
+
+  return { accepted, duplicates, acceptedClientIds: insertedClientIds };
 }
 
 export async function getLatestDriverLocation(driverId: string) {

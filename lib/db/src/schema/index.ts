@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
-export const userRoleEnum = pgEnum("user_role", ["ADMIN", "MANAGER", "DRIVER"]);
+export const userRoleEnum = pgEnum("user_role", ["ADMIN", "MANAGER", "DRIVER", "CALL_CENTER"]);
 export const shiftStatusEnum = pgEnum("shift_status", ["ACTIVE", "COMPLETED"]);
 
 export const usersTable = pgTable(
@@ -63,6 +63,7 @@ export const devicesTable = pgTable(
     appVersion: text("app_version"),
     lastSeen: timestamp("last_seen", { withTimezone: true }),
     lastLocationAt: timestamp("last_location_at", { withTimezone: true }),
+    authorized: boolean("authorized").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -72,6 +73,7 @@ export const devicesTable = pgTable(
     uniqueDriverDevice: uniqueIndex("devices_driver_platform_identifier_idx")
       .on(table.driverId, table.platform, table.deviceIdentifier)
       .where(sql`"device_identifier" IS NOT NULL`),
+    authorizedUnique: uniqueIndex("devices_driver_one_authorized_idx").on(table.driverId).where(sql`"authorized" = true`),
   }),
 );
 
@@ -107,12 +109,14 @@ export const refreshTokensTable = pgTable(
     tokenHash: text("token_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    deviceId: uuid("device_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     userIdx: index("refresh_tokens_user_idx").on(table.userId),
     tokenHashIdx: uniqueIndex("refresh_tokens_hash_idx").on(table.tokenHash),
     expiresIdx: index("refresh_tokens_expires_idx").on(table.expiresAt),
+    deviceIdx: index("refresh_tokens_device_idx").on(table.deviceId),
   }),
 );
 
@@ -193,7 +197,7 @@ export const insertUserSchema = z.object({
   email: z.string().email(),
   phone: z.string().nullable().optional(),
   passwordHash: z.string().min(1),
-  role: z.enum(["ADMIN", "MANAGER", "DRIVER"]),
+  role: z.enum(["ADMIN", "MANAGER", "DRIVER", "CALL_CENTER"]),
   active: z.boolean().optional(),
 });
 
@@ -209,6 +213,7 @@ export const insertDeviceSchema = z.object({
   deviceIdentifier: z.string().nullable().optional(),
   appVersion: z.string().nullable().optional(),
   lastSeen: z.date().nullable().optional(),
+  authorized: z.boolean().optional(),
 });
 
 export const insertRefreshTokenSchema = z.object({
@@ -216,6 +221,7 @@ export const insertRefreshTokenSchema = z.object({
   tokenHash: z.string().min(1),
   expiresAt: z.date(),
   revokedAt: z.date().nullable().optional(),
+  deviceId: z.string().uuid().nullable().optional(),
 });
 
 export const insertShiftSchema = z.object({

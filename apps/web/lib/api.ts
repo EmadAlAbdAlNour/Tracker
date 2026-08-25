@@ -181,7 +181,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, requir
   const headers = new Headers(init.headers ?? {});
 
   if (requireAuth && session?.accessToken) {
-    headers.set('Authorization', `Bearer ${session.accessToken}`);
+    headers.set('Authorization', 'Bearer ' + session.accessToken);
   }
 
   if (!headers.has('Content-Type') && init.body && !(init.body instanceof FormData)) {
@@ -194,7 +194,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, requir
     const refreshed = await refreshSessionIfPossible();
     if (refreshed) {
       const retryHeaders = new Headers(init.headers ?? {});
-      retryHeaders.set('Authorization', `Bearer ${refreshed.accessToken}`);
+      retryHeaders.set('Authorization', 'Bearer ' + refreshed.accessToken);
       if (!retryHeaders.has('Content-Type') && init.body && !(init.body instanceof FormData)) {
         retryHeaders.set('Content-Type', 'application/json');
       }
@@ -281,3 +281,10 @@ export const apiClient = {
   getDriverHistory,
   getDriverLatestLocation,
 };
+
+
+
+
+
+
+

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
@@ -52,7 +52,6 @@ export function getRetryDelayMs(retryCount: number): number {
 }
 
 export async function enqueueLocationPoint(payload: Omit<QueuedLocationPoint, 'retryCount' | 'nextRetryAt' | 'localId' | 'createdAt'> & { localId?: string; createdAt?: string }): Promise<QueuedLocationPoint[]> {
-  const queue = await readQueue();
   const item: QueuedLocationPoint = {
     localId: payload.localId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     latitude: payload.latitude,
@@ -68,9 +67,10 @@ export async function enqueueLocationPoint(payload: Omit<QueuedLocationPoint, 'r
     nextRetryAt: Date.now(),
   };
 
-  const nextQueue = [...queue, item];
-  await writeQueue(nextQueue);
-  return nextQueue;
+  // delegate to flushManager push to enforce cap policy
+  const manager = await import('./flushManager');
+  await manager.pushQueuedPoints([item]);
+  return manager.readQueuedPoints();
 }
 
 export async function getQueuedLocationCount(): Promise<number> {
@@ -93,12 +93,11 @@ export function registerBackgroundLocationTask(): void {
       return;
     }
 
-    const queue = await readQueue();
-    const nextQueue = [...queue];
+    const toPush = [];
 
     for (const item of items) {
       const timestamp = item?.timestamp ?? Date.now();
-      nextQueue.push({
+      toPush.push({
         localId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         latitude: Number(item?.coords?.latitude ?? 0),
         longitude: Number(item?.coords?.longitude ?? 0),
@@ -114,7 +113,8 @@ export function registerBackgroundLocationTask(): void {
       });
     }
 
-    await writeQueue(nextQueue);
+    const manager = await import('./flushManager');
+    await manager.pushQueuedPoints(toPush);
   });
 }
 
@@ -180,7 +180,7 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
           clientLocationId: point.localId,
@@ -220,3 +220,5 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
   await writeQueue(persisted);
   return eligible.length - remaining.length;
 }
+
+

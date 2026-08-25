@@ -16,13 +16,15 @@ import { useEffect, type ReactNode } from 'react';
 import { logoutAdmin } from '@/lib/api';
 import { useAuth } from '@/components/auth-provider';
 
+import { t } from '@/lib/i18n';
+
 const navItems = [
-  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/drivers', label: 'Drivers', icon: BriefcaseBusiness },
-  { href: '/dashboard/devices', label: 'Devices', icon: ShieldCheck },
-  { href: '/dashboard/users', label: 'Users', icon: Users },
-  { href: '/dashboard/map', label: 'Live Map', icon: MapPinned },
-  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+  { href: '/dashboard', label: t('nav.overview'), icon: LayoutDashboard },
+  { href: '/dashboard/drivers', label: t('nav.drivers'), icon: BriefcaseBusiness },
+  { href: '/dashboard/devices', label: t('nav.devices'), icon: ShieldCheck },
+  { href: '/dashboard/users', label: t('nav.users'), icon: Users },
+  { href: '/dashboard/map', label: t('nav.map'), icon: MapPinned },
+  { href: '/dashboard/settings', label: t('nav.settings'), icon: Settings },
 ];
 
 export function DashboardShell({ children }: { children: ReactNode }) {
@@ -50,7 +52,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <aside className="fixed inset-y-0 left-0 z-20 w-72 border-r border-slate-200 bg-slate-950 text-slate-100">
         <div className="flex h-16 items-center border-b border-slate-800 px-6 text-xl font-semibold">
-          Tracker Admin
+        {t('app.title')}
         </div>
 
         <nav className="space-y-2 p-4">

@@ -17,10 +17,12 @@ import {
   registerDriverDevice,
   startDriverShift,
   submitDriverLocation,
+  submitDriverLocationBatch,
   updateDriverProfile,
+  resetDriverDeviceByDriverId,
 } from "../services/authService";
 import { type AuthenticatedRequest, requireAuth, requireRole } from "../middleware/auth";
-import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
+import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, locationBatchSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
 
 const router = Router();
 
@@ -52,6 +54,22 @@ router.post("/me/device/register", requireAuth, requireRole("DRIVER"), async (re
       next(createError(400, "VALIDATION_ERROR", "Invalid device payload", error.flatten()));
       return;
     }
+    next(error);
+  }
+});
+
+// ADMIN-only: reset a driver's authorized device. This will mark the device unauthorized and revoke all refresh tokens tied to that device.
+router.post("/:id/device/reset", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    await (async () => {
+      const driver = await getDriverById(driverId);
+      if (!driver) throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+      await resetDriverDeviceByDriverId(driverId);
+    })();
+
+    res.status(200).json({ success: true });
+  } catch (error) {
     next(error);
   }
 });
@@ -88,6 +106,21 @@ router.post("/me/location", requireAuth, requireRole("DRIVER"), async (req: Auth
   }
 });
 
+// Batch upload: up to 20 points
+router.post("/me/location/batch", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const body = locationBatchSchema.parse(req.body);
+    const result = await submitDriverLocationBatch(req.user!.id, body);
+    res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(createError(400, "VALIDATION_ERROR", "Invalid batch payload", error.flatten()));
+      return;
+    }
+    next(error);
+  }
+});
+
 router.get("/me/shifts", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = shiftListQuerySchema.parse(req.query);
@@ -116,12 +149,12 @@ router.get("/me/shifts", requireAuth, requireRole("DRIVER"), async (req: Authent
 router.get("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = paginationSchema.parse(req.query);
-    const drivers = await listDrivers();
+    const result = await listDrivers({ page: query.page, limit: query.limit });
     res.status(200).json({
       page: query.page,
       limit: query.limit,
-      total: drivers.length,
-      items: drivers.slice((query.page - 1) * query.limit, query.page * query.limit),
+      total: result.total,
+      items: result.items,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

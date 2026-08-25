@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
-process.env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/tracker_test";
+process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/tracker_test";
 process.env.JWT_SECRET ??= "test-jwt-secret";
 process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret";
 
@@ -67,3 +67,4 @@ describe("authentication and authorization", () => {
     expect(currentDriverId).not.toBe(requestedDriverId);
   });
 });
+
