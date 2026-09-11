@@ -115,4 +115,20 @@ describe('CORS Configuration (Production)', () => {
       expect(res.headers['access-control-allow-credentials']).toBe('true');
     });
   });
+
+  describe('Preflight OPTIONS requests', () => {
+    it('allows PUT method preflight for restaurant settings from production frontend origin', async () => {
+      const res = await agent
+        .options('/api/settings/restaurant')
+        .set('Origin', 'https://tracker-web-psi.vercel.app')
+        .set('Access-Control-Request-Method', 'PUT')
+        .set('Access-Control-Request-Headers', 'authorization,content-type');
+
+      expect(res.status).toBe(204);
+      expect(res.headers['access-control-allow-origin']).toBe('https://tracker-web-psi.vercel.app');
+      expect(res.headers['access-control-allow-methods']).toContain('PUT');
+      expect(res.headers['access-control-allow-credentials']).toBe('true');
+    });
+  });
 });
+
