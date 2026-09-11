@@ -7,6 +7,7 @@ import { logger } from "./lib/logger";
 import { sendErrorResponse } from "./lib/errors";
 
 const app: Express = express();
+app.set("trust proxy", 1);
 
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,

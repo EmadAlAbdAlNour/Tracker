@@ -1,4 +1,4 @@
-﻿export type Role = 'ADMIN' | 'MANAGER' | 'DRIVER';
+export type Role = 'ADMIN' | 'MANAGER' | 'DRIVER' | 'CALL_CENTER';
 
 export type SessionUser = {
   id: string;
@@ -42,10 +42,19 @@ export type DeviceRecord = {
   platform: string;
   deviceIdentifier: string | null;
   appVersion: string | null;
+  authorized?: boolean;
+  batteryPercentage?: number | null;
+  isCharging?: boolean | null;
+  locationServicesEnabled?: boolean | null;
+  networkStatus?: string | null;
   lastSeen: string | null;
   lastLocationAt: string | null;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  driverName?: string;
+  driverEmail?: string;
+  driverPhone?: string | null;
+  employeeId?: string;
 };
 
 export type DriverTrackingStatus = {
@@ -97,6 +106,115 @@ export type ApiListResponse<T> = {
   limit: number;
   total: number;
   items: T[];
+};
+
+export type FleetDriverLiveStatus = {
+  driverId: string;
+  driverName: string;
+  driverEmail: string;
+  driverPhone: string | null;
+  employeeId: string;
+  driverActive: boolean;
+  userId: string;
+  shift: {
+    id: string;
+    status: 'ACTIVE' | 'COMPLETED';
+    startedAt: string;
+    durationMinutes: number;
+  } | null;
+  location: {
+    id: string;
+    latitude: number;
+    longitude: number;
+    speed: number | null;
+    heading: number | null;
+    accuracy: number | null;
+    altitude: number | null;
+    recordedAt: string;
+    receivedAt: string;
+  } | null;
+  device: {
+    id: string;
+    platform: string;
+    appVersion: string | null;
+    deviceIdentifier: string | null;
+    authorized: boolean;
+    batteryPercentage: number | null;
+    isCharging: boolean | null;
+    locationServicesEnabled: boolean | null;
+    networkStatus: string | null;
+    lastSeen: string | null;
+  } | null;
+  operationalStatus: 'AT_RESTAURANT' | 'MOVING' | 'STOPPED' | 'OFFLINE';
+  isInsideGeofence: boolean;
+  distanceToRestaurantMeters: number | null;
+};
+
+export type LiveFleetResponse = {
+  summary: {
+    totalDrivers: number;
+    activeShifts: number;
+    onlineDrivers: number;
+    atRestaurant: number;
+    moving: number;
+    stopped: number;
+    offline: number;
+    lowBatteryCount: number;
+  };
+  restaurant: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    enabled: boolean;
+  };
+  drivers: FleetDriverLiveStatus[];
+};
+
+export type RestaurantSettings = {
+  id?: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  enabled: boolean;
+  updatedAt?: string;
+};
+
+export type AlertSettings = {
+  id?: string;
+  maxStopDurationMinutes: number;
+  offlineGraceMinutes: number;
+  lowBatteryThreshold: number;
+  criticalBatteryThreshold: number;
+  maxShiftDurationHours: number;
+  stopAlertEnabled: boolean;
+  gpsAlertEnabled: boolean;
+  offlineAlertEnabled: boolean;
+  batteryAlertEnabled: boolean;
+  restaurantGeofenceAlertEnabled: boolean;
+  soundEnabled: boolean;
+  inAppAlertsEnabled: boolean;
+  pushAlertsEnabled: boolean;
+  updatedAt?: string;
+};
+
+export type NotificationItem = {
+  id: string;
+  type: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  titleAr: string;
+  titleEn: string;
+  messageAr: string;
+  messageEn: string;
+  driverId: string | null;
+  shiftId: string | null;
+  metadata: string | null;
+  read: boolean;
+  readAt: string | null;
+  resolved: boolean;
+  resolvedAt: string | null;
+  createdAt: string;
 };
 
 export type ErrorPayload = {
@@ -249,9 +367,36 @@ export async function getCurrentUser(): Promise<SessionUser> {
   return payload.user;
 }
 
-export async function listDrivers(): Promise<DriverSummary[]> {
-  const payload = await apiRequest<ApiListResponse<DriverSummary>>('/api/drivers?page=1&limit=100');
-  return payload.items;
+export async function listDrivers(page = 1, limit = 50): Promise<ApiListResponse<DriverSummary>> {
+  return apiRequest<ApiListResponse<DriverSummary>>(`/api/drivers?page=${page}&limit=${limit}`);
+}
+
+export async function createDriver(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  employeeId: string;
+  password: string;
+  active?: boolean;
+}): Promise<{ driver: DriverSummary; user: SessionUser }> {
+  return apiRequest<{ driver: DriverSummary; user: SessionUser }>('/api/drivers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateDriver(id: string, data: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  employeeId?: string;
+  password?: string;
+  active?: boolean;
+}): Promise<{ driver: DriverSummary }> {
+  return apiRequest<{ driver: DriverSummary }>(`/api/drivers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
 }
 
 export async function getDriverById(id: string): Promise<DriverSummary & { currentShiftStatus: 'ACTIVE' | 'COMPLETED' | null; currentShiftStartedAt: string | null; device: DeviceRecord | null }> {
@@ -267,8 +412,119 @@ export async function getDriverHistory(id: string, page = 1, limit = 10): Promis
   return apiRequest<ApiListResponse<ShiftRecord>>(`/api/drivers/${id}/shifts?page=${page}&limit=${limit}`);
 }
 
+export async function getDriverLocations(id: string, page = 1, limit = 20): Promise<ApiListResponse<LocationPoint>> {
+  return apiRequest<ApiListResponse<LocationPoint>>(`/api/drivers/${id}/locations?page=${page}&limit=${limit}`);
+}
+
 export async function getDriverLatestLocation(id: string): Promise<{ location: LocationPoint | null }> {
   return apiRequest<{ location: LocationPoint | null }>(`/api/drivers/${id}/location/latest`);
+}
+
+export async function resetDriverDevice(driverId: string): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>(`/api/drivers/${driverId}/device/reset`, {
+    method: 'POST',
+  });
+}
+
+export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
+  return apiRequest<LiveFleetResponse>('/api/fleet/live');
+}
+
+export async function getRestaurantSettings(): Promise<RestaurantSettings> {
+  const payload = await apiRequest<{ settings: RestaurantSettings }>('/api/settings/restaurant');
+  return payload.settings;
+}
+
+export async function updateRestaurantSettings(data: Partial<RestaurantSettings>): Promise<RestaurantSettings> {
+  const payload = await apiRequest<{ settings: RestaurantSettings }>('/api/settings/restaurant', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  return payload.settings;
+}
+
+export async function getAlertSettings(): Promise<AlertSettings> {
+  const payload = await apiRequest<{ settings: AlertSettings }>('/api/settings/alerts');
+  return payload.settings;
+}
+
+export async function updateAlertSettings(data: Partial<AlertSettings>): Promise<AlertSettings> {
+  const payload = await apiRequest<{ settings: AlertSettings }>('/api/settings/alerts', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  return payload.settings;
+}
+
+export async function listNotifications(params?: {
+  page?: number;
+  limit?: number;
+  unreadOnly?: boolean;
+}): Promise<{ items: NotificationItem[]; total: number; unreadCount: number; page: number; limit: number }> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.unreadOnly) query.set('unreadOnly', 'true');
+  return apiRequest<{ items: NotificationItem[]; total: number; unreadCount: number; page: number; limit: number }>(`/api/notifications?${query.toString()}`);
+}
+
+export async function markNotificationRead(id: string): Promise<{ notification: NotificationItem }> {
+  return apiRequest<{ notification: NotificationItem }>(`/api/notifications/${id}/read`, {
+    method: 'PATCH',
+  });
+}
+
+export async function markAllNotificationsRead(): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>('/api/notifications/read-all', {
+    method: 'POST',
+  });
+}
+
+export async function listUsers(params?: { page?: number; limit?: number; role?: string; search?: string }): Promise<ApiListResponse<SessionUser>> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.role) query.set('role', params.role);
+  if (params?.search) query.set('search', params.search);
+  return apiRequest<ApiListResponse<SessionUser>>(`/api/users?${query.toString()}`);
+}
+
+export async function createUser(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  role: Role;
+  password: string;
+  active?: boolean;
+}): Promise<{ user: SessionUser }> {
+  return apiRequest<{ user: SessionUser }>('/api/users', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateUser(id: string, data: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: Role;
+  password?: string;
+  active?: boolean;
+}): Promise<{ user: SessionUser }> {
+  return apiRequest<{ user: SessionUser }>(`/api/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deactivateUser(id: string): Promise<{ success: boolean }> {
+  return apiRequest<{ success: boolean }>(`/api/users/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function listDevices(page = 1, limit = 50): Promise<ApiListResponse<DeviceRecord>> {
+  return apiRequest<ApiListResponse<DeviceRecord>>(`/api/devices?page=${page}&limit=${limit}`);
 }
 
 export const apiClient = {
@@ -276,15 +532,25 @@ export const apiClient = {
   logout: logoutAdmin,
   getCurrentUser,
   listDrivers,
+  createDriver,
+  updateDriver,
   getDriverById,
   getDriverTrackingStatus,
   getDriverHistory,
+  getDriverLocations,
   getDriverLatestLocation,
+  resetDriverDevice,
+  getLiveFleetStatus,
+  getRestaurantSettings,
+  updateRestaurantSettings,
+  getAlertSettings,
+  updateAlertSettings,
+  listNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  listUsers,
+  createUser,
+  updateUser,
+  deactivateUser,
+  listDevices,
 };
-
-
-
-
-
-
-

@@ -94,8 +94,7 @@ export async function storeRefreshToken(userId: string, rawRefreshToken: string,
   const hashed = hashRefreshToken(rawRefreshToken);
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-  // deviceId may not be present in some compiled table typings in dependent projects; cast to any to avoid TS typing friction
-  await db.insert(refreshTokensTable).values({ userId, tokenHash: hashed, expiresAt, deviceId: deviceId ?? null } as any);
+  await db.insert(refreshTokensTable).values({ userId, tokenHash: hashed, expiresAt, deviceId: deviceId ?? null });
 }
 
 export async function revokeUserRefreshTokens(userId: string): Promise<void> {
@@ -109,7 +108,7 @@ export async function revokeRefreshTokensByDevice(deviceId: string): Promise<voi
   await db
     .update(refreshTokensTable)
     .set({ revokedAt: new Date() })
-    .where(and(eq((refreshTokensTable as any).deviceId, deviceId), isNull(refreshTokensTable.revokedAt)));
+    .where(and(eq(refreshTokensTable.deviceId, deviceId), isNull(refreshTokensTable.revokedAt)));
 }
 
 export async function findValidRefreshToken(rawToken: string, userId: string) {

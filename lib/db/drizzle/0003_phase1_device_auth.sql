@@ -11,7 +11,14 @@ ALTER TABLE "refresh_tokens" ADD COLUMN IF NOT EXISTS "device_id" uuid NULL;
 CREATE INDEX IF NOT EXISTS "refresh_tokens_device_idx" ON "refresh_tokens" USING btree ("device_id");
 
 -- Add foreign key constraint linking refresh_tokens.device_id to devices.id
-ALTER TABLE "refresh_tokens" ADD CONSTRAINT IF NOT EXISTS "refresh_tokens_device_id_devices_id_fk" FOREIGN KEY ("device_id") REFERENCES "public"."devices"("id") ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'refresh_tokens_device_id_devices_id_fk'
+  ) THEN
+    ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_device_id_devices_id_fk" FOREIGN KEY ("device_id") REFERENCES "public"."devices"("id") ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- Enforce at most one authorized device per driver using a partial unique index
 -- This ensures at DB level that a given driver cannot have more than one device with authorized = true

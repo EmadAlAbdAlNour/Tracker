@@ -275,7 +275,7 @@ describe('flushManager', () => {
     });
 
     it('exactly preserves MAX_QUEUE_SIZE after cap enforcement', async () => {
-      const points = Array.from({ length: 500 }, () => makePoint());
+      const points = Array.from({ length: 1500 }, () => makePoint());
 
       (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify([]));
       (AsyncStorage.setItem as any).mockResolvedValue(undefined);

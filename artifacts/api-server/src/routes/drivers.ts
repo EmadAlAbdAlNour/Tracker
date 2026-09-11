@@ -124,7 +124,7 @@ router.post("/me/location/batch", requireAuth, requireRole("DRIVER"), async (req
 router.get("/me/shifts", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = shiftListQuerySchema.parse(req.query);
-    const shifts = await listDriverShiftsForUser(req.user!.id, {
+    const result = await listDriverShiftsForUser(req.user!.id, {
       page: query.page,
       limit: query.limit,
       status: query.status,
@@ -134,8 +134,8 @@ router.get("/me/shifts", requireAuth, requireRole("DRIVER"), async (req: Authent
     res.status(200).json({
       page: query.page,
       limit: query.limit,
-      total: shifts.length,
-      items: shifts,
+      total: result.total,
+      items: result.items,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -146,7 +146,7 @@ router.get("/me/shifts", requireAuth, requireRole("DRIVER"), async (req: Authent
   }
 });
 
-router.get("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = paginationSchema.parse(req.query);
     const result = await listDrivers({ page: query.page, limit: query.limit });
@@ -201,7 +201,7 @@ router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res, next) => 
       return;
     }
 
-    if (req.user!.role === "MANAGER" || req.user!.role === "ADMIN") {
+    if (req.user!.role === "MANAGER" || req.user!.role === "ADMIN" || req.user!.role === "CALL_CENTER") {
       res.status(200).json({ driver });
       return;
     }
@@ -222,7 +222,7 @@ router.get("/:id/shifts", requireAuth, async (req: AuthenticatedRequest, res, ne
   try {
     const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const query = shiftListQuerySchema.parse(req.query);
-    const items = await getDriverShiftsById(req.user!, driverId, {
+    const result = await getDriverShiftsById(req.user!, driverId, {
       page: query.page,
       limit: query.limit,
       status: query.status,
@@ -232,8 +232,8 @@ router.get("/:id/shifts", requireAuth, async (req: AuthenticatedRequest, res, ne
     res.status(200).json({
       page: query.page,
       limit: query.limit,
-      total: items.length,
-      items,
+      total: result.total,
+      items: result.items,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -276,15 +276,15 @@ router.get("/:id/locations", requireAuth, async (req: AuthenticatedRequest, res,
       return;
     }
     const query = paginationSchema.parse(req.query);
-    const items = await listDriverLocations(driverId, {
+    const result = await listDriverLocations(driverId, {
       page: query.page,
       limit: query.limit,
     });
     res.status(200).json({
       page: query.page,
       limit: query.limit,
-      total: items.length,
-      items,
+      total: result.total,
+      items: result.items,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

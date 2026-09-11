@@ -1,17 +1,37 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { useAuth } from '@/components/auth-provider';
+import { Globe } from 'lucide-react';
+import { t, getLocale, setStoredLocale } from '@/lib/i18n';
 
 export default function LoginPage() {
   const router = useRouter();
   const { setTokens } = useAuth();
-  const [email, setEmail] = useState('admin@tracker.local');
-  const [password, setPassword] = useState('Password123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentLocale, setCurrentLocale] = useState(getLocale());
+
+  useEffect(() => {
+    const handleLocaleChange = () => {
+      setCurrentLocale(getLocale());
+    };
+    window.addEventListener('tracker_locale_change', handleLocaleChange);
+    document.documentElement.dir = currentLocale === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = currentLocale;
+    return () => {
+      window.removeEventListener('tracker_locale_change', handleLocaleChange);
+    };
+  }, [currentLocale]);
+
+  const toggleLanguage = () => {
+    const next = currentLocale === 'ar' ? 'en' : 'ar';
+    setStoredLocale(next);
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,59 +39,103 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const result = await apiClient.login(email, password);
+      const result = await apiClient.login(email.trim(), password);
       setTokens(result);
       router.push('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(
+        err instanceof Error
+          ? err.message
+          : currentLocale === 'ar'
+          ? 'فشل تسجيل الدخول. يرجى التحقق من البيانات.'
+          : 'Login failed. Please verify credentials.'
+      );
     } finally {
       setLoading(false);
     }
   }
 
+  const isAr = currentLocale === 'ar';
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
+        {/* Language switch button */}
+        <div className="flex justify-end mb-4">
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            <span>{isAr ? 'English' : 'العربية'}</span>
+          </button>
+        </div>
+
         <div className="mb-8 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Tracker</p>
-          <h1 className="mt-3 text-3xl font-bold text-slate-900">Admin Login</h1>
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-xl font-bold text-white shadow-md">
+            T
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+            {isAr ? 'نظام تتبع الأسطول' : 'Fleet Tracker'}
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900">
+            {isAr ? 'تسجيل الدخول إلى الإدارة' : 'Administration Login'}
+          </h1>
+          <p className="mt-1 text-xs text-slate-500">
+            {isAr ? 'أدخل بيانات الاعتماد للمتابعة' : 'Enter your credentials to continue'}
+          </p>
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">
+              {isAr ? 'البريد الإلكتروني أو الهاتف' : 'Email or Phone'}
+            </label>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white"
-              type="email"
-              autoComplete="email"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white"
+              type="text"
+              autoComplete="username"
+              placeholder={isAr ? 'admin@example.com' : 'admin@example.com'}
               required
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">
+              {isAr ? 'كلمة المرور' : 'Password'}
+            </label>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white"
               type="password"
               autoComplete="current-password"
+              placeholder="••••••••"
               required
             />
           </div>
 
           {error ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+              {error}
+            </div>
           ) : null}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+            className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
           >
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading
+              ? isAr
+                ? 'جاري التحقق...'
+                : 'Signing in...'
+              : isAr
+              ? 'تسجيل الدخول'
+              : 'Sign In'}
           </button>
         </form>
       </div>

@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   // default to accepting password checks in unit tests
   vi.spyOn(libAuth, 'verifyPassword').mockResolvedValue(true as any);
+  vi.spyOn(libAuth, 'revokeRefreshTokenByHash').mockResolvedValue(undefined as any);
 });
 
 describe('Phase1 service-level device & role tests (mocks at DB boundary)', () => {

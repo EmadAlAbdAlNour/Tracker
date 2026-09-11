@@ -3,9 +3,65 @@ import { z } from "zod";
 import { type AuthenticatedRequest, requireAuth, requireRole } from "../middleware/auth";
 import { createError } from "../lib/errors";
 import { registerDriverDevice } from "../services/authService";
-import { deviceRegisterSchema } from "../validation/auth";
+import { deviceRegisterSchema, paginationSchema } from "../validation/auth";
+import { db, devicesTable, driversTable, usersTable } from "@workspace/db";
+import { desc, eq, sql } from "drizzle-orm";
 
 const router = Router();
+
+router.get("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const query = paginationSchema.parse(req.query);
+    const page = Math.max(1, query.page);
+    const limit = Math.min(100, Math.max(1, query.limit));
+    const offset = (page - 1) * limit;
+
+    const [rows, countResult] = await Promise.all([
+      db
+        .select({
+          id: devicesTable.id,
+          driverId: devicesTable.driverId,
+          platform: devicesTable.platform,
+          deviceIdentifier: devicesTable.deviceIdentifier,
+          appVersion: devicesTable.appVersion,
+          authorized: devicesTable.authorized,
+          batteryPercentage: devicesTable.batteryPercentage,
+          isCharging: devicesTable.isCharging,
+          locationServicesEnabled: devicesTable.locationServicesEnabled,
+          networkStatus: devicesTable.networkStatus,
+          lastSeen: devicesTable.lastSeen,
+          lastLocationAt: devicesTable.lastLocationAt,
+          createdAt: devicesTable.createdAt,
+          driverName: usersTable.name,
+          driverEmail: usersTable.email,
+          driverPhone: usersTable.phone,
+          employeeId: driversTable.employeeId,
+        })
+        .from(devicesTable)
+        .innerJoin(driversTable, eq(devicesTable.driverId, driversTable.id))
+        .innerJoin(usersTable, eq(driversTable.userId, usersTable.id))
+        .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(devicesTable),
+    ]);
+
+    res.status(200).json({
+      items: rows,
+      total: Number(countResult[0]?.count ?? 0),
+      page,
+      limit,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(createError(400, "VALIDATION_ERROR", "Invalid pagination", error.flatten()));
+      return;
+    }
+    next(error);
+  }
+});
 
 router.post("/register", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {

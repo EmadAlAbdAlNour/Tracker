@@ -35,8 +35,18 @@ if (!databaseUrl) {
   );
 }
 
+function normalizeDatabaseUrl(rawUrl: string): string {
+  if (rawUrl.includes("sslmode=require") && !rawUrl.includes("uselibpqcompat")) {
+    const separator = rawUrl.includes("?") ? "&" : "?";
+    return `${rawUrl}${separator}uselibpqcompat=true`;
+  }
+  return rawUrl;
+}
+
+const normalizedDatabaseUrl = normalizeDatabaseUrl(databaseUrl);
+
 export const pool = new Pool({
-  connectionString: databaseUrl,
+  connectionString: normalizedDatabaseUrl,
   max: 5,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

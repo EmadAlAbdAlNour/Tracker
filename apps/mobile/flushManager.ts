@@ -92,8 +92,8 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
     if (!response.ok) {
       // preserve batch with increased retry
       const failed = batch.map((point) => ({ ...point, retryCount: point.retryCount + 1, nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1) }));
-      const remainingSet = new Set(failed.map((p) => p.localId));
-      const persisted = queue.filter((p) => !remainingSet.has(p.localId)).concat(failed);
+      const batchIds = new Set(batch.map((p) => p.localId));
+      const persisted = queue.filter((p) => !batchIds.has(p.localId)).concat(failed);
       await writeQueue(persisted);
       return 0;
     }
@@ -110,17 +110,17 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
       }
     }
 
-    const acceptedSetLocal = new Set(acceptedClientIds);
-    const persisted = queue.filter((p) => !acceptedSetLocal.has(p.localId)).concat(failedPoints);
+    const batchIds = new Set(batch.map((p) => p.localId));
+    const persisted = queue.filter((p) => !batchIds.has(p.localId)).concat(failedPoints);
     await writeQueue(persisted);
 
     return acceptedClientIds.length;
   } catch (err) {
     // network error: keep batch with increased retry
     const failed = batch.map((point) => ({ ...point, retryCount: point.retryCount + 1, nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1) }));
-    const remainingSet = new Set(failed.map((p) => p.localId));
+    const batchIds = new Set(batch.map((p) => p.localId));
     const q = await readQueue();
-    const persisted = q.filter((p) => !remainingSet.has(p.localId)).concat(failed);
+    const persisted = q.filter((p) => !batchIds.has(p.localId)).concat(failed);
     await writeQueue(persisted);
     return 0;
   }

@@ -529,6 +529,10 @@ export async function submitDriverLocation(
     recordedAt: string;
     source?: string;
     clientLocationId?: string | null;
+    batteryPercentage?: number | null;
+    isCharging?: boolean | null;
+    locationServicesEnabled?: boolean | null;
+    networkStatus?: string | null;
   },
 ) {
   const driver = await getDriverByUserId(userId);
@@ -594,14 +598,36 @@ export async function submitDriverLocation(
     throw createError(500, "LOCATION_SAVE_FAILED", "Could not store location");
   }
 
+  const deviceUpdates: Record<string, unknown> = {
+    lastSeen: receivedAt,
+    lastLocationAt: receivedAt,
+    updatedAt: receivedAt,
+  };
+  if (input.batteryPercentage !== undefined) deviceUpdates.batteryPercentage = input.batteryPercentage;
+  if (input.isCharging !== undefined) deviceUpdates.isCharging = input.isCharging;
+  if (input.locationServicesEnabled !== undefined) deviceUpdates.locationServicesEnabled = input.locationServicesEnabled;
+  if (input.networkStatus !== undefined) deviceUpdates.networkStatus = input.networkStatus;
+
   await db
     .update(devicesTable)
-    .set({
-      lastSeen: receivedAt,
-      lastLocationAt: receivedAt,
-      updatedAt: receivedAt,
-    })
+    .set(deviceUpdates as any)
     .where(eq(devicesTable.driverId, driver.id));
+
+  // Non-blocking alert evaluation
+  import("./alertService").then(async ({ evaluateDriverAlerts }) => {
+    const user = await getUserById(userId);
+    evaluateDriverAlerts({
+      driverId: driver.id,
+      driverName: user?.name,
+      shiftId: activeShift[0].id,
+      latitude: Number(input.latitude),
+      longitude: Number(input.longitude),
+      speed: input.speed,
+      recordedAt,
+      batteryPercentage: input.batteryPercentage,
+      locationServicesEnabled: input.locationServicesEnabled,
+    }).catch(() => {});
+  }).catch(() => {});
 
   return point;
 }
@@ -616,6 +642,10 @@ export async function submitDriverLocationBatch(userId: string, inputs: Array<{
   heading?: number | null;
   recordedAt: string;
   source?: string;
+  batteryPercentage?: number | null;
+  isCharging?: boolean | null;
+  locationServicesEnabled?: boolean | null;
+  networkStatus?: string | null;
 }>) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
@@ -647,30 +677,15 @@ export async function submitDriverLocationBatch(userId: string, inputs: Array<{
 
   // validate timestamps and coerce numbers
   const now = new Date();
-  const values: any[] = [];
-  const placeholders: string[] = [];
-  let idx = 1;
-  for (const it of inputs) {
-    const recordedAt = new Date(it.recordedAt);
-    if (Number.isNaN(recordedAt.getTime())) {
-      throw createError(400, "INVALID_TIMESTAMP", "recordedAt must be a valid timestamp");
-    }
-    const clientId = it.clientLocationId?.trim() || null;
-    placeholders.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
-    // driver_id, shift_id, client_location_id, latitude, longitude, accuracy, altitude, speed, heading, recorded_at, received_at, source, created_at
-    values.push(driver.id, activeShift[0].id, clientId, Number(it.latitude), Number(it.longitude), it.accuracy == null ? null : Number(it.accuracy), it.altitude == null ? null : Number(it.altitude), it.speed == null ? null : Number(it.speed), it.heading == null ? null : Number(it.heading));
-    // push recordedAt, receivedAt, source, createdAt separately to keep placeholders mapping
-    // we'll append them after loop to match the placeholders construction
-  }
-
-  // Build full SQL with correct number of placeholders per row
-  // We'll build values array again accommodating recordedAt, receivedAt, source, createdAt per row
   const fullValues: any[] = [];
   const rowPlaceholders: string[] = [];
   let p = 1;
   for (const it of inputs) {
     const clientId = it.clientLocationId?.trim() || null;
     const recordedAt = new Date(it.recordedAt);
+    if (Number.isNaN(recordedAt.getTime())) {
+      throw createError(400, "INVALID_TIMESTAMP", "recordedAt must be a valid timestamp");
+    }
     const receivedAt = new Date();
     const source = it.source?.trim() || 'mobile';
     const createdAt = receivedAt;
@@ -691,15 +706,38 @@ export async function submitDriverLocationBatch(userId: string, inputs: Array<{
   const accepted = insertedClientIds.length;
   const duplicates = inputs.length - accepted;
 
-  // update devices lastSeen/lastLocationAt
+  // update devices lastSeen/lastLocationAt and telemetry from latest point
+  const lastPoint = inputs[inputs.length - 1];
+  const deviceUpdates: Record<string, unknown> = {
+    lastSeen: now,
+    lastLocationAt: now,
+    updatedAt: now,
+  };
+  if (lastPoint.batteryPercentage !== undefined) deviceUpdates.batteryPercentage = lastPoint.batteryPercentage;
+  if (lastPoint.isCharging !== undefined) deviceUpdates.isCharging = lastPoint.isCharging;
+  if (lastPoint.locationServicesEnabled !== undefined) deviceUpdates.locationServicesEnabled = lastPoint.locationServicesEnabled;
+  if (lastPoint.networkStatus !== undefined) deviceUpdates.networkStatus = lastPoint.networkStatus;
+
   await db
     .update(devicesTable)
-    .set({
-      lastSeen: now,
-      lastLocationAt: now,
-      updatedAt: now,
-    })
+    .set(deviceUpdates as any)
     .where(eq(devicesTable.driverId, driver.id));
+
+  // Non-blocking alert evaluation on latest point
+  import("./alertService").then(async ({ evaluateDriverAlerts }) => {
+    const user = await getUserById(userId);
+    evaluateDriverAlerts({
+      driverId: driver.id,
+      driverName: user?.name,
+      shiftId: activeShift[0].id,
+      latitude: Number(lastPoint.latitude),
+      longitude: Number(lastPoint.longitude),
+      speed: lastPoint.speed,
+      recordedAt: new Date(lastPoint.recordedAt),
+      batteryPercentage: lastPoint.batteryPercentage,
+      locationServicesEnabled: lastPoint.locationServicesEnabled,
+    }).catch(() => {});
+  }).catch(() => {});
 
   return { accepted, duplicates, acceptedClientIds: insertedClientIds };
 }
@@ -716,13 +754,26 @@ export async function getLatestDriverLocation(driverId: string) {
 }
 
 export async function listDriverLocations(driverId: string, options?: { page?: number; limit?: number }) {
-  return db
-    .select()
-    .from(locationPointsTable)
-    .where(eq(locationPointsTable.driverId, driverId))
-    .orderBy(desc(locationPointsTable.recordedAt))
-    .limit(options?.limit ?? 20)
-    .offset(((options?.page ?? 1) - 1) * (options?.limit ?? 20));
+  const page = Math.max(1, options?.page ?? 1);
+  const limit = options?.limit ?? 20;
+  const offset = (page - 1) * limit;
+
+  const [items, countResult] = await Promise.all([
+    db
+      .select()
+      .from(locationPointsTable)
+      .where(eq(locationPointsTable.driverId, driverId))
+      .orderBy(desc(locationPointsTable.recordedAt))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(locationPointsTable)
+      .where(eq(locationPointsTable.driverId, driverId)),
+  ]);
+
+  const total = Number(countResult[0]?.count ?? 0);
+  return { items, total };
 }
 
 export async function getDriverTrackingStatus(driverId: string) {
@@ -773,7 +824,21 @@ export async function startDriverShift(userId: string) {
     .limit(1);
 
   if (existingActive[0]) {
-    throw createError(409, "SHIFT_ALREADY_ACTIVE", "An active shift already exists");
+    const shiftStart = new Date(existingActive[0].startedAt).getTime();
+    const shiftHours = (Date.now() - shiftStart) / (1000 * 60 * 60);
+    // Auto-complete stale shift if open for 14+ hours
+    if (shiftHours >= 14) {
+      await db
+        .update(shiftsTable)
+        .set({
+          endedAt: new Date(),
+          status: "COMPLETED",
+          updatedAt: new Date(),
+        })
+        .where(eq(shiftsTable.id, existingActive[0].id));
+    } else {
+      throw createError(409, "SHIFT_ALREADY_ACTIVE", "An active shift already exists");
+    }
   }
 
   const [shift] = await db
@@ -838,13 +903,26 @@ export async function listShiftsForDriver(driverId: string, options?: { status?:
     filters.push(sql`${shiftsTable.startedAt} <= ${new Date(options.to)}`);
   }
 
-  return db
-    .select()
-    .from(shiftsTable)
-    .where(and(...filters))
-    .orderBy(desc(shiftsTable.startedAt))
-    .limit(options?.limit ?? 20)
-    .offset(((options?.page ?? 1) - 1) * (options?.limit ?? 20));
+  const page = Math.max(1, options?.page ?? 1);
+  const limit = options?.limit ?? 20;
+  const offset = (page - 1) * limit;
+
+  const [items, countResult] = await Promise.all([
+    db
+      .select()
+      .from(shiftsTable)
+      .where(and(...filters))
+      .orderBy(desc(shiftsTable.startedAt))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shiftsTable)
+      .where(and(...filters)),
+  ]);
+
+  const total = Number(countResult[0]?.count ?? 0);
+  return { items, total };
 }
 
 export async function listDriverShiftsForUser(userId: string, options?: { page?: number; limit?: number; status?: "ACTIVE" | "COMPLETED"; from?: string; to?: string }) {
@@ -864,7 +942,7 @@ export async function getDriverShiftsById(currentUser: { id: string; role: strin
     }
   }
 
-  if (currentUser.role !== "ADMIN" && currentUser.role !== "MANAGER" && currentUser.role !== "DRIVER") {
+  if (currentUser.role !== "ADMIN" && currentUser.role !== "MANAGER" && currentUser.role !== "DRIVER" && currentUser.role !== "CALL_CENTER") {
     throw createError(403, "AUTH_FORBIDDEN", "Access denied");
   }
 

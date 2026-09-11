@@ -61,6 +61,10 @@ export const locationPointSchema = z.object({
     message: "recordedAt must be a valid ISO timestamp",
   }),
   source: z.string().trim().min(1).max(50).default("mobile"),
+  batteryPercentage: z.number().int().min(0).max(100).nullable().optional(),
+  isCharging: z.boolean().nullable().optional(),
+  locationServicesEnabled: z.boolean().nullable().optional(),
+  networkStatus: z.string().trim().max(50).nullable().optional(),
 });
 
 export const locationBatchSchema = z.array(locationPointSchema).min(1).max(20);

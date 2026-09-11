@@ -4,6 +4,9 @@ import devicesRouter from "./devices";
 import healthRouter from "./health";
 import usersRouter from "./users";
 import driversRouter from "./drivers";
+import fleetRouter from "./fleet";
+import settingsRouter from "./settings";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -12,5 +15,8 @@ router.use("/auth", authRouter);
 router.use("/users", usersRouter);
 router.use("/devices", devicesRouter);
 router.use("/drivers", driversRouter);
+router.use("/fleet", fleetRouter);
+router.use("/settings", settingsRouter);
+router.use("/notifications", notificationsRouter);
 
 export default router;

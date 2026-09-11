@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Api
-  version: 0.2.0
-  description: Production authentication and driver management API
+  title: Tracker Fleet & Operations API
+  version: 1.0.0
+  description: Production fleet, driver tracking, and operational administration API
 servers:
   - url: /api
     description: Base API path
@@ -12,13 +12,17 @@ tags:
   - name: auth
     description: Authentication and session operations
   - name: users
-    description: User account data
+    description: User account administration
   - name: drivers
-    description: Driver operations
+    description: Driver operations and profiles
   - name: devices
-    description: Driver device registration
-  - name: shifts
-    description: Driver shift operations
+    description: Driver device registration and tracking
+  - name: fleet
+    description: Live fleet overview and monitoring
+  - name: settings
+    description: Restaurant geofence and alert thresholds
+  - name: notifications
+    description: Operational notifications and alerts
 paths:
   /healthz:
     get:
@@ -101,115 +105,58 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Current user profile
-  /drivers/me:
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+  /users:
     get:
-      operationId: getCurrentDriver
-      tags: [drivers]
-      summary: Return the authenticated driver's profile
+      operationId: listUsers
+      tags: [users]
+      summary: List system users
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Current driver profile
-  /drivers/me/device:
-    get:
-      operationId: getDriverDevice
-      tags: [devices]
-      summary: Return the registered driver device
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Device record
-  /drivers/me/shifts:
-    get:
-      operationId: listDriverShifts
-      tags: [shifts]
-      summary: Return the authenticated driver's shift history
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 20
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [ACTIVE, COMPLETED]
-      responses:
-        "200":
-          description: Shift history
-  /drivers/me/shifts/start:
+          description: User list
     post:
-      operationId: startDriverShift
-      tags: [shifts]
-      summary: Start a new driver shift
+      operationId: createUser
+      tags: [users]
+      summary: Create new system user
       security:
         - bearerAuth: []
       responses:
         "201":
-          description: Shift started
-  /drivers/me/shifts/end:
-    post:
-      operationId: endDriverShift
-      tags: [shifts]
-      summary: End an active driver shift
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Shift ended
-  /drivers/{id}/shifts:
+          description: User created
+  /users/{id}:
     get:
-      operationId: getDriverShiftsById
-      tags: [shifts]
-      summary: Get a driver's shifts
+      operationId: getUserById
+      tags: [users]
+      summary: Get user by ID
       security:
         - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 20
       responses:
         "200":
-          description: Driver shift list
-  /devices/register:
-    post:
-      operationId: registerDevice
-      tags: [devices]
-      summary: Register or update the driver device
+          description: User details
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user by ID
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DeviceRegisterRequest"
       responses:
         "200":
-          description: Device registered
+          description: User updated
+    delete:
+      operationId: deactivateUser
+      tags: [users]
+      summary: Deactivate user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User deactivated
   /drivers:
     get:
       operationId: listDrivers
@@ -217,72 +164,216 @@ paths:
       summary: List drivers
       security:
         - bearerAuth: []
-      parameters:
-        - in: query
-          name: page
-          schema:
-            type: integer
-            default: 1
-        - in: query
-          name: limit
-          schema:
-            type: integer
-            default: 20
       responses:
         "200":
           description: Drivers list
     post:
       operationId: createDriver
       tags: [drivers]
-      summary: Create a driver
+      summary: Create new driver profile
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DriverCreateRequest"
       responses:
         "201":
           description: Driver created
+  /drivers/me:
+    get:
+      operationId: getCurrentDriver
+      tags: [drivers]
+      summary: Get current authenticated driver profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Driver profile
+  /drivers/me/device:
+    get:
+      operationId: getMyDevice
+      tags: [devices]
+      summary: Get current driver authorized device
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Device details
+  /drivers/me/device/register:
+    post:
+      operationId: registerDriverDevice
+      tags: [devices]
+      summary: Register and bind driver device
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Device registered
+  /drivers/{id}/device/reset:
+    post:
+      operationId: resetDriverDevice
+      tags: [devices]
+      summary: Unauthorize driver device and revoke tokens (Admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Device reset
+  /drivers/me/shifts/start:
+    post:
+      operationId: startShift
+      tags: [drivers]
+      summary: Start operational shift
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Shift started
+  /drivers/me/shifts/end:
+    post:
+      operationId: endShift
+      tags: [drivers]
+      summary: End operational shift
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Shift ended
+  /drivers/me/location:
+    post:
+      operationId: submitLocation
+      tags: [drivers]
+      summary: Ingest single GPS location point
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Location stored
+  /drivers/me/location/batch:
+    post:
+      operationId: submitLocationBatch
+      tags: [drivers]
+      summary: Ingest batch of GPS location points
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Batch ingested
   /drivers/{id}:
     get:
-      operationId: getDriver
+      operationId: getDriverById
       tags: [drivers]
-      summary: Get a driver by id
+      summary: Get driver profile details
       security:
         - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
       responses:
         "200":
-          description: Driver record
+          description: Driver details
+  /drivers/{id}/shifts:
+    get:
+      operationId: getDriverShifts
+      tags: [drivers]
+      summary: Get driver shift history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Shift history
+  /drivers/{id}/locations:
+    get:
+      operationId: getDriverLocations
+      tags: [drivers]
+      summary: Get driver recent location points
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Location points
+  /devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      summary: List all registered driver devices with health telemetry
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Devices list
+  /fleet/live:
+    get:
+      operationId: getLiveFleet
+      tags: [fleet]
+      summary: Return live fleet tracking positions, telemetry, and restaurant geofence status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Live fleet overview
+  /settings/restaurant:
+    get:
+      operationId: getRestaurantSettings
+      tags: [settings]
+      summary: Get restaurant branch coordinates and geofence radius
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Restaurant settings
+    put:
+      operationId: updateRestaurantSettings
+      tags: [settings]
+      summary: Update restaurant branch coordinates and geofence radius
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Restaurant settings updated
+  /settings/alerts:
+    get:
+      operationId: getAlertSettings
+      tags: [settings]
+      summary: Get alert thresholds and notification preferences
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Alert settings
+    put:
+      operationId: updateAlertSettings
+      tags: [settings]
+      summary: Update alert thresholds and notification preferences
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Alert settings updated
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List operational alerts and notifications
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Notifications list
+  /notifications/{id}/read:
     patch:
-      operationId: updateDriver
-      tags: [drivers]
-      summary: Update a driver
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark single notification as read
       security:
         - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DriverUpdateRequest"
       responses:
         "200":
-          description: Driver updated
+          description: Marked as read
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All marked as read
 components:
   securitySchemes:
     bearerAuth:
@@ -292,12 +383,11 @@ components:
   schemas:
     HealthStatus:
       type: object
-      required: [status, database]
+      required: [status]
       properties:
         status:
           type: string
-        database:
-          type: string
+          example: ok
     LoginRequest:
       type: object
       required: [emailOrPhone, password]
@@ -306,6 +396,8 @@ components:
           type: string
         password:
           type: string
+        device:
+          $ref: "#/components/schemas/DeviceRegisterRequest"
     RefreshRequest:
       type: object
       required: [refreshToken]
@@ -321,14 +413,8 @@ components:
         refreshToken:
           type: string
         user:
-          $ref: "#/components/schemas/User"
+          $ref: "#/components/schemas/CurrentUserResponse"
     CurrentUserResponse:
-      type: object
-      required: [user]
-      properties:
-        user:
-          $ref: "#/components/schemas/User"
-    User:
       type: object
       required: [id, name, email, role, active]
       properties:
@@ -343,40 +429,9 @@ components:
           nullable: true
         role:
           type: string
-          enum: [ADMIN, MANAGER, DRIVER]
+          enum: [ADMIN, MANAGER, DRIVER, CALL_CENTER]
         active:
           type: boolean
-    DriverCreateRequest:
-      type: object
-      required: [name, email, employeeId, password]
-      properties:
-        name:
-          type: string
-        email:
-          type: string
-        phone:
-          type: string
-        employeeId:
-          type: string
-        password:
-          type: string
-        active:
-          type: boolean
-    DriverUpdateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        email:
-          type: string
-        phone:
-          type: string
-        employeeId:
-          type: string
-        active:
-          type: boolean
-        password:
-          type: string
     DeviceRegisterRequest:
       type: object
       required: [platform]
@@ -387,22 +442,3 @@ components:
           type: string
         appVersion:
           type: string
-    Shift:
-      type: object
-      required: [id, driverId, status, startedAt]
-      properties:
-        id:
-          type: string
-        driverId:
-          type: string
-        startedAt:
-          type: string
-          format: date-time
-        endedAt:
-          type: string
-          format: date-time
-          nullable: true
-        status:
-          type: string
-          enum: [ACTIVE, COMPLETED]
-
