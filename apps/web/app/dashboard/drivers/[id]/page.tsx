@@ -24,6 +24,7 @@ import {
   getDriverHistory,
   getDriverLocations,
   resetDriverDevice,
+  updateDriver,
   type DriverDetailResponse,
   type ShiftRecord,
   type LocationPoint,
@@ -33,7 +34,7 @@ import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo, isRtl } from '@/lib/i18n';
 
 export default function DriverDetailsPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const driverId = params.id;
@@ -85,6 +86,8 @@ export default function DriverDetailsPage() {
     };
   }, [driverId, isAuthenticated]);
 
+  const [updating, setUpdating] = useState(false);
+
   const handleResetDevice = async () => {
     setResetLoading(true);
     try {
@@ -96,6 +99,19 @@ export default function DriverDetailsPage() {
       alert(err instanceof Error ? err.message : 'Failed to reset device');
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  const handleToggleActive = async () => {
+    if (!driver) return;
+    setUpdating(true);
+    try {
+      await updateDriver(driver.id, { active: !driver.active });
+      await loadAll();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update driver status');
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -145,7 +161,7 @@ export default function DriverDetailsPage() {
         subtitle={`${t('drivers.employeeId')}: ${formatWesternNumber(driver.employeeId)}`}
         action={
           <div className="flex items-center gap-3">
-            {device && (
+            {device && session?.user?.role === 'ADMIN' && (
               <button
                 type="button"
                 onClick={() => setResetDialogOpen(true)}
@@ -177,13 +193,29 @@ export default function DriverDetailsPage() {
               <User className="h-5 w-5 text-emerald-600" />
               <h2 className="text-base font-bold text-slate-900">{t('drivers.viewDetails')}</h2>
             </div>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                driver.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {driver.active ? t('drivers.active') : t('drivers.inactive')}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  driver.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {driver.active ? t('drivers.active') : t('drivers.inactive')}
+              </span>
+              {(session?.user?.role === 'ADMIN' || session?.user?.role === 'MANAGER') && (
+                <button
+                  type="button"
+                  onClick={handleToggleActive}
+                  disabled={updating}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition disabled:opacity-50 ${
+                    driver.active
+                      ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                      : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  }`}
+                >
+                  {updating ? t('common.loading') : driver.active ? t('users.deactivate') : t('users.activate')}
+                </button>
+              )}
+            </div>
           </div>
 
           <dl className="space-y-3.5 text-xs">

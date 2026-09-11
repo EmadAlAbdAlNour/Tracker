@@ -426,8 +426,10 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
     try {
       await stopBackgroundTracking();
       setTrackingEnabled(false);
+      // Flush any queued points collected during this active shift FIRST
+      await flushQueuedLocationsGuarded(API_URL).catch(() => {});
+      // Now end the shift on the server
       await apiRequest('/api/drivers/me/shifts/end', { method: 'POST' });
-      await flushQueuedLocationsGuarded(API_URL);
       await refreshState();
       Alert.alert(
         isArabic ? 'تم إنهاء الوردية' : 'Shift Ended',

@@ -1,5 +1,5 @@
 import { db, alertStateTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { getAlertSettings, getRestaurantSettings } from "./settingsService";
 import { createNotification } from "./notificationService";
 
@@ -205,23 +205,77 @@ export async function evaluateDriverAlerts(ctx: EvaluateAlertContext) {
     } else if (ctx.locationServicesEnabled === true) {
       await resolveAlertState(ctx.driverId, "GPS_DISABLED");
     }
+
+    // Resolving offline alert if driver just sent a location
+    await resolveAlertState(ctx.driverId, "DRIVER_OFFLINE");
   } catch (err) {
     // Non-blocking error handling for alert evaluation
     console.error("Alert evaluation failed:", err);
   }
 }
 
-async function getAlertState(driverId: string, alertType: string) {
+export async function evaluateDriverOfflineAlert(params: {
+  driverId: string;
+  driverName?: string;
+  shiftId?: string | null;
+  isOnline: boolean;
+  offlineDurationMinutes?: number;
+  lastSeen?: Date | null;
+}) {
+  try {
+    const alertSettings = await getAlertSettings();
+    if (!alertSettings.offlineAlertEnabled) return;
+
+    const now = new Date();
+    const offlineState = await getAlertState(params.driverId, "DRIVER_OFFLINE");
+
+    if (!params.isOnline) {
+      if (!offlineState) {
+        await updateAlertState(params.driverId, "DRIVER_OFFLINE", "OFFLINE", params.lastSeen ?? now);
+      } else {
+        const timeSinceLastNotif = now.getTime() - new Date(offlineState.lastNotifiedAt).getTime();
+        if (timeSinceLastNotif >= NOTIFICATION_COOLDOWN_MS) {
+          await updateAlertStateNotificationTime(params.driverId, "DRIVER_OFFLINE");
+          const driverName = params.driverName ?? "السائق";
+          const duration = Math.round(params.offlineDurationMinutes ?? alertSettings.offlineGraceMinutes);
+          await createNotification({
+            type: "DRIVER_OFFLINE",
+            severity: "WARNING",
+            titleAr: "انقطاع الاتصال بالسائق",
+            titleEn: "Driver Offline",
+            messageAr: `انقطع الاتصال بـ ${driverName} منذ ${duration} دقيقة`,
+            messageEn: `Lost connection to ${driverName} for ${duration} minutes`,
+            driverId: params.driverId,
+            shiftId: params.shiftId,
+            metadata: { offlineDurationMinutes: duration, lastSeen: params.lastSeen },
+          });
+        }
+      }
+    } else if (offlineState) {
+      await resolveAlertState(params.driverId, "DRIVER_OFFLINE");
+    }
+  } catch (err) {
+    console.error("Offline alert evaluation failed:", err);
+  }
+}
+
+export async function getAlertState(driverId: string, alertType: string) {
   const rows = await db
     .select()
     .from(alertStateTable)
-    .where(and(eq(alertStateTable.driverId, driverId), eq(alertStateTable.alertType, alertType)))
+    .where(
+      and(
+        eq(alertStateTable.driverId, driverId),
+        eq(alertStateTable.alertType, alertType),
+        isNull(alertStateTable.resolvedAt),
+      ),
+    )
     .limit(1);
 
   return rows[0] ?? null;
 }
 
-async function updateAlertState(
+export async function updateAlertState(
   driverId: string,
   alertType: string,
   stateData: string,
@@ -251,7 +305,7 @@ async function updateAlertState(
   }
 }
 
-async function updateAlertStateNotificationTime(driverId: string, alertType: string) {
+export async function updateAlertStateNotificationTime(driverId: string, alertType: string) {
   const existing = await getAlertState(driverId, alertType);
   if (existing) {
     await db
@@ -261,7 +315,7 @@ async function updateAlertStateNotificationTime(driverId: string, alertType: str
   }
 }
 
-async function resolveAlertState(driverId: string, alertType: string) {
+export async function resolveAlertState(driverId: string, alertType: string) {
   const existing = await getAlertState(driverId, alertType);
   if (existing && !existing.resolvedAt) {
     await db
@@ -270,4 +324,5 @@ async function resolveAlertState(driverId: string, alertType: string) {
       .where(eq(alertStateTable.id, existing.id));
   }
 }
+
 

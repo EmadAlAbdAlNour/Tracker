@@ -151,14 +151,22 @@ export async function createDriverRecord(input: {
   active?: boolean;
 }) {
   const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedPhone = input.phone?.trim() || null;
   const existingUser = await db
     .select()
     .from(usersTable)
-    .where(or(eq(usersTable.email, normalizedEmail), eq(usersTable.phone, input.phone ?? "")))
+    .where(
+      normalizedPhone
+        ? or(eq(usersTable.email, normalizedEmail), eq(usersTable.phone, normalizedPhone))
+        : eq(usersTable.email, normalizedEmail)
+    )
     .limit(1);
 
   if (existingUser[0]) {
-    throw createError(409, "USER_ALREADY_EXISTS", "A user with that email or phone already exists");
+    if (existingUser[0].email.toLowerCase() === normalizedEmail) {
+      throw createError(409, "EMAIL_EXISTS", "A user with that email already exists");
+    }
+    throw createError(409, "PHONE_EXISTS", "A user with that phone already exists");
   }
 
   const existingEmployee = await db
@@ -290,15 +298,45 @@ export async function updateDriverProfile(driverId: string, patch: Record<string
   }
 
   return db.transaction(async (tx) => {
-    if (patch.employeeId || patch.active !== undefined) {
+    if (patch.employeeId !== undefined || patch.active !== undefined) {
+      const nextActive = patch.active !== undefined ? Boolean(patch.active) : current.active;
       await tx
         .update(driversTable)
         .set({
           employeeId: patch.employeeId ? String(patch.employeeId) : current.employeeId,
-          active: patch.active !== undefined ? Boolean(patch.active) : current.active,
+          active: nextActive,
           updatedAt: new Date(),
         })
         .where(eq(driversTable.id, driverId));
+
+      if (patch.active !== undefined) {
+        await tx
+          .update(usersTable)
+          .set({
+            active: nextActive,
+            updatedAt: new Date(),
+          })
+          .where(eq(usersTable.id, current.userId));
+
+        if (!nextActive) {
+          // Deactivation: close active shifts, revoke tokens, unauthorize devices
+          await tx
+            .update(shiftsTable)
+            .set({
+              status: "COMPLETED",
+              endedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(shiftsTable.driverId, driverId), eq(shiftsTable.status, "ACTIVE")));
+
+          await tx
+            .update(devicesTable)
+            .set({ authorized: false, updatedAt: new Date() } as any)
+            .where(eq(devicesTable.driverId, driverId));
+
+          await revokeUserRefreshTokens(current.userId);
+        }
+      }
     }
 
     if (patch.name || patch.email || patch.phone !== undefined || patch.password) {
@@ -312,8 +350,29 @@ export async function updateDriverProfile(driverId: string, patch: Record<string
         throw createError(404, "USER_NOT_FOUND", "User not found");
       }
 
-      const nextEmail = patch.email ? String(patch.email).trim().toLowerCase() : user.email;
-      const nextPhone = patch.phone !== undefined && String(patch.phone).trim() !== "" ? String(patch.phone).trim() : user.phone;
+      let nextEmail = user.email;
+      if (patch.email) {
+        const candidateEmail = String(patch.email).trim().toLowerCase();
+        if (candidateEmail !== user.email.toLowerCase()) {
+          const emailConflict = await tx.select().from(usersTable).where(eq(usersTable.email, candidateEmail)).limit(1);
+          if (emailConflict[0]) {
+            throw createError(409, "EMAIL_EXISTS", "Email is already taken by another user");
+          }
+          nextEmail = candidateEmail;
+        }
+      }
+
+      let nextPhone = user.phone;
+      if (patch.phone !== undefined) {
+        const candidatePhone = String(patch.phone).trim() || null;
+        if (candidatePhone && candidatePhone !== user.phone) {
+          const phoneConflict = await tx.select().from(usersTable).where(eq(usersTable.phone, candidatePhone)).limit(1);
+          if (phoneConflict[0]) {
+            throw createError(409, "PHONE_EXISTS", "Phone number is already taken by another user");
+          }
+        }
+        nextPhone = candidatePhone;
+      }
 
       await tx
         .update(usersTable)

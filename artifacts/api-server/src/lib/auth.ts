@@ -67,10 +67,12 @@ export async function getUserById(userId: string) {
 }
 
 export async function getUserByEmailOrPhone(value: string) {
+  const normalized = value.trim();
+  const lower = normalized.toLowerCase();
   const rows = await db
     .select()
     .from(usersTable)
-    .where(or(eq(usersTable.email, value), eq(usersTable.phone, value)))
+    .where(or(eq(usersTable.email, lower), eq(usersTable.phone, normalized)))
     .limit(1);
   return rows[0] ?? null;
 }

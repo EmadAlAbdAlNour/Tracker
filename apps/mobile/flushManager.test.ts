@@ -199,6 +199,69 @@ describe('flushManager', () => {
       expect(savedQueue).toHaveLength(1);
       expect(savedQueue[0].retryCount).toBe(1);
     });
+
+    it('discards queued points when server returns 409 (shift not active) to prevent queue jam', async () => {
+      const point1 = makePoint();
+      const points = [point1];
+
+      (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify(points));
+      (AsyncStorage.setItem as any).mockResolvedValue(undefined);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(0);
+      const setCall = (AsyncStorage.setItem as any).mock.calls[0];
+      const savedQueue = JSON.parse(setCall[1]);
+      // Should have discarded the point
+      expect(savedQueue).toHaveLength(0);
+    });
+  });
+
+  describe('auth refresh on 401', () => {
+    it('automatically refreshes token on 401 and retries flush', async () => {
+      const point = makePoint();
+      (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify([point]));
+      (AsyncStorage.setItem as any).mockResolvedValue(undefined);
+
+      const SecureStore = await import('expo-secure-store');
+      (SecureStore as any).getItemAsync = vi.fn().mockResolvedValue(
+        JSON.stringify({ accessToken: 'expired-token', refreshToken: 'valid-refresh' }),
+      );
+      (SecureStore as any).setItemAsync = vi.fn().mockResolvedValue(undefined);
+
+      let callCount = 0;
+      global.fetch = vi.fn().mockImplementation((url: string) => {
+        callCount++;
+        if (url.includes('/api/auth/refresh')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ accessToken: 'new-access', refreshToken: 'new-refresh' }),
+          });
+        }
+        if (callCount === 1) {
+          // First flush call returns 401
+          return Promise.resolve({ ok: false, status: 401 });
+        }
+        // Second flush call with new token succeeds
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ acceptedClientIds: [point.localId] }),
+        });
+      });
+
+      const result = await flushManager.flushQueuedLocationsGuarded('http://api.local');
+
+      expect(result).toBe(1);
+      expect((SecureStore as any).setItemAsync).toHaveBeenCalledWith(
+        'tracker_driver_session',
+        expect.stringContaining('new-access'),
+      );
+    });
   });
 
   describe('single-flight', () => {

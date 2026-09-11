@@ -52,7 +52,31 @@ export async function flushQueuedLocationsGuarded(apiBaseUrl: string): Promise<n
     if (!value) return 0;
     const session = JSON.parse(value) as any;
     if (!session?.accessToken) return 0;
-    return await flushQueuedLocations(apiBaseUrl, session.accessToken);
+
+    let flushed = await flushQueuedLocations(apiBaseUrl, session.accessToken);
+    // If response was 401 unauthorized (-1), attempt refresh and retry
+    if (flushed === -1 && session.refreshToken) {
+      try {
+        const refreshResp = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: session.refreshToken }),
+        });
+        if (refreshResp.ok) {
+          const newTokens = await refreshResp.json();
+          const updatedSession = {
+            ...session,
+            accessToken: newTokens.accessToken,
+            refreshToken: newTokens.refreshToken,
+          };
+          await (SecureStore as any).setItemAsync(SESSION_KEY, JSON.stringify(updatedSession));
+          flushed = await flushQueuedLocations(apiBaseUrl, updatedSession.accessToken);
+        }
+      } catch {
+        // Refresh failed
+      }
+    }
+    return Math.max(0, flushed);
   } finally {
     flushing = false;
   }
@@ -90,8 +114,24 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
     });
 
     if (!response.ok) {
-      // preserve batch with increased retry
-      const failed = batch.map((point) => ({ ...point, retryCount: point.retryCount + 1, nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1) }));
+      if (response.status === 401) {
+        return -1;
+      }
+      if (response.status === 409) {
+        // Shift not active: discard stale points to prevent eternal queue jamming
+        const batchIds = new Set(batch.map((p) => p.localId));
+        const persisted = queue.filter((p) => !batchIds.has(p.localId));
+        await writeQueue(persisted);
+        return 0;
+      }
+      // preserve batch with increased retry, dropping if exceeded 8 retries
+      const failed = batch
+        .filter((point) => point.retryCount < 8)
+        .map((point) => ({
+          ...point,
+          retryCount: point.retryCount + 1,
+          nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
+        }));
       const batchIds = new Set(batch.map((p) => p.localId));
       const persisted = queue.filter((p) => !batchIds.has(p.localId)).concat(failed);
       await writeQueue(persisted);

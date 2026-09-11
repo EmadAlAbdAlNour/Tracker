@@ -45,7 +45,9 @@ router.get("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Authen
         .offset(offset),
       db
         .select({ count: sql<number>`count(*)::int` })
-        .from(devicesTable),
+        .from(devicesTable)
+        .innerJoin(driversTable, eq(devicesTable.driverId, driversTable.id))
+        .innerJoin(usersTable, eq(driversTable.userId, usersTable.id)),
     ]);
 
     res.status(200).json({

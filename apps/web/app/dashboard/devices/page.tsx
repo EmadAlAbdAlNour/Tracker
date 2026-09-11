@@ -18,7 +18,7 @@ import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo } from '@/lib/i18n';
 
 export default function DevicesPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, session } = useAuth();
   const [devices, setDevices] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +153,7 @@ export default function DevicesPage() {
                     </div>
                   </div>
 
-                  {device.authorized && (
+                  {device.authorized && session?.user?.role === 'ADMIN' && (
                     <button
                       type="button"
                       onClick={() => setTargetDevice(device)}

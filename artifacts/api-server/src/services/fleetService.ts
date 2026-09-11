@@ -1,7 +1,7 @@
 import { db, driversTable, usersTable, shiftsTable, devicesTable, locationPointsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { getRestaurantSettings, getAlertSettings } from "./settingsService";
-import { calculateDistanceMeters } from "./alertService";
+import { calculateDistanceMeters, evaluateDriverOfflineAlert } from "./alertService";
 
 export interface FleetDriverLiveStatus {
   driverId: string;
@@ -179,12 +179,29 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
     if (hasActiveShift) activeShiftsCount++;
 
     let isOnline = false;
+    let lastSeenDate: Date | null = null;
     if (device?.lastSeen) {
-      const lastSeenTime = new Date(device.lastSeen).getTime();
-      isOnline = now - lastSeenTime <= offlineThresholdMs;
+      lastSeenDate = new Date(device.lastSeen);
+      isOnline = now - lastSeenDate.getTime() <= offlineThresholdMs;
     } else if (location?.recorded_at) {
-      const recordedTime = new Date(location.recorded_at).getTime();
-      isOnline = now - recordedTime <= offlineThresholdMs;
+      lastSeenDate = new Date(location.recorded_at);
+      isOnline = now - lastSeenDate.getTime() <= offlineThresholdMs;
+    }
+
+    // Evaluate offline alert for active drivers
+    if (hasActiveShift) {
+      const offlineMinutes = (!isOnline && lastSeenDate)
+        ? Math.floor((now - lastSeenDate.getTime()) / 60000)
+        : (alertSettings.offlineGraceMinutes || 5);
+
+      evaluateDriverOfflineAlert({
+        driverId: row.driverId,
+        driverName: row.userName,
+        shiftId: shift?.id,
+        isOnline,
+        offlineDurationMinutes: offlineMinutes,
+        lastSeen: lastSeenDate,
+      }).catch(() => {});
     }
 
     let isInsideGeofence = false;
@@ -210,7 +227,7 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
       offlineCount++;
     } else {
       onlineCount++;
-      if (isInsideGeofence) {
+      if (isInsideGeofence || !location) {
         operationalStatus = "AT_RESTAURANT";
         atRestaurantCount++;
       } else {

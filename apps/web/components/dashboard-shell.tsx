@@ -37,8 +37,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.replace('/login');
+      return;
     }
-  }, [isLoading, isAuthenticated, router]);
+    if (!isLoading && session) {
+      if (session.user.role === 'CALL_CENTER' && (pathname.startsWith('/dashboard/users') || pathname.startsWith('/dashboard/settings') || pathname.startsWith('/dashboard/devices'))) {
+        router.replace('/dashboard');
+      } else if (session.user.role === 'MANAGER' && pathname.startsWith('/dashboard/users')) {
+        router.replace('/dashboard');
+      }
+    }
+  }, [isLoading, isAuthenticated, session, pathname, router]);
 
   // Synchronize document dir and lang
   useEffect(() => {
@@ -125,14 +133,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     return null;
   }
 
+  const userRole = session.user.role;
   const navItems = [
-    { href: '/dashboard', label: t('nav.overview'), icon: LayoutDashboard },
-    { href: '/dashboard/drivers', label: t('nav.drivers'), icon: BriefcaseBusiness },
-    { href: '/dashboard/devices', label: t('nav.devices'), icon: ShieldCheck },
-    { href: '/dashboard/users', label: t('nav.users'), icon: Users },
-    { href: '/dashboard/map', label: t('nav.map'), icon: MapPinned },
-    { href: '/dashboard/settings', label: t('nav.settings'), icon: Settings },
-  ];
+    { href: '/dashboard', label: t('nav.overview'), icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
+    { href: '/dashboard/drivers', label: t('nav.drivers'), icon: BriefcaseBusiness, roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
+    { href: '/dashboard/devices', label: t('nav.devices'), icon: ShieldCheck, roles: ['ADMIN', 'MANAGER'] },
+    { href: '/dashboard/users', label: t('nav.users'), icon: Users, roles: ['ADMIN'] },
+    { href: '/dashboard/map', label: t('nav.map'), icon: MapPinned, roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
+    { href: '/dashboard/settings', label: t('nav.settings'), icon: Settings, roles: ['ADMIN', 'MANAGER'] },
+  ].filter((item) => item.roles.includes(userRole));
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
