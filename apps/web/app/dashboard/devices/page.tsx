@@ -14,9 +14,11 @@ import {
 } from 'lucide-react';
 import { listDevices, resetDriverDevice, type DeviceRecord } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo } from '@/lib/i18n';
 
 export default function DevicesPage() {
+  const { isAuthenticated } = useAuth();
   const [devices, setDevices] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,22 +28,33 @@ export default function DevicesPage() {
   const [resetLoading, setResetLoading] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
-  async function loadData() {
+  async function loadData(isMounted = true) {
     setLoading(true);
     try {
       const res = await listDevices(1, 100);
-      setDevices(res.items);
-      setError(null);
+      if (isMounted) {
+        setDevices(res.items);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load devices');
+      if (isMounted) {
+        setError(err instanceof Error ? err.message : 'Failed to load devices');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!isAuthenticated) return;
+    let isMounted = true;
+    loadData(isMounted);
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated]);
 
   const handleReset = async () => {
     if (!targetDevice) return;
@@ -66,7 +79,7 @@ export default function DevicesPage() {
         action={
           <button
             type="button"
-            onClick={loadData}
+            onClick={() => loadData()}
             title={t('common.refresh')}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
           >

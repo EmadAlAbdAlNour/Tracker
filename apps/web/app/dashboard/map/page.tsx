@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   BatteryCharging,
   BatteryWarning,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { getLiveFleetStatus, type LiveFleetResponse, type FleetDriverLiveStatus } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo, isRtl } from '@/lib/i18n';
 
 const LeafletMap = dynamic(
@@ -211,32 +212,49 @@ const LeafletMap = dynamic(
 );
 
 export default function MapPage() {
+  const { isAuthenticated } = useAuth();
   const [fleet, setFleet] = useState<LiveFleetResponse | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  async function loadData(showLoading = false) {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadData = useCallback(async (showLoading = false) => {
+    if (!isAuthenticated) return;
     if (showLoading) setLoading(true);
     setRefreshing(true);
     try {
       const data = await getLiveFleetStatus();
-      setFleet(data);
-      setError(null);
+      if (mountedRef.current) {
+        setFleet(data);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load fleet map');
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load fleet map');
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     loadData(true);
     const interval = setInterval(() => loadData(false), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated, loadData]);
 
   return (
     <div>

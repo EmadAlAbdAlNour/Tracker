@@ -17,9 +17,11 @@ import {
 } from 'lucide-react';
 import { listUsers, createUser, updateUser, deactivateUser, type SessionUser, type Role } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, isRtl } from '@/lib/i18n';
 
 export default function UsersPage() {
+  const { isAuthenticated } = useAuth();
   const [users, setUsers] = useState<SessionUser[]>([]);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
@@ -46,22 +48,33 @@ export default function UsersPage() {
     active: true,
   });
 
-  async function loadData() {
+  async function loadData(isMounted = true) {
     setLoading(true);
     try {
       const res = await listUsers({ page: 1, limit: 100 });
-      setUsers(res.items);
-      setError(null);
+      if (isMounted) {
+        setUsers(res.items);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load users');
+      if (isMounted) {
+        setError(err instanceof Error ? err.message : 'Failed to load users');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!isAuthenticated) return;
+    let isMounted = true;
+    loadData(isMounted);
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,7 +209,7 @@ export default function UsersPage() {
 
           <button
             type="button"
-            onClick={loadData}
+            onClick={() => loadData()}
             title={t('common.refresh')}
             className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 shadow-sm"
           >

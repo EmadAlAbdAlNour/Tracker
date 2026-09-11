@@ -20,9 +20,11 @@ import {
   type AlertSettings,
 } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, getLocale, setStoredLocale, formatWesternNumber, isRtl } from '@/lib/i18n';
 
 export default function SettingsPage() {
+  const { isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'alerts'>('restaurant');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,6 +60,9 @@ export default function SettingsPage() {
   const [currentLocale, setCurrentLocale] = useState(getLocale());
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+    let isMounted = true;
+
     async function load() {
       setLoading(true);
       try {
@@ -65,17 +70,26 @@ export default function SettingsPage() {
           getRestaurantSettings(),
           getAlertSettings(),
         ]);
-        setRestaurant(rSettings);
-        setAlerts(aSettings);
+        if (isMounted) {
+          setRestaurant(rSettings);
+          setAlerts(aSettings);
+        }
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to load settings');
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : 'Failed to load settings');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
     load();
-  }, []);
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated]);
 
   const handleLanguageChange = (loc: 'ar' | 'en') => {
     setStoredLocale(loc);

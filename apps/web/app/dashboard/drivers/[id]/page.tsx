@@ -29,9 +29,11 @@ import {
   type LocationPoint,
 } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo, isRtl } from '@/lib/i18n';
 
 export default function DriverDetailsPage() {
+  const { isAuthenticated } = useAuth();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const driverId = params.id;
@@ -47,7 +49,7 @@ export default function DriverDetailsPage() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
 
-  async function loadAll() {
+  async function loadAll(isMounted = true) {
     setLoading(true);
     try {
       const [driverData, shiftData, locationData] = await Promise.all([
@@ -55,22 +57,33 @@ export default function DriverDetailsPage() {
         getDriverHistory(driverId, 1, 10).catch(() => ({ items: [], total: 0, page: 1, limit: 10 })),
         getDriverLocations(driverId, 1, 10).catch(() => ({ items: [], total: 0, page: 1, limit: 10 })),
       ]);
-      setDriver(driverData);
-      setShifts(shiftData.items);
-      setLocations(locationData.items);
-      setError(null);
+      if (isMounted) {
+        setDriver(driverData);
+        setShifts(shiftData.items);
+        setLocations(locationData.items);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load driver details');
+      if (isMounted) {
+        setError(err instanceof Error ? err.message : 'Failed to load driver details');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+    let isMounted = true;
     if (driverId) {
-      loadAll();
+      loadAll(isMounted);
     }
-  }, [driverId]);
+    return () => {
+      isMounted = false;
+    };
+  }, [driverId, isAuthenticated]);
 
   const handleResetDevice = async () => {
     setResetLoading(true);
@@ -327,7 +340,7 @@ export default function DriverDetailsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600 font-mono">
-                      {formatWesternNumber(new Date(shift.startedAt).toLocaleString('en-US'))}
+                      {formatWesternNumber(new Date(shift.startedAt || shift.startTime || Date.now()).toLocaleString('en-US'))}
                     </td>
                     <td className="px-5 py-3 text-slate-600 font-mono">
                       {shift.endedAt

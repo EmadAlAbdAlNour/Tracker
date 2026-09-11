@@ -15,9 +15,11 @@ import {
 } from 'lucide-react';
 import { listDrivers, createDriver, type DriverSummary } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, isRtl } from '@/lib/i18n';
 
 export default function DriversPage() {
+  const { isAuthenticated } = useAuth();
   const [drivers, setDrivers] = useState<DriverSummary[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -37,22 +39,33 @@ export default function DriversPage() {
     active: true,
   });
 
-  async function loadData() {
+  async function loadData(isMounted = true) {
     setLoading(true);
     try {
       const res = await listDrivers(1, 100);
-      setDrivers(res.items);
-      setError(null);
+      if (isMounted) {
+        setDrivers(res.items);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load drivers');
+      if (isMounted) {
+        setError(err instanceof Error ? err.message : 'Failed to load drivers');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!isAuthenticated) return;
+    let isMounted = true;
+    loadData(isMounted);
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated]);
 
   const handleCreateDriver = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,7 +167,7 @@ export default function DriversPage() {
 
           <button
             type="button"
-            onClick={loadData}
+            onClick={() => loadData()}
             title={t('common.refresh')}
             className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 shadow-sm"
           >

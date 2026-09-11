@@ -922,7 +922,11 @@ export async function listShiftsForDriver(driverId: string, options?: { status?:
   ]);
 
   const total = Number(countResult[0]?.count ?? 0);
-  return { items, total };
+  const normalizedItems = items.map((shift) => ({
+    ...shift,
+    startTime: shift.startedAt ? new Date(shift.startedAt).toISOString() : null,
+  }));
+  return { items: normalizedItems, total };
 }
 
 export async function listDriverShiftsForUser(userId: string, options?: { page?: number; limit?: number; status?: "ACTIVE" | "COMPLETED"; from?: string; to?: string }) {

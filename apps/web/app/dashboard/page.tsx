@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -19,34 +19,52 @@ import {
 } from 'lucide-react';
 import { getLiveFleetStatus, type LiveFleetResponse, type FleetDriverLiveStatus } from '@/lib/api';
 import { PageHeader, StatCard } from '@/components/dashboard-shell';
+import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo, isRtl } from '@/lib/i18n';
 
 export default function DashboardOverviewPage() {
+  const { isAuthenticated } = useAuth();
   const [fleet, setFleet] = useState<LiveFleetResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  async function loadData(showLoading = false) {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadData = useCallback(async (showLoading = false) => {
+    if (!isAuthenticated) return;
     if (showLoading) setLoading(true);
     setRefreshing(true);
     try {
       const data = await getLiveFleetStatus();
-      setFleet(data);
-      setError(null);
+      if (mountedRef.current) {
+        setFleet(data);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load fleet status');
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load fleet status');
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     loadData(true);
     const interval = setInterval(() => loadData(false), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated, loadData]);
 
   if (loading && !fleet) {
     return (

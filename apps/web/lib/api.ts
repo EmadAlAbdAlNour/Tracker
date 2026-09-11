@@ -95,6 +95,7 @@ export type ShiftRecord = {
   id: string;
   driverId: string;
   startedAt: string;
+  startTime?: string;
   endedAt: string | null;
   status: 'ACTIVE' | 'COMPLETED';
   createdAt: string;
@@ -120,6 +121,7 @@ export type FleetDriverLiveStatus = {
     id: string;
     status: 'ACTIVE' | 'COMPLETED';
     startedAt: string;
+    startTime?: string;
     durationMinutes: number;
   } | null;
   location: {

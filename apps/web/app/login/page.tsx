@@ -9,12 +9,18 @@ import { t, getLocale, setStoredLocale } from '@/lib/i18n';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setTokens } = useAuth();
+  const { setTokens, isAuthenticated, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentLocale, setCurrentLocale] = useState(getLocale());
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace('/dashboard');
+    }
+  }, [isLoading, isAuthenticated, router]);
 
   useEffect(() => {
     const handleLocaleChange = () => {

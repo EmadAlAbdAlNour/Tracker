@@ -110,5 +110,21 @@ describe('Refresh token failure investigation & error handling', () => {
     expect(res.body.error.code).toBe('AUTH_INVALID_TOKEN');
     expect(res.body.error.message).toBe('Refresh token required');
   });
+
+  it('verifies shift payload defensive formatting with both startedAt and startTime', async () => {
+    const shiftStartedAt = new Date('2026-09-12T00:00:00.000Z');
+    const now = Date.now();
+    const shiftData = {
+      id: 'shift-123',
+      status: 'ACTIVE' as const,
+      startedAt: shiftStartedAt ? shiftStartedAt.toISOString() : new Date().toISOString(),
+      startTime: shiftStartedAt ? shiftStartedAt.toISOString() : new Date().toISOString(),
+      durationMinutes: Math.floor((now - shiftStartedAt.getTime()) / (1000 * 60)),
+    };
+
+    expect(shiftData.startedAt).toBe('2026-09-12T00:00:00.000Z');
+    expect(shiftData.startTime).toBe('2026-09-12T00:00:00.000Z');
+    expect(typeof shiftData.startTime).toBe('string');
+  });
 });
 

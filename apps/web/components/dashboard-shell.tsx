@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Info,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { logoutAdmin, listNotifications, markNotificationRead, markAllNotificationsRead, type NotificationItem } from '@/lib/api';
@@ -27,17 +28,17 @@ import { t, getLocale, setStoredLocale, formatWesternNumber, formatTimeAgo } fro
 export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { session, isAuthenticated, logout } = useAuth();
+  const { session, isAuthenticated, isLoading, logout } = useAuth();
   const [currentLocale, setCurrentLocale] = useState(getLocale());
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isLoading && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [isLoading, isAuthenticated, router]);
 
   // Synchronize document dir and lang
   useEffect(() => {
@@ -111,6 +112,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       }
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <RefreshCw className="h-8 w-8 animate-spin text-emerald-500" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated || !session) {
     return null;

@@ -232,14 +232,16 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
       lowBatteryCount++;
     }
 
+    const shiftStartedAt = shift?.startedAt ? new Date(shift.startedAt) : null;
     const shiftData = shift
       ? {
           id: shift.id,
           status: shift.status as "ACTIVE" | "COMPLETED",
-          startedAt: shift.startedAt.toISOString(),
-          durationMinutes: Math.floor(
-            (now - new Date(shift.startedAt).getTime()) / (1000 * 60),
-          ),
+          startedAt: shiftStartedAt ? shiftStartedAt.toISOString() : new Date().toISOString(),
+          startTime: shiftStartedAt ? shiftStartedAt.toISOString() : new Date().toISOString(),
+          durationMinutes: shiftStartedAt
+            ? Math.floor((now - shiftStartedAt.getTime()) / (1000 * 60))
+            : 0,
         }
       : null;
 
