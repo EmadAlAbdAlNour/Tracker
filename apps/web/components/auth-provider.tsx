@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { clearSession, getStoredSession, saveSession, type Session } from '@/lib/api';
+import { clearSession, getStoredSession, saveSession, SESSION_CHANGE_EVENT, type Session } from '@/lib/api';
 
 type AuthContextValue = {
   session: Session | null;
@@ -18,6 +18,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setSessionState(getStoredSession());
+
+    const handleSessionChange = (event: Event) => {
+      const customEvent = event as CustomEvent<Session | null>;
+      setSessionState(customEvent.detail ?? getStoredSession());
+    };
+
+    window.addEventListener(SESSION_CHANGE_EVENT, handleSessionChange);
+    return () => {
+      window.removeEventListener(SESSION_CHANGE_EVENT, handleSessionChange);
+    };
   }, []);
 
   const setSession = (nextSession: Session | null) => {

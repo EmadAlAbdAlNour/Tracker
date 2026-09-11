@@ -225,6 +225,7 @@ export type ErrorPayload = {
 };
 
 const STORAGE_KEY = 'tracker-admin-session';
+export const SESSION_CHANGE_EVENT = 'tracker_session_change';
 
 export function getApiBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
@@ -244,12 +245,14 @@ export function getStoredSession(): Session | null {
 export function saveSession(session: Session): void {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    window.dispatchEvent(new CustomEvent(SESSION_CHANGE_EVENT, { detail: session }));
   }
 }
 
 export function clearSession(): void {
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem(STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent(SESSION_CHANGE_EVENT, { detail: null }));
   }
 }
 
@@ -263,34 +266,46 @@ async function parseJson<T>(response: Response): Promise<T> {
   }
 }
 
-async function refreshSessionIfPossible(): Promise<Session | null> {
-  const existing = getStoredSession();
-  if (!existing?.refreshToken) return null;
+let activeRefreshPromise: Promise<Session | null> | null = null;
 
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/api/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: existing.refreshToken }),
-    });
+export async function refreshSessionIfPossible(): Promise<Session | null> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
+  }
 
-    if (!response.ok) {
+  activeRefreshPromise = (async () => {
+    const existing = getStoredSession();
+    if (!existing?.refreshToken) return null;
+
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: existing.refreshToken }),
+      });
+
+      if (!response.ok) {
+        clearSession();
+        return null;
+      }
+
+      const payload = (await parseJson<{ accessToken: string; refreshToken: string; user: SessionUser }>(response)) as {
+        accessToken: string;
+        refreshToken: string;
+        user: SessionUser;
+      };
+      const next = { accessToken: payload.accessToken, refreshToken: payload.refreshToken, user: payload.user };
+      saveSession(next);
+      return next;
+    } catch {
       clearSession();
       return null;
+    } finally {
+      activeRefreshPromise = null;
     }
+  })();
 
-    const payload = (await parseJson<{ accessToken: string; refreshToken: string; user: SessionUser }>(response)) as {
-      accessToken: string;
-      refreshToken: string;
-      user: SessionUser;
-    };
-    const next = { accessToken: payload.accessToken, refreshToken: payload.refreshToken, user: payload.user };
-    saveSession(next);
-    return next;
-  } catch {
-    clearSession();
-    return null;
-  }
+  return activeRefreshPromise;
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}, requireAuth = true): Promise<T> {

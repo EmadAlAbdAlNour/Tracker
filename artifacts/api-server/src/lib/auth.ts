@@ -4,7 +4,7 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { db, driversTable, refreshTokensTable, usersTable } from "@workspace/db";
 import { getEnv } from "../config/env";
-import { createError } from "./errors";
+import { createError, AppError } from "./errors";
 
 export type SafeUser = {
   id: string;
@@ -56,7 +56,12 @@ export function signRefreshToken(userId: string, role: string, jti: string): str
   });
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function getUserById(userId: string) {
+  if (!UUID_REGEX.test(userId)) {
+    return null;
+  }
   const rows = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   return rows[0] ?? null;
 }
@@ -71,16 +76,26 @@ export async function getUserByEmailOrPhone(value: string) {
 }
 
 export async function getDriverByUserId(userId: string) {
+  if (!UUID_REGEX.test(userId)) {
+    return null;
+  }
   const rows = await db.select().from(driversTable).where(eq(driversTable.userId, userId)).limit(1);
   return rows[0] ?? null;
 }
 
 export function getTokenPayload(token: string, secret: string): JwtPayload {
-  const payload = jwt.verify(token, secret) as JwtPayload;
-  if (!payload || typeof payload.sub !== "string") {
-    throw createError(401, "AUTH_INVALID_TOKEN", "Invalid token");
+  try {
+    const payload = jwt.verify(token, secret) as JwtPayload;
+    if (!payload || typeof payload.sub !== "string") {
+      throw createError(401, "AUTH_INVALID_TOKEN", "Invalid token");
+    }
+    return payload;
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw createError(401, "AUTH_INVALID_TOKEN", "Invalid or expired token");
   }
-  return payload;
 }
 
 export async function revokeRefreshTokenByHash(tokenHash: string): Promise<void> {
@@ -98,6 +113,9 @@ export async function storeRefreshToken(userId: string, rawRefreshToken: string,
 }
 
 export async function revokeUserRefreshTokens(userId: string): Promise<void> {
+  if (!UUID_REGEX.test(userId)) {
+    return;
+  }
   await db
     .update(refreshTokensTable)
     .set({ revokedAt: new Date() })
@@ -112,6 +130,9 @@ export async function revokeRefreshTokensByDevice(deviceId: string): Promise<voi
 }
 
 export async function findValidRefreshToken(rawToken: string, userId: string) {
+  if (!UUID_REGEX.test(userId)) {
+    return null;
+  }
   const hash = hashRefreshToken(rawToken);
   const rows = await db
     .select()
