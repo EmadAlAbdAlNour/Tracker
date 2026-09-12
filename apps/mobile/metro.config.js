@@ -5,6 +5,7 @@ const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
 const config = getDefaultConfig(projectRoot);
+config.projectRoot = projectRoot;
 
 // 1. Watch all files within the monorepo
 config.watchFolders = [monorepoRoot];
@@ -16,4 +17,3 @@ config.resolver.nodeModulesPaths = [
 ];
 
 module.exports = config;
-

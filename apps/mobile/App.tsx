@@ -29,7 +29,11 @@ import { flushQueuedLocationsGuarded } from './flushManager';
 const DEVICE_ID_KEY = 'tracker_device_id';
 const SESSION_KEY = 'tracker_driver_session';
 const STACK = createNativeStackNavigator<any>();
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:3000';
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'production'
+    ? 'https://tracker-alpha-puce.vercel.app'
+    : 'http://10.0.2.2:3000');
 
 export type Session = {
   accessToken: string;
