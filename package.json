@@ -4,6 +4,7 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "node ./scripts/preinstall-check.js",
+    "postinstall": "node ./scripts/patch-expo-modules-core.cjs",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./apps/**\" --filter \"./scripts\" --if-present run typecheck",

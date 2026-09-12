@@ -47,11 +47,15 @@ export type Session = {
 // Western numerals formatter (0-9)
 function formatNumber(value: number | string | null | undefined): string {
   if (value == null) return '';
-  const num = typeof value === 'string' ? Number(value) : value;
-  if (isNaN(num)) {
-    return String(value).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+  if (typeof value === 'number') {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
   }
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
+  const str = String(value).replace(/[٠-٩]/g, (d) => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)] ?? d);
+  const num = Number(str);
+  if (!isNaN(num)) {
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
+  }
+  return str;
 }
 
 async function saveSession(session: Session): Promise<void> {

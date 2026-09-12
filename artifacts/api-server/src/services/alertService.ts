@@ -117,9 +117,14 @@ export async function evaluateDriverAlerts(ctx: EvaluateAlertContext) {
           const stoppedDurationMinutes = (now.getTime() - stoppedSince) / (1000 * 60);
 
           if (stoppedDurationMinutes >= alertSettings.maxStopDurationMinutes) {
+            const isFirstAlert = stopState.stateData !== "ALERTED";
             const timeSinceLastNotification = now.getTime() - new Date(stopState.lastNotifiedAt).getTime();
-            if (timeSinceLastNotification >= NOTIFICATION_COOLDOWN_MS) {
-              await updateAlertStateNotificationTime(ctx.driverId, "STOP_EXTENDED");
+            if (isFirstAlert || timeSinceLastNotification >= NOTIFICATION_COOLDOWN_MS) {
+              if (isFirstAlert) {
+                await updateAlertState(ctx.driverId, "STOP_EXTENDED", "ALERTED", stopState.triggeredAt);
+              } else {
+                await updateAlertStateNotificationTime(ctx.driverId, "STOP_EXTENDED");
+              }
               await createNotification({
                 type: "STOP_EXTENDED",
                 severity: "WARNING",
@@ -233,9 +238,14 @@ export async function evaluateDriverOfflineAlert(params: {
       if (!offlineState) {
         await updateAlertState(params.driverId, "DRIVER_OFFLINE", "OFFLINE", params.lastSeen ?? now);
       } else {
+        const isFirstAlert = offlineState.stateData !== "ALERTED";
         const timeSinceLastNotif = now.getTime() - new Date(offlineState.lastNotifiedAt).getTime();
-        if (timeSinceLastNotif >= NOTIFICATION_COOLDOWN_MS) {
-          await updateAlertStateNotificationTime(params.driverId, "DRIVER_OFFLINE");
+        if (isFirstAlert || timeSinceLastNotif >= NOTIFICATION_COOLDOWN_MS) {
+          if (isFirstAlert) {
+            await updateAlertState(params.driverId, "DRIVER_OFFLINE", "ALERTED", offlineState.triggeredAt);
+          } else {
+            await updateAlertStateNotificationTime(params.driverId, "DRIVER_OFFLINE");
+          }
           const driverName = params.driverName ?? "السائق";
           const duration = Math.round(params.offlineDurationMinutes ?? alertSettings.offlineGraceMinutes);
           await createNotification({

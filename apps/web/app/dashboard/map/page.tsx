@@ -5,64 +5,168 @@ import Link from 'next/link';
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   BatteryCharging,
-  BatteryWarning,
   Car,
-  Layers,
+  Compass,
   MapPin,
   PauseCircle,
   Radio,
   RefreshCw,
+  Search,
   Store,
+  User,
 } from 'lucide-react';
 import { getLiveFleetStatus, type LiveFleetResponse, type FleetDriverLiveStatus } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
 import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, formatTimeAgo, isRtl } from '@/lib/i18n';
 
+interface VisualInfo {
+  color: string;
+  fillColor: string;
+  radius: number;
+  weight: number;
+  opacity: number;
+  freshness: 'LIVE' | 'RECENT' | 'STALE';
+  statusLabel: string;
+}
+
+function getDriverVisuals(driver: FleetDriverLiveStatus): VisualInfo {
+  const recordedAt = driver.location?.recordedAt;
+  const ageMs = recordedAt ? Date.now() - new Date(recordedAt).getTime() : Infinity;
+
+  let freshness: 'LIVE' | 'RECENT' | 'STALE' = 'STALE';
+  if (ageMs <= 2 * 60 * 1000) {
+    freshness = 'LIVE';
+  } else if (ageMs <= 5 * 60 * 1000) {
+    freshness = 'RECENT';
+  } else {
+    freshness = 'STALE';
+  }
+
+  let color = '#94a3b8'; // slate
+  let fillColor = '#cbd5e1';
+  let statusLabel = t('overview.offline');
+
+  switch (driver.operationalStatus) {
+    case 'MOVING':
+      color = '#059669'; // emerald-600
+      fillColor = '#10b981'; // emerald-500
+      statusLabel = t('overview.moving');
+      break;
+    case 'STOPPED':
+      color = '#d97706'; // amber-600
+      fillColor = '#f59e0b'; // amber-500
+      statusLabel = t('overview.stopped');
+      break;
+    case 'AT_RESTAURANT':
+      color = '#0284c7'; // sky-600
+      fillColor = '#38bdf8'; // sky-400
+      statusLabel = t('overview.atRestaurant');
+      break;
+    case 'OFFLINE':
+    default:
+      color = '#64748b'; // slate-500
+      fillColor = '#94a3b8'; // slate-400
+      statusLabel = t('overview.offline');
+      break;
+  }
+
+  // Adjust marker size & stroke based on freshness
+  const radius = driver.operationalStatus === 'MOVING' ? 10 : 8;
+  const weight = freshness === 'LIVE' ? 3 : freshness === 'RECENT' ? 2 : 1;
+  const opacity = freshness === 'LIVE' ? 1.0 : freshness === 'RECENT' ? 0.8 : 0.5;
+
+  return {
+    color,
+    fillColor,
+    radius,
+    weight,
+    opacity,
+    freshness,
+    statusLabel,
+  };
+}
+
 const LeafletMap = dynamic(
   async () => {
     const { Circle, CircleMarker, MapContainer, Popup, TileLayer, useMap } = await import('react-leaflet');
 
-    // Component to auto-fit or center on restaurant/drivers
-    function MapRecenter({ center }: { center: [number, number] }) {
+    // Controls map pan/zoom without resetting every poll interval
+    function MapController({
+      center,
+      targetLocation,
+      recenterTrigger,
+      driverPanTrigger,
+    }: {
+      center: [number, number];
+      targetLocation: [number, number] | null;
+      recenterTrigger: number;
+      driverPanTrigger: number;
+    }) {
       const map = useMap();
+      const initialMounted = useRef(false);
+
+      // Recenter only on initial mount
       useEffect(() => {
-        map.setView(center, 14);
+        if (!initialMounted.current) {
+          map.setView(center, 14);
+          initialMounted.current = true;
+        }
       }, [center, map]);
+
+      // Handle user-requested recenter to restaurant
+      useEffect(() => {
+        if (recenterTrigger > 0) {
+          map.setView(center, 14, { animate: true });
+        }
+      }, [recenterTrigger, center, map]);
+
+      // Smoothly pan/zoom to selected driver ONLY when user explicitly triggers selection
+      useEffect(() => {
+        if (driverPanTrigger > 0 && targetLocation) {
+          map.setView(targetLocation, 16, { animate: true });
+        }
+      }, [driverPanTrigger, targetLocation, map]);
+
       return null;
     }
 
     return function MapInner({
       fleet,
       statusFilter,
+      selectedDriverId,
+      onSelectDriver,
+      recenterTrigger,
+      driverPanTrigger,
     }: {
       fleet: LiveFleetResponse;
       statusFilter: string;
+      selectedDriverId: string | null;
+      onSelectDriver: (driverId: string) => void;
+      recenterTrigger: number;
+      driverPanTrigger: number;
     }) {
-      const restaurantCenter: [number, number] = [
-        fleet.restaurant.latitude,
-        fleet.restaurant.longitude,
-      ];
+      const restaurantCenter = useMemo<[number, number]>(
+        () => [fleet.restaurant.latitude, fleet.restaurant.longitude],
+        [fleet.restaurant.latitude, fleet.restaurant.longitude],
+      );
 
-      const filteredDrivers = fleet.drivers.filter((d) => {
-        if (!d.location?.latitude || !d.location?.longitude) return false;
-        if (statusFilter === 'ALL') return true;
-        return d.operationalStatus === statusFilter;
-      });
+      const filteredDrivers = useMemo(() => {
+        return fleet.drivers.filter((d) => {
+          if (!d.location?.latitude || !d.location?.longitude) return false;
+          if (statusFilter === 'ALL') return true;
+          return d.operationalStatus === statusFilter;
+        });
+      }, [fleet.drivers, statusFilter]);
 
-      const getMarkerColor = (status: FleetDriverLiveStatus['operationalStatus']) => {
-        switch (status) {
-          case 'MOVING':
-            return '#10b981'; // emerald
-          case 'STOPPED':
-            return '#f59e0b'; // amber
-          case 'AT_RESTAURANT':
-            return '#0284c7'; // sky
-          case 'OFFLINE':
-          default:
-            return '#94a3b8'; // slate
+      const targetLocation = useMemo<[number, number] | null>(() => {
+        if (!selectedDriverId) return null;
+        const driver = fleet.drivers.find((d) => d.driverId === selectedDriverId);
+        if (driver?.location?.latitude && driver?.location?.longitude) {
+          return [driver.location.latitude, driver.location.longitude];
         }
-      };
+        return null;
+      }, [selectedDriverId, fleet.drivers]);
 
       return (
         <MapContainer
@@ -71,7 +175,12 @@ const LeafletMap = dynamic(
           scrollWheelZoom
           className="h-[620px] w-full rounded-2xl z-0"
         >
-          <MapRecenter center={restaurantCenter} />
+          <MapController
+            center={restaurantCenter}
+            targetLocation={targetLocation}
+            recenterTrigger={recenterTrigger}
+            driverPanTrigger={driverPanTrigger}
+          />
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution="&copy; OpenStreetMap contributors"
@@ -92,21 +201,30 @@ const LeafletMap = dynamic(
               />
               <CircleMarker
                 center={restaurantCenter}
-                radius={9}
+                radius={10}
                 pathOptions={{
                   color: '#ffffff',
                   fillColor: '#059669',
                   fillOpacity: 1,
-                  weight: 2,
+                  weight: 2.5,
                 }}
               >
                 <Popup>
-                  <div className="p-1 space-y-1 text-xs">
-                    <div className="font-bold text-slate-900 text-sm">
-                      {fleet.restaurant.name}
+                  <div className="p-1.5 space-y-1 text-xs">
+                    <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                      <Store className="h-4 w-4 text-emerald-600" />
+                      <span>{fleet.restaurant.name}</span>
                     </div>
                     <div className="text-slate-600">
-                      {t('settings.radius')}: {formatWesternNumber(fleet.restaurant.radiusMeters)} {t('map.meters')}
+                      {t('settings.radius')}:{' '}
+                      <strong className="font-mono text-slate-800">
+                        {formatWesternNumber(fleet.restaurant.radiusMeters)}
+                      </strong>{' '}
+                      {t('map.meters')}
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-mono">
+                      {formatWesternNumber(fleet.restaurant.latitude.toFixed(5))},{' '}
+                      {formatWesternNumber(fleet.restaurant.longitude.toFixed(5))}
                     </div>
                   </div>
                 </Popup>
@@ -118,43 +236,45 @@ const LeafletMap = dynamic(
           {filteredDrivers.map((driver) => {
             const lat = driver.location!.latitude;
             const lng = driver.location!.longitude;
-            const color = getMarkerColor(driver.operationalStatus);
+            const visuals = getDriverVisuals(driver);
+            const isSelected = driver.driverId === selectedDriverId;
 
             return (
               <CircleMarker
                 key={driver.driverId}
                 center={[lat, lng]}
-                radius={driver.operationalStatus === 'MOVING' ? 9 : 8}
+                radius={isSelected ? visuals.radius + 3 : visuals.radius}
+                eventHandlers={{
+                  click: () => onSelectDriver(driver.driverId),
+                }}
                 pathOptions={{
-                  color: '#ffffff',
-                  fillColor: color,
-                  fillOpacity: 0.95,
-                  weight: 2.5,
+                  color: isSelected ? '#1e293b' : '#ffffff',
+                  fillColor: visuals.fillColor,
+                  fillOpacity: visuals.opacity,
+                  weight: isSelected ? 3.5 : visuals.weight,
                 }}
               >
                 <Popup>
-                  <div className="p-1.5 space-y-2 text-xs min-w-[180px]">
+                  <div className="p-1.5 space-y-2 text-xs min-w-[200px]">
                     <div className="border-b border-slate-100 pb-1.5">
-                      <div className="font-bold text-slate-900 text-sm">{driver.driverName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 text-sm">{driver.driverName}</span>
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                          style={{
+                            backgroundColor: `${visuals.fillColor}22`,
+                            color: visuals.color,
+                          }}
+                        >
+                          {visuals.statusLabel}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                         {t('drivers.employeeId')}: {formatWesternNumber(driver.employeeId)}
                       </div>
                     </div>
 
                     <div className="space-y-1 text-slate-600">
-                      <div className="flex justify-between">
-                        <span>{t('drivers.shiftStatus')}:</span>
-                        <span className="font-bold" style={{ color }}>
-                          {driver.operationalStatus === 'MOVING'
-                            ? t('overview.moving')
-                            : driver.operationalStatus === 'STOPPED'
-                            ? t('overview.stopped')
-                            : driver.operationalStatus === 'AT_RESTAURANT'
-                            ? t('overview.atRestaurant')
-                            : t('overview.offline')}
-                        </span>
-                      </div>
-
                       {driver.location?.speed != null && (
                         <div className="flex justify-between">
                           <span>{t('map.speed')}:</span>
@@ -185,9 +305,11 @@ const LeafletMap = dynamic(
                         </div>
                       )}
 
-                      <div className="flex justify-between text-[10px] text-slate-400 pt-1">
+                      <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
                         <span>{t('map.lastUpdate')}:</span>
-                        <span>{formatTimeAgo(driver.location?.recordedAt)}</span>
+                        <span className="font-medium text-slate-600">
+                          {formatTimeAgo(driver.location?.recordedAt)}
+                        </span>
                       </div>
                     </div>
 
@@ -215,10 +337,19 @@ export default function MapPage() {
   const { isAuthenticated } = useAuth();
   const [fleet, setFleet] = useState<LiveFleetResponse | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
+  const [driverPanTrigger, setDriverPanTrigger] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+
+  const handleSelectDriver = useCallback((driverId: string) => {
+    setSelectedDriverId(driverId);
+    setDriverPanTrigger((prev) => prev + 1);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -256,6 +387,20 @@ export default function MapPage() {
     return () => clearInterval(interval);
   }, [isAuthenticated, loadData]);
 
+  // Filter drivers for the drawer list
+  const visibleDrivers = useMemo(() => {
+    if (!fleet) return [];
+    return fleet.drivers.filter((d) => {
+      const matchesFilter =
+        statusFilter === 'ALL' || d.operationalStatus === statusFilter;
+      const matchesSearch =
+        !searchQuery.trim() ||
+        d.driverName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.employeeId.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesFilter && matchesSearch;
+    });
+  }, [fleet, statusFilter, searchQuery]);
+
   return (
     <div>
       <PageHeader
@@ -263,14 +408,21 @@ export default function MapPage() {
         subtitle={t('map.subtitle')}
         action={
           <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 hidden sm:inline">
-              {t('overview.refreshing')}
-            </span>
+            <button
+              type="button"
+              onClick={() => setRecenterTrigger((prev) => prev + 1)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+              title={t('settings.restaurant')}
+            >
+              <Store className="h-3.5 w-3.5 text-emerald-600" />
+              <span>{t('settings.restaurant')}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => loadData(false)}
               disabled={refreshing}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
             >
               <RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${refreshing ? 'animate-spin' : ''}`} />
               <span>{t('common.refresh')}</span>
@@ -340,10 +492,115 @@ export default function MapPage() {
       )}
 
       {fleet && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm overflow-hidden">
-          <LeafletMap fleet={fleet} statusFilter={statusFilter} />
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Main Map View */}
+          <div className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm overflow-hidden">
+            <LeafletMap
+              fleet={fleet}
+              statusFilter={statusFilter}
+              selectedDriverId={selectedDriverId}
+              onSelectDriver={handleSelectDriver}
+              recenterTrigger={recenterTrigger}
+              driverPanTrigger={driverPanTrigger}
+            />
+          </div>
+
+          {/* Live Drivers Side Panel */}
+          <div className="lg:col-span-1 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col h-[636px]">
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Car className="h-4 w-4 text-emerald-600" />
+                  <span>{t('nav.drivers')}</span>
+                </h3>
+                <span className="text-xs font-bold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">
+                  {formatWesternNumber(visibleDrivers.length)}
+                </span>
+              </div>
+
+              {/* Driver search inside panel */}
+              <div className="relative">
+                <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('common.search')}
+                  className="w-full rounded-xl border border-slate-200 py-1.5 pe-3 ps-8 text-xs text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Drivers scroll list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 pe-1 space-y-2">
+              {visibleDrivers.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  {t('drivers.noDrivers')}
+                </div>
+              ) : (
+                visibleDrivers.map((driver) => {
+                  const visuals = getDriverVisuals(driver);
+                  const isSelected = driver.driverId === selectedDriverId;
+
+                  return (
+                    <div
+                      key={driver.driverId}
+                      onClick={() => handleSelectDriver(driver.driverId)}
+                      className={`p-2.5 rounded-xl cursor-pointer transition border ${
+                        isSelected
+                          ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
+                          : 'border-transparent hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-slate-900 text-xs truncate max-w-[120px]">
+                          {driver.driverName}
+                        </span>
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                          style={{
+                            backgroundColor: `${visuals.fillColor}25`,
+                            color: visuals.color,
+                          }}
+                        >
+                          {visuals.statusLabel}
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] text-slate-500 font-mono mb-2 flex items-center justify-between">
+                        <span>{formatWesternNumber(driver.employeeId)}</span>
+                        {driver.location?.speed != null && (
+                          <span className="font-bold text-slate-700">
+                            {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        {driver.device?.batteryPercentage != null ? (
+                          <span className="flex items-center gap-1 font-medium text-slate-600">
+                            {driver.device.isCharging ? (
+                              <BatteryCharging className="h-3 w-3 text-emerald-600" />
+                            ) : null}
+                            {formatWesternNumber(driver.device.batteryPercentage)}%
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+
+                        <span className="text-[9px] text-slate-400">
+                          {formatTimeAgo(driver.location?.recordedAt)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
+

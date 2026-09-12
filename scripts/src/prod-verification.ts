@@ -34,7 +34,7 @@ async function runVerification() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       emailOrPhone: "admin.integration@tracker.local",
-      password: "AdminSecret123!",
+      password: "Password123!",
     }),
   });
   console.log("4. POST /api/auth/login (valid admin) =>", validLogin.status);

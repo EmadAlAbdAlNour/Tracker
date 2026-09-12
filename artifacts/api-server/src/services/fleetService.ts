@@ -219,8 +219,11 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
       isInsideGeofence = distanceToRestaurant <= restaurantSettings.radiusMeters;
     }
 
-    // Operational status calculation
+    // Operational status calculation with telemetry freshness check
     let operationalStatus: "AT_RESTAURANT" | "MOVING" | "STOPPED" | "OFFLINE" = "OFFLINE";
+
+    const locationAgeMs = location?.recorded_at ? (now - new Date(location.recorded_at).getTime()) : Infinity;
+    const isLocationFresh = locationAgeMs <= (5 * 60 * 1000); // 5 minutes freshness threshold
 
     if (!hasActiveShift || !isOnline) {
       operationalStatus = "OFFLINE";
@@ -231,7 +234,7 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
         operationalStatus = "AT_RESTAURANT";
         atRestaurantCount++;
       } else {
-        const speed = location?.speed != null ? Number(location.speed) : 0;
+        const speed = (isLocationFresh && location?.speed != null) ? Number(location.speed) : 0;
         if (speed >= 1.0) {
           operationalStatus = "MOVING";
           movingCount++;

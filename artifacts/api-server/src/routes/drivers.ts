@@ -314,7 +314,7 @@ router.get("/:id/tracking-status", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
-router.patch("/:id", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+router.patch("/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const driver = await getDriverById(driverId);

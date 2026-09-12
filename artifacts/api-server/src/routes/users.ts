@@ -52,7 +52,7 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
-router.get("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = userQuerySchema.parse(req.query);
     const result = await listUsers(query);
@@ -80,7 +80,7 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedReq
   }
 });
 
-router.get("/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/:id", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const user = await getUserById(id);
