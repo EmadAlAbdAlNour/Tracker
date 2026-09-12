@@ -69,12 +69,17 @@ export function t(key: string): string {
  */
 export function formatWesternNumber(value: number | string | null | undefined, options?: Intl.NumberFormatOptions): string {
   if (value == null) return '';
-  const num = typeof value === 'string' ? Number(value) : value;
-  if (isNaN(num)) {
-    // If it's a string, convert any Arabic-Indic digits to Western
-    return String(value).replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+  if (typeof value === 'string') {
+    const converted = value.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+    if (options) {
+      const num = Number(converted);
+      if (!isNaN(num)) {
+        return new Intl.NumberFormat('en-US', options).format(num);
+      }
+    }
+    return converted;
   }
-  return new Intl.NumberFormat('en-US', options ?? { maximumFractionDigits: 2 }).format(num);
+  return new Intl.NumberFormat('en-US', options ?? { maximumFractionDigits: 2 }).format(value);
 }
 
 export function formatTimeAgo(dateString: string | null | undefined): string {

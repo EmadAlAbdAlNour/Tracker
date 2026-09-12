@@ -282,7 +282,18 @@ export async function updateAlertState(
   triggeredAt?: Date,
 ) {
   const now = new Date();
-  const existing = await getAlertState(driverId, alertType);
+  const rows = await db
+    .select()
+    .from(alertStateTable)
+    .where(
+      and(
+        eq(alertStateTable.driverId, driverId),
+        eq(alertStateTable.alertType, alertType),
+      ),
+    )
+    .limit(1);
+
+  const existing = rows[0] ?? null;
 
   if (existing) {
     await db
@@ -291,7 +302,7 @@ export async function updateAlertState(
         stateData,
         resolvedAt: null,
         lastNotifiedAt: now,
-        ...(triggeredAt ? { triggeredAt } : {}),
+        triggeredAt: triggeredAt ?? now,
       })
       .where(eq(alertStateTable.id, existing.id));
   } else {
