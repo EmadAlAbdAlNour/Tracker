@@ -14,7 +14,7 @@ export interface CreateUserInput {
   name: string;
   email: string;
   phone?: string | null;
-  role: "ADMIN" | "MANAGER" | "CALL_CENTER" | "DRIVER";
+  role: "ADMIN" | "CALL_CENTER" | "DRIVER";
   password?: string;
   active?: boolean;
 }
@@ -23,7 +23,7 @@ export interface UpdateUserInput {
   name?: string;
   email?: string;
   phone?: string | null;
-  role?: "ADMIN" | "MANAGER" | "CALL_CENTER" | "DRIVER";
+  role?: "ADMIN" | "CALL_CENTER" | "DRIVER";
   password?: string;
   active?: boolean;
 }
@@ -97,8 +97,11 @@ export async function createUser(input: CreateUserInput) {
     throw createError(409, "PHONE_EXISTS", "A user with this phone number already exists");
   }
 
-  const rawPassword = input.password || "Password123!";
-  const passwordHash = await hashPassword(rawPassword);
+  if (!input.password) {
+    throw createError(400, "PASSWORD_REQUIRED", "A password is required to create a user");
+  }
+
+  const passwordHash = await hashPassword(input.password);
 
   const [user] = await db
     .insert(usersTable)

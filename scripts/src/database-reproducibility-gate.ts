@@ -210,7 +210,7 @@ async function run() {
     const userRoles = enumRes.rows.filter((r: any) => r.typname === "user_role").map((r: any) => r.enumlabel);
     const shiftStatuses = enumRes.rows.filter((r: any) => r.typname === "shift_status").map((r: any) => r.enumlabel);
 
-    if (!userRoles.includes("ADMIN") || !userRoles.includes("MANAGER") || !userRoles.includes("DRIVER") || !userRoles.includes("CALL_CENTER")) {
+    if (!userRoles.includes("ADMIN") || !userRoles.includes("DRIVER") || !userRoles.includes("CALL_CENTER")) {
       throw new Error(`user_role enum missing expected values: ${JSON.stringify(userRoles)}`);
     }
     if (!shiftStatuses.includes("ACTIVE") || !shiftStatuses.includes("COMPLETED")) {

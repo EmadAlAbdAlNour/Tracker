@@ -1,11 +1,20 @@
 ﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Battery from 'expo-battery';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { normalizeNetworkStatus } from './telemetry';
 
 export const LOCATION_TASK_NAME = 'tracker-driver-location-task';
 export const LOCATION_QUEUE_KEY = 'tracker_driver_location_queue';
 export const DEFAULT_LOCATION_INTERVAL_MS = Number(process.env.EXPO_PUBLIC_LOCATION_INTERVAL_MS ?? '20000');
 export const DEFAULT_LOCATION_DISTANCE_METERS = Number(process.env.EXPO_PUBLIC_LOCATION_DISTANCE_METERS ?? '25');
+
+export type DriverTelemetryState = {
+  batteryPercentage: number | null;
+  isCharging: boolean | null;
+  locationServicesEnabled: boolean | null;
+  networkStatus: string | null;
+};
 
 export type QueuedLocationPoint = {
   localId: string;
@@ -20,7 +29,56 @@ export type QueuedLocationPoint = {
   source: string;
   retryCount: number;
   nextRetryAt: number;
+  batteryPercentage?: number | null;
+  isCharging?: boolean | null;
+  locationServicesEnabled?: boolean | null;
+  networkStatus?: string | null;
 };
+
+export { normalizeNetworkStatus } from './telemetry';
+
+export async function collectDriverTelemetry(): Promise<DriverTelemetryState> {
+  let batteryPercentage: number | null = null;
+  let isCharging: boolean | null = null;
+  let locationServicesEnabled: boolean | null = null;
+  let networkStatus: string | null = 'unknown';
+
+  try {
+    const batteryLevel = await Battery.getBatteryLevelAsync();
+    batteryPercentage = Math.round(Math.max(0, Math.min(100, batteryLevel * 100)));
+  } catch {
+    batteryPercentage = null;
+  }
+
+  try {
+    const state = await Battery.getBatteryStateAsync();
+    isCharging = state === Battery.BatteryState.CHARGING || state === Battery.BatteryState.FULL;
+  } catch {
+    isCharging = null;
+  }
+
+  try {
+    const providerStatus = await Location.getProviderStatusAsync();
+    locationServicesEnabled = providerStatus?.locationServicesEnabled ?? null;
+  } catch {
+    locationServicesEnabled = null;
+  }
+
+  try {
+    const NetInfo = await import('@react-native-community/netinfo');
+    const state = await (NetInfo as any).default.fetch();
+    networkStatus = normalizeNetworkStatus(state?.type ?? null, state?.isConnected ?? null);
+  } catch {
+    networkStatus = 'unknown';
+  }
+
+  return {
+    batteryPercentage,
+    isCharging,
+    locationServicesEnabled,
+    networkStatus,
+  };
+}
 
 async function readQueue(): Promise<QueuedLocationPoint[]> {
   try {
@@ -52,6 +110,7 @@ export function getRetryDelayMs(retryCount: number): number {
 }
 
 export async function enqueueLocationPoint(payload: Omit<QueuedLocationPoint, 'retryCount' | 'nextRetryAt' | 'localId' | 'createdAt'> & { localId?: string; createdAt?: string }): Promise<QueuedLocationPoint[]> {
+  const telemetry = await collectDriverTelemetry();
   const item: QueuedLocationPoint = {
     localId: payload.localId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     latitude: payload.latitude,
@@ -65,6 +124,10 @@ export async function enqueueLocationPoint(payload: Omit<QueuedLocationPoint, 'r
     source: payload.source,
     retryCount: 0,
     nextRetryAt: Date.now(),
+    batteryPercentage: payload.batteryPercentage ?? telemetry.batteryPercentage,
+    isCharging: payload.isCharging ?? telemetry.isCharging,
+    locationServicesEnabled: payload.locationServicesEnabled ?? telemetry.locationServicesEnabled,
+    networkStatus: payload.networkStatus ?? telemetry.networkStatus,
   };
 
   // delegate to flushManager push to enforce cap policy
@@ -93,6 +156,7 @@ export function registerBackgroundLocationTask(): void {
       return;
     }
 
+    const telemetry = await collectDriverTelemetry();
     const toPush = [];
 
     for (const item of items) {
@@ -110,6 +174,10 @@ export function registerBackgroundLocationTask(): void {
         source: 'mobile',
         retryCount: 0,
         nextRetryAt: Date.now(),
+        batteryPercentage: telemetry.batteryPercentage,
+        isCharging: telemetry.isCharging,
+        locationServicesEnabled: telemetry.locationServicesEnabled,
+        networkStatus: telemetry.networkStatus,
       });
     }
 
@@ -192,6 +260,10 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
           heading: point.heading,
           recordedAt: point.recordedAt,
           source: point.source,
+          batteryPercentage: point.batteryPercentage ?? null,
+          isCharging: point.isCharging ?? null,
+          locationServicesEnabled: point.locationServicesEnabled ?? null,
+          networkStatus: point.networkStatus ?? null,
         }),
       });
 

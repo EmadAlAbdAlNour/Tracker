@@ -42,8 +42,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     if (!isLoading && session) {
       if (session.user.role === 'CALL_CENTER' && (pathname.startsWith('/dashboard/users') || pathname.startsWith('/dashboard/settings') || pathname.startsWith('/dashboard/devices'))) {
         router.replace('/dashboard');
-      } else if (session.user.role === 'MANAGER' && pathname.startsWith('/dashboard/users')) {
-        router.replace('/dashboard');
       }
     }
   }, [isLoading, isAuthenticated, session, pathname, router]);
@@ -135,12 +133,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   const userRole = session.user.role;
   const navItems = [
-    { href: '/dashboard', label: t('nav.overview'), icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
-    { href: '/dashboard/drivers', label: t('nav.drivers'), icon: BriefcaseBusiness, roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
-    { href: '/dashboard/devices', label: t('nav.devices'), icon: ShieldCheck, roles: ['ADMIN', 'MANAGER'] },
+    { href: '/dashboard', label: t('nav.overview'), icon: LayoutDashboard, roles: ['ADMIN', 'CALL_CENTER'] },
+    { href: '/dashboard/drivers', label: t('nav.drivers'), icon: BriefcaseBusiness, roles: ['ADMIN', 'CALL_CENTER'] },
+    { href: '/dashboard/devices', label: t('nav.devices'), icon: ShieldCheck, roles: ['ADMIN'] },
     { href: '/dashboard/users', label: t('nav.users'), icon: Users, roles: ['ADMIN'] },
-    { href: '/dashboard/map', label: t('nav.map'), icon: MapPinned, roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
-    { href: '/dashboard/settings', label: t('nav.settings'), icon: Settings, roles: ['ADMIN', 'MANAGER'] },
+    { href: '/dashboard/map', label: t('nav.map'), icon: MapPinned, roles: ['ADMIN', 'CALL_CENTER'] },
+    { href: '/dashboard/settings', label: t('nav.settings'), icon: Settings, roles: ['ADMIN'] },
   ].filter((item) => item.roles.includes(userRole));
 
   return (

@@ -16,7 +16,7 @@ const router = Router();
 const userQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  role: z.enum(["ADMIN", "MANAGER", "CALL_CENTER", "DRIVER"]).optional(),
+  role: z.enum(["ADMIN", "CALL_CENTER", "DRIVER"]).optional(),
   search: z.string().optional(),
 });
 
@@ -24,7 +24,7 @@ const userCreateSchema = z.object({
   name: z.string().trim().min(2).max(150),
   email: z.string().trim().email(),
   phone: z.string().trim().min(6).max(30).optional().or(z.literal("")),
-  role: z.enum(["ADMIN", "MANAGER", "CALL_CENTER", "DRIVER"]),
+  role: z.enum(["ADMIN", "CALL_CENTER", "DRIVER"]),
   password: z.string().min(8).max(200),
   active: z.boolean().default(true),
 });
@@ -33,7 +33,7 @@ const userUpdateSchema = z.object({
   name: z.string().trim().min(2).max(150).optional(),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().min(6).max(30).optional().or(z.literal("")),
-  role: z.enum(["ADMIN", "MANAGER", "CALL_CENTER", "DRIVER"]).optional(),
+  role: z.enum(["ADMIN", "CALL_CENTER", "DRIVER"]).optional(),
   password: z.string().min(8).max(200).optional(),
   active: z.boolean().optional(),
 });

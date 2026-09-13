@@ -36,7 +36,7 @@ const alertUpdateSchema = z.object({
 });
 
 // Restaurant settings
-router.get("/restaurant", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
+router.get("/restaurant", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
   try {
     const settings = await getRestaurantSettings();
     res.status(200).json({ settings });
@@ -45,7 +45,7 @@ router.get("/restaurant", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CEN
   }
 });
 
-router.put("/restaurant", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.put("/restaurant", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = restaurantUpdateSchema.parse(req.body);
     const settings = await updateRestaurantSettings(body, req.user!.id);
@@ -60,7 +60,7 @@ router.put("/restaurant", requireAuth, requireRole("ADMIN", "MANAGER"), async (r
 });
 
 // Alert settings
-router.get("/alerts", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
+router.get("/alerts", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
   try {
     const settings = await getAlertSettings();
     res.status(200).json({ settings });
@@ -69,7 +69,7 @@ router.get("/alerts", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"
   }
 });
 
-router.put("/alerts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.put("/alerts", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = alertUpdateSchema.parse(req.body);
     const settings = await updateAlertSettings(body);

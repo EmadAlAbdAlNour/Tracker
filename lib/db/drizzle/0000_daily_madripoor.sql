@@ -1,4 +1,4 @@
-CREATE TYPE "public"."user_role" AS ENUM('ADMIN', 'MANAGER', 'DRIVER');--> statement-breakpoint
+CREATE TYPE "public"."user_role" AS ENUM('ADMIN', 'DRIVER', 'CALL_CENTER');--> statement-breakpoint
 CREATE TABLE "devices" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"driver_id" uuid NOT NULL,

@@ -201,7 +201,7 @@ export default function DriverDetailsPage() {
               >
                 {driver.active ? t('drivers.active') : t('drivers.inactive')}
               </span>
-              {(session?.user?.role === 'ADMIN' || session?.user?.role === 'MANAGER') && (
+              {session?.user?.role === 'ADMIN' && (
                 <button
                   type="button"
                   onClick={handleToggleActive}

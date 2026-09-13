@@ -43,7 +43,7 @@ export default function UsersPage() {
     name: '',
     email: '',
     phone: '',
-    role: 'MANAGER',
+    role: 'ADMIN',
     password: '',
     active: true,
   });
@@ -94,7 +94,7 @@ export default function UsersPage() {
         name: '',
         email: '',
         phone: '',
-        role: 'MANAGER',
+        role: 'ADMIN',
         password: '',
         active: true,
       });
@@ -136,12 +136,6 @@ export default function UsersPage() {
           <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-700">
             <Shield className="h-3 w-3" />
             {t('users.adminRole')}
-          </span>
-        );
-      case 'MANAGER':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">
-            {t('users.managerRole')}
           </span>
         );
       case 'CALL_CENTER':
@@ -192,7 +186,7 @@ export default function UsersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {(['ALL', 'ADMIN', 'MANAGER', 'CALL_CENTER'] as const).map((r) => (
+          {(['ALL', 'ADMIN', 'CALL_CENTER'] as const).map((r) => (
             <button
               key={r}
               type="button"
@@ -207,8 +201,6 @@ export default function UsersPage() {
                 ? t('common.filter') + ': ' + (isRtl() ? 'الكل' : 'All')
                 : r === 'ADMIN'
                 ? t('users.adminRole')
-                : r === 'MANAGER'
-                ? t('users.managerRole')
                 : t('users.callCenterRole')}
             </button>
           ))}
@@ -386,7 +378,6 @@ export default function UsersPage() {
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 bg-white"
                   >
                     <option value="ADMIN">ADMIN</option>
-                    <option value="MANAGER">MANAGER</option>
                     <option value="CALL_CENTER">CALL_CENTER</option>
                   </select>
                 </div>

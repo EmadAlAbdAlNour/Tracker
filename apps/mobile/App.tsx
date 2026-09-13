@@ -25,6 +25,8 @@ import {
   stopBackgroundTracking,
 } from './location';
 import { flushQueuedLocationsGuarded } from './flushManager';
+import { resolveHomeRoute } from './roleRouting';
+import { SESSION_ROLES, isAllowedRole, isValidSession, type Session } from './session';
 
 const DEVICE_ID_KEY = 'tracker_device_id';
 const SESSION_KEY = 'tracker_driver_session';
@@ -34,19 +36,6 @@ const API_URL =
   (process.env.NODE_ENV === 'production'
     ? 'https://tracker-alpha-puce.vercel.app'
     : 'http://10.0.2.2:3000');
-
-export type Session = {
-  accessToken: string;
-  refreshToken: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    phone: string | null;
-    role: 'ADMIN' | 'MANAGER' | 'DRIVER' | 'CALL_CENTER';
-    active: boolean;
-  };
-};
 
 // Western numerals formatter (0-9)
 function formatNumber(value: number | string | null | undefined): string {
@@ -63,14 +52,23 @@ function formatNumber(value: number | string | null | undefined): string {
 }
 
 async function saveSession(session: Session): Promise<void> {
+  if (!isValidSession(session)) {
+    throw new Error('Invalid session payload');
+  }
   await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
 }
 
 async function readSession(): Promise<Session | null> {
   const value = await SecureStore.getItemAsync(SESSION_KEY);
   if (!value) return null;
+
   try {
-    return JSON.parse(value) as Session;
+    const parsed = JSON.parse(value) as unknown;
+    if (!isValidSession(parsed)) {
+      await clearSession().catch(() => undefined);
+      return null;
+    }
+    return parsed;
   } catch {
     await clearSession().catch(() => undefined);
     return null;
@@ -137,20 +135,21 @@ async function apiRequest<T>(
 
       if (refreshResponse.ok) {
         const refreshedPayload = await refreshResponse.json();
-        const nextSession: Session = {
-          accessToken: refreshedPayload.accessToken,
-          refreshToken: refreshedPayload.refreshToken,
-          user: refreshedPayload.user,
-        };
-        await saveSession(nextSession);
-        headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
-        response = await fetch(`${API_URL}${path}`, {
-          ...options,
-          headers,
-        });
-      }
+    if (!isValidSession(refreshedPayload)) {
+      await clearSession().catch(() => undefined);
+      throw new Error('Invalid refresh session payload');
+    }
+
+    const nextSession: Session = refreshedPayload;
+    await saveSession(nextSession);
+    headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  }
     } catch {
-      // refresh failure
+  // refresh failure
     }
   }
 
@@ -199,22 +198,25 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
         throw new Error(message);
       }
 
-      const session: Session = {
-        accessToken: payload.accessToken,
-        refreshToken: payload.refreshToken,
-        user: payload.user,
-      };
-
-      if (session.user.role !== 'DRIVER') {
+      const sessionCandidate = payload as Partial<Session>;
+      if (!isValidSession(sessionCandidate)) {
         Alert.alert(
           isArabic ? 'خطأ في الصلاحية' : 'Permission Error',
-          isArabic ? 'هذا التطبيق مخصص للسائقين فقط.' : 'This app is for drivers only.'
+          isArabic ? 'جلسة تسجيل الدخول غير صالحة.' : 'Invalid login session payload.'
         );
         return;
       }
 
-      await saveSession(session);
-      navigation.replace('DriverHome');
+      if (!isAllowedRole(sessionCandidate.user.role)) {
+        Alert.alert(
+          isArabic ? 'خطأ في الصلاحية' : 'Permission Error',
+          isArabic ? 'الدور غير مسموح به في هذا التطبيق.' : 'This role is not allowed in this app.'
+        );
+        return;
+      }
+
+      await saveSession(sessionCandidate);
+      navigation.replace(resolveHomeRoute(sessionCandidate.user.role));
     } catch (error) {
       Alert.alert(
         isArabic ? 'فشل تسجيل الدخول' : 'Login Failed',
@@ -297,6 +299,71 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   );
 }
 
+function OperatorHomeScreen({ navigation }: any): React.JSX.Element {
+  const [session, setSession] = useState<Session | null>(null);
+  const [isArabic, setIsArabic] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const current = await readSession();
+      if (!current || !isValidSession(current) || !isAllowedRole(current.user.role)) {
+        await clearSession().catch(() => undefined);
+        navigation.replace('Login');
+        return;
+      }
+      setSession(current);
+    })();
+  }, [navigation]);
+
+  const handleLogout = async () => {
+    const current = await readSession();
+    if (current?.refreshToken) {
+      fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: current.refreshToken }),
+      }).catch(() => undefined);
+    }
+    await clearSession();
+    navigation.replace('Login');
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.langSmallButton} onPress={() => setIsArabic(!isArabic)}>
+            <Text style={styles.langSmallText}>{isArabic ? 'English' : 'العربية'}</Text>
+          </TouchableOpacity>
+          <View style={styles.topBarUser}>
+            <Text style={styles.topBarName}>{session?.user.name ?? 'Tracker'}</Text>
+            <Text style={styles.topBarRole}>{session?.user.role ?? 'ADMIN'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>
+            {isArabic ? 'لوحة التشغيل' : 'Operations Console'}
+          </Text>
+          <Text style={styles.cardDescription}>
+            {isArabic
+              ? 'هذا الحساب يملك صلاحية التشغيل والإشراف. سيظهر هذا التطبيق للمدير ووحدة التشغيل في وضع المراقبة.'
+              : 'This account is operating in monitoring mode. Admin and call-center roles use the shared operations dashboard.'}
+          </Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.replace('Login')}>
+            <Text style={styles.primaryButtonText}>{isArabic ? 'العودة إلى تسجيل الدخول' : 'Return to Login'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Text style={styles.logoutButtonText}>{isArabic ? 'تسجيل الخروج' : 'Log Out'}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
 function DriverHomeScreen({ navigation }: any): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -342,7 +409,8 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
   useEffect(() => {
     (async () => {
       const activeSession = await readSession();
-      if (!activeSession) {
+      if (!activeSession || !isValidSession(activeSession) || !isAllowedRole(activeSession.user.role)) {
+        await clearSession().catch(() => undefined);
         navigation.replace('Login');
         return;
       }
@@ -621,6 +689,7 @@ export default function App(): React.JSX.Element {
       <STACK.Navigator screenOptions={{ headerShown: false }}>
         <STACK.Screen name="Login" component={LoginScreen} />
         <STACK.Screen name="DriverHome" component={DriverHomeScreen} />
+        <STACK.Screen name="OperatorHome" component={OperatorHomeScreen} />
       </STACK.Navigator>
     </NavigationContainer>
   );

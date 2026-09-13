@@ -120,7 +120,7 @@ export default function DriversPage() {
         title={t('drivers.title')}
         subtitle={t('drivers.subtitle')}
         action={
-          session?.user?.role === 'ADMIN' || session?.user?.role === 'MANAGER' ? (
+          session?.user?.role === 'ADMIN' ? (
             <div className="flex items-center gap-3">
               <button
                 type="button"

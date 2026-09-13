@@ -429,7 +429,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: [ADMIN, MANAGER, DRIVER, CALL_CENTER]
+          enum: [ADMIN, DRIVER, CALL_CENTER]
         active:
           type: boolean
     DeviceRegisterRequest:

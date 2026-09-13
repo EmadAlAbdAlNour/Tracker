@@ -146,7 +146,7 @@ router.get("/me/shifts", requireAuth, requireRole("DRIVER"), async (req: Authent
   }
 });
 
-router.get("/", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = paginationSchema.parse(req.query);
     const result = await listDrivers({ page: query.page, limit: query.limit });
@@ -165,7 +165,7 @@ router.get("/", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), asy
   }
 });
 
-router.post("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.post("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = driverCreateSchema.parse(req.body);
     const result = await createDriverRecord({
@@ -201,7 +201,7 @@ router.get("/:id", requireAuth, async (req: AuthenticatedRequest, res, next) => 
       return;
     }
 
-    if (req.user!.role === "MANAGER" || req.user!.role === "ADMIN" || req.user!.role === "CALL_CENTER") {
+    if (req.user!.role === "ADMIN" || req.user!.role === "CALL_CENTER") {
       res.status(200).json({ driver });
       return;
     }
@@ -314,7 +314,7 @@ router.get("/:id/tracking-status", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
-router.patch("/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const driver = await getDriverById(driverId);

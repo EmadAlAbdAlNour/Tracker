@@ -1,10 +1,11 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/tracker_test";
 process.env.JWT_SECRET ??= "test-jwt-secret";
 process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret";
 
 const {
+  APP_ROLES,
   getTokenPayload,
   hashPassword,
   hasRole,
@@ -55,9 +56,31 @@ describe("authentication and authorization", () => {
   });
 
   it("enforces role checks for admin and driver access", () => {
-    expect(hasRole({ role: "ADMIN" }, ["ADMIN", "MANAGER"])).toBe(true);
-    expect(hasRole({ role: "MANAGER" }, ["ADMIN", "MANAGER"])).toBe(true);
-    expect(hasRole({ role: "DRIVER" }, ["ADMIN", "MANAGER"])).toBe(false);
+    expect(hasRole({ role: "ADMIN" }, ["ADMIN", "CALL_CENTER"])).toBe(true);
+    expect(hasRole({ role: "CALL_CENTER" }, ["ADMIN", "CALL_CENTER"])).toBe(true);
+    expect(hasRole({ role: "DRIVER" }, ["ADMIN", "CALL_CENTER"])).toBe(false);
+  });
+
+  it("uses the canonical allowlist for RBAC checks", () => {
+    expect(APP_ROLES).toEqual(["ADMIN", "DRIVER", "CALL_CENTER"]);
+    expect(hasRole({ role: "ADMIN" }, APP_ROLES)).toBe(true);
+    expect(hasRole({ role: "DRIVER" }, ["ADMIN", "DRIVER"])).toBe(true);
+    expect(hasRole({ role: "CALL_CENTER" }, ["ADMIN", "DRIVER"])).toBe(false);
+  });
+
+  it("rejects unsupported roles before they reach permission checks", () => {
+    expect(() =>
+      sanitizeUser({
+        id: "user-2",
+        name: "Guest",
+        email: "guest@tracker.local",
+        phone: null,
+        role: "MANAGER",
+        active: true,
+      }),
+    ).toThrow(/Unsupported user role/);
+
+    expect(hasRole({ role: "MANAGER" }, ["ADMIN", "CALL_CENTER", "DRIVER"])).toBe(false);
   });
 
   it("rejects unauthorized driver access to another driver record", () => {

@@ -16,6 +16,10 @@ export type QueuedLocationPoint = {
   source: string;
   retryCount: number;
   nextRetryAt: number;
+  batteryPercentage?: number | null;
+  isCharging?: boolean | null;
+  locationServicesEnabled?: boolean | null;
+  networkStatus?: string | null;
 };
 
 function readQueue(): Promise<QueuedLocationPoint[]> {
@@ -101,6 +105,10 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
     heading: point.heading,
     recordedAt: point.recordedAt,
     source: point.source,
+    batteryPercentage: point.batteryPercentage ?? null,
+    isCharging: point.isCharging ?? null,
+    locationServicesEnabled: point.locationServicesEnabled ?? null,
+    networkStatus: point.networkStatus ?? null,
   }));
 
   try {

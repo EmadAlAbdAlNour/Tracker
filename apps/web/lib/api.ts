@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'MANAGER' | 'DRIVER' | 'CALL_CENTER';
+export type Role = 'ADMIN' | 'DRIVER' | 'CALL_CENTER';
 
 export type SessionUser = {
   id: string;

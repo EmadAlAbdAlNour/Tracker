@@ -1005,7 +1005,7 @@ export async function getDriverShiftsById(currentUser: { id: string; role: strin
     }
   }
 
-  if (currentUser.role !== "ADMIN" && currentUser.role !== "MANAGER" && currentUser.role !== "DRIVER" && currentUser.role !== "CALL_CENTER") {
+  if (currentUser.role !== "ADMIN" && currentUser.role !== "DRIVER" && currentUser.role !== "CALL_CENTER") {
     throw createError(403, "AUTH_FORBIDDEN", "Access denied");
   }
 

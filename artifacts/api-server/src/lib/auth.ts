@@ -6,14 +6,25 @@ import { db, driversTable, refreshTokensTable, usersTable } from "@workspace/db"
 import { getEnv } from "../config/env";
 import { createError, AppError } from "./errors";
 
+export const APP_ROLES = ["ADMIN", "DRIVER", "CALL_CENTER"] as const;
+export type AppRole = (typeof APP_ROLES)[number];
+
 export type SafeUser = {
   id: string;
   name: string;
   email: string;
   phone: string | null;
-  role: "ADMIN" | "MANAGER" | "DRIVER" | "CALL_CENTER";
+  role: AppRole;
   active: boolean;
 };
+
+export function isAppRole(value: unknown): value is AppRole {
+  return typeof value === "string" && APP_ROLES.includes(value as AppRole);
+}
+
+export function normalizeRole(value: unknown): AppRole | null {
+  return isAppRole(value) ? value : null;
+}
 
 const env = getEnv();
 const JWT_SECRET = env.jwtSecret;
@@ -22,12 +33,17 @@ const ACCESS_TOKEN_TTL = "15m";
 const REFRESH_TOKEN_TTL = "30d";
 
 export function sanitizeUser(user: { id: string; name: string; email: string; phone: string | null; role: string; active: boolean; passwordHash?: string }): SafeUser {
+  const role = normalizeRole(user.role);
+  if (!role) {
+    throw createError(401, "AUTH_INVALID_ROLE", `Unsupported user role: ${user.role}`);
+  }
+
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     phone: user.phone,
-    role: user.role as SafeUser["role"],
+    role,
     active: user.active,
   };
 }
@@ -152,6 +168,13 @@ export async function findValidRefreshToken(rawToken: string, userId: string) {
   return rows[0] ?? null;
 }
 
-export function hasRole(user: { role: string }, roles: string[]): boolean {
-  return roles.includes(user.role);
+export function hasRole(user: { role: string }, roles: readonly string[]): boolean {
+  if (!user || !user.role) {
+    return false;
+  }
+  const role = normalizeRole(user.role);
+  if (!role) {
+    return false;
+  }
+  return roles.includes(role);
 }

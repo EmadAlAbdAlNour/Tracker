@@ -88,20 +88,20 @@ describe("REAL DISPOSABLE POSTGRESQL INTEGRATION SUITE", () => {
       .returning();
     adminUser = createdAdmin;
 
-    // Create Manager User
-    const managerHash = await libAuth.hashPassword("ManagerSecret123!");
-    const [createdManager] = await db
+    // Create Call Center User
+    const callCenterHash = await libAuth.hashPassword(process.env.TEST_CALL_CENTER_PASSWORD ?? "test-call-center-password");
+    const [createdCallCenter] = await db
       .insert(usersTable)
       .values({
-        name: "Operations Manager",
-        email: "manager.integration@tracker.local",
+        name: "Operations Desk",
+        email: "callcenter.integration@tracker.local",
         phone: "+966500000002",
-        passwordHash: managerHash,
-        role: "MANAGER",
+        passwordHash: callCenterHash,
+        role: "CALL_CENTER",
         active: true,
       })
       .returning();
-    managerUser = createdManager;
+    managerUser = createdCallCenter;
   });
 
   afterAll(async () => {
@@ -168,22 +168,22 @@ describe("REAL DISPOSABLE POSTGRESQL INTEGRATION SUITE", () => {
         .post("/api/auth/login")
         .set("X-Forwarded-For", "10.0.0.3")
         .send({
-          emailOrPhone: "manager.integration@tracker.local",
-          password: "ManagerSecret123!",
+          emailOrPhone: "callcenter.integration@tracker.local",
+          password: process.env.TEST_CALL_CENTER_PASSWORD ?? "test-call-center-password",
         });
       expect(loginRes.status).toBe(200);
-      const managerRefToken = loginRes.body.refreshToken;
+      const callCenterRefreshToken = loginRes.body.refreshToken;
 
       // Logout
       const logoutRes = await agent
         .post("/api/auth/logout")
         .set("Authorization", `Bearer ${loginRes.body.accessToken}`)
-        .send({ refreshToken: managerRefToken });
+        .send({ refreshToken: callCenterRefreshToken });
 
       expect(logoutRes.status).toBe(200);
 
       // Token must now be revoked in DB
-      const check = await libAuth.findValidRefreshToken(managerRefToken, managerUser.id);
+      const check = await libAuth.findValidRefreshToken(callCenterRefreshToken, managerUser.id);
       expect(check).toBeNull();
     });
 

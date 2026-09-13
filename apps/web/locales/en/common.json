@@ -86,11 +86,10 @@
   },
   "users": {
     "title": "User Management",
-    "subtitle": "Manage admin, operational manager, and call center user accounts",
+    "subtitle": "Manage administrator and call center user accounts",
     "addUser": "Add User",
     "role": "Role & Permissions",
     "adminRole": "System Admin (ADMIN)",
-    "managerRole": "Operations Manager (MANAGER)",
     "callCenterRole": "Call Center (CALL_CENTER)",
     "driverRole": "Driver (DRIVER)",
     "search": "Search by name or email...",

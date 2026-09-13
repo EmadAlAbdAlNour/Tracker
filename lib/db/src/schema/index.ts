@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
-export const userRoleEnum = pgEnum("user_role", ["ADMIN", "MANAGER", "DRIVER", "CALL_CENTER"]);
+export const userRoleEnum = pgEnum("user_role", ["ADMIN", "DRIVER", "CALL_CENTER"]);
 export const shiftStatusEnum = pgEnum("shift_status", ["ACTIVE", "COMPLETED"]);
 
 export const usersTable = pgTable(
@@ -311,7 +311,7 @@ export const insertUserSchema = z.object({
   email: z.string().email(),
   phone: z.string().nullable().optional(),
   passwordHash: z.string().min(1),
-  role: z.enum(["ADMIN", "MANAGER", "DRIVER", "CALL_CENTER"]),
+  role: z.enum(["ADMIN", "DRIVER", "CALL_CENTER"]),
   active: z.boolean().optional(),
 });
 

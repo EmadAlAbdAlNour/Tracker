@@ -18,7 +18,7 @@ const notificationQuerySchema = z.object({
   driverId: z.string().uuid().optional(),
 });
 
-router.get("/", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = notificationQuerySchema.parse(req.query);
     const result = await listNotifications(query);
@@ -32,7 +32,7 @@ router.get("/", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), asy
   }
 });
 
-router.patch("/:id/read", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
+router.patch("/:id/read", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const notification = await markNotificationAsRead(id);
@@ -46,7 +46,7 @@ router.patch("/:id/read", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CEN
   }
 });
 
-router.post("/read-all", requireAuth, requireRole("ADMIN", "MANAGER", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
+router.post("/read-all", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
   try {
     await markAllNotificationsAsRead();
     res.status(200).json({ success: true });

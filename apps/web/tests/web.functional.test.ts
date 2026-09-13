@@ -194,15 +194,15 @@ describe('WEB ADMIN FUNCTIONAL TEST SUITE', () => {
   // ==========================================
   describe('Role-Based Navigation & Route Guards', () => {
     const allNavRoutes = [
-      { href: '/dashboard', roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
-      { href: '/dashboard/drivers', roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
-      { href: '/dashboard/devices', roles: ['ADMIN', 'MANAGER'] },
+      { href: '/dashboard', roles: ['ADMIN', 'CALL_CENTER'] },
+      { href: '/dashboard/drivers', roles: ['ADMIN', 'CALL_CENTER'] },
+      { href: '/dashboard/devices', roles: ['ADMIN'] },
       { href: '/dashboard/users', roles: ['ADMIN'] },
-      { href: '/dashboard/map', roles: ['ADMIN', 'MANAGER', 'CALL_CENTER'] },
-      { href: '/dashboard/settings', roles: ['ADMIN', 'MANAGER'] },
+      { href: '/dashboard/map', roles: ['ADMIN', 'CALL_CENTER'] },
+      { href: '/dashboard/settings', roles: ['ADMIN'] },
     ];
 
-    function getVisibleRoutes(role: 'ADMIN' | 'MANAGER' | 'CALL_CENTER') {
+    function getVisibleRoutes(role: 'ADMIN' | 'CALL_CENTER') {
       return allNavRoutes.filter((item) => item.roles.includes(role)).map((item) => item.href);
     }
 
@@ -212,14 +212,6 @@ describe('WEB ADMIN FUNCTIONAL TEST SUITE', () => {
       expect(adminRoutes).toContain('/dashboard/users');
       expect(adminRoutes).toContain('/dashboard/settings');
       expect(adminRoutes).toContain('/dashboard/devices');
-    });
-
-    it('role navigation - MANAGER sees 5 sections (Users is hidden)', () => {
-      const managerRoutes = getVisibleRoutes('MANAGER');
-      expect(managerRoutes).toHaveLength(5);
-      expect(managerRoutes).not.toContain('/dashboard/users');
-      expect(managerRoutes).toContain('/dashboard/settings');
-      expect(managerRoutes).toContain('/dashboard/devices');
     });
 
     it('role navigation - CALL_CENTER sees only 3 monitoring sections', () => {
@@ -242,13 +234,6 @@ describe('WEB ADMIN FUNCTIONAL TEST SUITE', () => {
         expect(shouldRedirect).toBe(true);
       }
     });
-
-    it('unauthorized direct URL guard - redirects MANAGER away from /dashboard/users', () => {
-      const role = 'MANAGER';
-      const path = '/dashboard/users';
-      const shouldRedirect = role === 'MANAGER' && path.startsWith('/dashboard/users');
-      expect(shouldRedirect).toBe(true);
-    });
   });
 
   // ==========================================
@@ -262,7 +247,7 @@ describe('WEB ADMIN FUNCTIONAL TEST SUITE', () => {
         total: 2,
         items: [
           { id: 'u1', name: 'Admin', email: 'admin@t.local', role: 'ADMIN', active: true },
-          { id: 'u2', name: 'Manager', email: 'mgr@t.local', role: 'MANAGER', active: true },
+          { id: 'u2', name: 'Call Agent', email: 'agent@t.local', role: 'CALL_CENTER', active: true },
         ],
       }));
 
@@ -287,7 +272,7 @@ describe('WEB ADMIN FUNCTIONAL TEST SUITE', () => {
 
     it('updateUser - toggles user activation status', async () => {
       global.fetch = vi.fn().mockResolvedValue(mockResponse({
-        user: { id: 'u2', name: 'Manager', email: 'mgr@t.local', role: 'MANAGER', active: false },
+        user: { id: 'u2', name: 'Call Agent', email: 'agent@t.local', role: 'CALL_CENTER', active: false },
       }));
 
       const res = await updateUser('u2', { active: false });

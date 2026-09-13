@@ -9,7 +9,7 @@ import { desc, eq, sql } from "drizzle-orm";
 
 const router = Router();
 
-router.get("/", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = paginationSchema.parse(req.query);
     const page = Math.max(1, query.page);

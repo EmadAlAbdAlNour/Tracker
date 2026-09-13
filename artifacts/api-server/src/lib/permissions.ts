@@ -1,6 +1,6 @@
 import { type RequestHandler } from "express";
 import { createError } from "./errors";
-import { type SafeUser } from "./auth";
+import { type AppRole, type SafeUser, normalizeRole } from "./auth";
 
 export const Permissions = {
   DRIVERS_VIEW: "drivers.view",
@@ -17,16 +17,8 @@ export const Permissions = {
 
 export type PermissionKey = (typeof Permissions)[keyof typeof Permissions];
 
-export const rolePermissions: Record<SafeUser["role"], PermissionKey[]> = {
+export const rolePermissions: Record<AppRole, PermissionKey[]> = {
   ADMIN: Object.values(Permissions) as PermissionKey[],
-  MANAGER: [
-    Permissions.DRIVERS_VIEW,
-    Permissions.DRIVERS_DETAILS_VIEW,
-    Permissions.DRIVERS_LOCATION_VIEW,
-    Permissions.DRIVERS_MANAGE,
-    Permissions.DEVICES_VIEW,
-    Permissions.USERS_VIEW,
-  ],
   CALL_CENTER: [
     Permissions.DRIVERS_VIEW,
     Permissions.DRIVERS_DETAILS_VIEW,
@@ -42,7 +34,9 @@ export const rolePermissions: Record<SafeUser["role"], PermissionKey[]> = {
 
 export function hasPermission(user: SafeUser | undefined, permission: PermissionKey) {
   if (!user) return false;
-  const perms = rolePermissions[user.role as SafeUser["role"]] ?? [];
+  const role = normalizeRole(user.role);
+  if (!role) return false;
+  const perms = rolePermissions[role] ?? [];
   return perms.includes(permission);
 }
 

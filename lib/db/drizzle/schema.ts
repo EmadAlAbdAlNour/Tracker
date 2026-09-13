@@ -2,7 +2,7 @@ import { pgTable, index, uniqueIndex, foreignKey, uuid, text, timestamp, unique,
 import { sql } from "drizzle-orm"
 
 export const shiftStatus = pgEnum("shift_status", ['ACTIVE', 'COMPLETED'])
-export const userRole = pgEnum("user_role", ['ADMIN', 'MANAGER', 'DRIVER', 'CALL_CENTER'])
+export const userRole = pgEnum("user_role", ['ADMIN', 'DRIVER', 'CALL_CENTER'])
 
 
 export const devices = pgTable("devices", {

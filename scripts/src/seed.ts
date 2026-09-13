@@ -29,18 +29,21 @@ type SeedUser = {
   email: string;
   phone: string;
   password: string;
-  role: "ADMIN" | "MANAGER" | "DRIVER";
+  role: "ADMIN" | "DRIVER";
 };
 
+const seedPassword = process.env.TRACKER_SEED_PASSWORD;
+if (!seedPassword) {
+  throw new Error("TRACKER_SEED_PASSWORD is required before seeding tracker data");
+}
+
 const seedUsers: SeedUser[] = [
-  { name: "Admin User", email: "admin@tracker.local", phone: "+966500000001", password: "Password123!", role: "ADMIN" },
-  { name: "Manager One", email: "manager1@tracker.local", phone: "+966500000002", password: "Password123!", role: "MANAGER" },
-  { name: "Manager Two", email: "manager2@tracker.local", phone: "+966500000003", password: "Password123!", role: "MANAGER" },
+  { name: "Admin User", email: "admin@tracker.local", phone: "+966500000001", password: seedPassword, role: "ADMIN" },
   ...Array.from({ length: 10 }, (_, index) => ({
     name: `Driver ${index + 1}`,
     email: `driver${index + 1}@tracker.local`,
     phone: `+9665000000${String(index + 10).padStart(2, "0")}`,
-    password: "Password123!",
+    password: seedPassword,
     role: "DRIVER" as const,
   })),
 ];
