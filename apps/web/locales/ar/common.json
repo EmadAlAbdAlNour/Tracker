@@ -120,6 +120,7 @@
       "restaurant": "موقع المطعم والنطاق",
       "alerts": "قواعد التنبيهات والمراقبة"
     },
+    "restaurant": "المطعم",
     "restaurantName": "اسم الفرع أو المطعم",
     "latitude": "خط العرض (Latitude)",
     "longitude": "خط الطول (Longitude)",

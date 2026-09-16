@@ -120,6 +120,7 @@
       "restaurant": "Restaurant & Geofence",
       "alerts": "Alert Rules & Thresholds"
     },
+    "restaurant": "Restaurant",
     "restaurantName": "Branch Name",
     "latitude": "Latitude",
     "longitude": "Longitude",

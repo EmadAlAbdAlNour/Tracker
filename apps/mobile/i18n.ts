@@ -152,6 +152,7 @@ export const translations = {
       noShift: 'لا توجد وردية نشطة حالياً',
       deviceInfo: 'معلومات الجهاز المسجل',
       deviceId: 'معرف الجهاز',
+      telemetry: 'بيانات التتبع اللحظية',
       resetDeviceAction: 'إلغاء تفويض الجهاز وإعادة التعيين',
     },
     map: {
@@ -162,6 +163,7 @@ export const translations = {
       geofenceBoundary: 'نطاق المطعم الجغرافي',
       driverCountOnMap: 'السائقون على الخريطة:',
       selectDriverPrompt: 'اضغط على السائق في الخريطة لعرض تفاصيله',
+      viewDetails: 'عرض التفاصيل',
       noDriversCoordinates: 'لا توجد إحداثيات موقع متاحة حالياً لأي سائق.',
     },
     notifications: {
@@ -317,6 +319,7 @@ export const translations = {
       noShift: 'No active shift',
       deviceInfo: 'Registered Device',
       deviceId: 'Device ID',
+      telemetry: 'Live Telemetry',
       resetDeviceAction: 'Reset & Revoke Device Authorization',
     },
     map: {
@@ -327,6 +330,7 @@ export const translations = {
       geofenceBoundary: 'Geofence Boundary',
       driverCountOnMap: 'Drivers on Map:',
       selectDriverPrompt: 'Tap a driver on the map to inspect telemetry',
+      viewDetails: 'View Details',
       noDriversCoordinates: 'No location coordinates available currently for any driver.',
     },
     notifications: {

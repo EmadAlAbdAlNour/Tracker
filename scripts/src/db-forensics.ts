@@ -49,8 +49,8 @@ async function main() {
     const testAccounts = [
       "admin@tracker.local",
       "admin.integration@tracker.local",
-      "manager1@tracker.local",
       "manager.integration@tracker.local",
+      "emad@tracker.local",
       "tariq.driver@tracker.local"
     ];
 
