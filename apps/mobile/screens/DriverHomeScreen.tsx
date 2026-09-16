@@ -79,9 +79,9 @@ export function DriverHomeScreen({
     if (telemetry.locationServicesEnabled === false) return 'GPS_DISABLED';
     if (telemetry.networkStatus === 'offline') return 'NETWORK_OFFLINE';
     if (trackingActive) {
-      if (queuedCount > 0) return 'SYNC_PENDING';
       return 'TRACKING_ACTIVE';
     }
+    if (queuedCount > 0) return 'SYNC_PENDING';
     return 'SHIFT_ACTIVE';
   };
 
@@ -160,7 +160,16 @@ export function DriverHomeScreen({
         }
       }
     } catch (err: any) {
-      Alert.alert(t('app.error'), err?.message || 'Unable to start shift');
+      if (err?.message?.includes('DEVICE_UNAUTHORIZED') || err?.code === 'DEVICE_UNAUTHORIZED') {
+        Alert.alert(
+          locale === 'ar' ? 'الجهاز غير مصرح' : 'Device Unauthorized',
+          locale === 'ar'
+            ? 'تمت إعادة تعيين الجهاز من قِبل الإدارة. يرجى تسجيل الدخول مجدداً أو مراجعة المشرف.'
+            : 'Device authorization was revoked by an administrator. Please log in again or contact your manager.'
+        );
+      } else {
+        Alert.alert(t('app.error'), err?.message || 'Unable to start shift');
+      }
     } finally {
       setLoading(false);
     }

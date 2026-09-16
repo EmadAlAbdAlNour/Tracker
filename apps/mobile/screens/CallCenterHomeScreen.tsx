@@ -37,6 +37,7 @@ export function CallCenterHomeScreen({
 
   // Fleet Data
   const [fleet, setFleet] = useState<any | null>(null);
+  const [fleetError, setFleetError] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [driverModalVisible, setDriverModalVisible] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
@@ -55,8 +56,9 @@ export function CallCenterHomeScreen({
     try {
       const data = await apiRequest<any>('/api/fleet/live');
       setFleet(data);
-    } catch {
-      // ignore
+      setFleetError(null);
+    } catch (err: any) {
+      setFleetError(err?.message || 'Failed to connect to server');
     }
   }, [apiRequest]);
 
@@ -220,6 +222,15 @@ export function CallCenterHomeScreen({
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {fleetError && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>⚠️ {fleetError}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadFleet}>
+              <Text style={styles.retryButtonText}>{locale === 'ar' ? 'إعادة المحاولة' : 'Retry'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Notice */}
         <View style={styles.noticeCard}>
           <Text style={[styles.noticeText, { textAlign: rtl ? 'right' : 'left' }]}>
@@ -736,6 +747,35 @@ const styles = StyleSheet.create({
   },
   textRed: {
     color: '#dc2626',
+  },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorBannerText: {
+    color: '#991b1b',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  retryButton: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 

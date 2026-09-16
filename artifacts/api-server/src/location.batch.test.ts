@@ -32,8 +32,12 @@ describe('Location batch service', () => {
     dbModule.db.select = () => ({
       from: (table: any) => {
         return {
+          limit: async () => [],
           // where used by driver and shift queries -> return object with orderBy and limit
-          where: () => ({ orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }), limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
+          where: () => ({
+            orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
+            limit: async () => (table?.name === 'shifts' ? [shift] : [driver]),
+          }),
           // orderBy used by shifts query: return object with limit
           orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
           // innerJoin chain for other queries
@@ -69,17 +73,47 @@ describe('Location batch service', () => {
     await expect(authService.submitDriverLocationBatch(user.id, inputs)).rejects.toMatchObject({ statusCode: 400 });
   });
 
+  it('rejects when driver device is unauthorized or revoked', async () => {
+    const user = makeUser('u-unauth');
+    const driver = makeDriver(user.id, 'd-unauth');
+    vi.spyOn(authService as any, 'getDriverByUserId').mockResolvedValue(driver as any);
+
+    // Mock db.select where devicesTable returns [] (no authorized device)
+    dbModule.db.select = () => ({
+      from: (table: any) => {
+        const isDevices = table === (dbModule as any).devicesTable;
+        return {
+          limit: async () => [],
+          where: () => ({
+            orderBy: () => ({ limit: async () => (isDevices ? [] : [driver]) }),
+            limit: async () => (isDevices ? [] : [driver]),
+          }),
+          orderBy: () => ({ limit: async () => [] }),
+        } as any;
+      },
+    }) as any;
+
+    const now = new Date().toISOString();
+    const inputs = [{ clientLocationId: 'c1', latitude: 10, longitude: 10, recordedAt: now }];
+
+    await expect(authService.submitDriverLocationBatch(user.id, inputs as any)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'DEVICE_UNAUTHORIZED',
+    });
+  });
+
   it('rejects when no active shift', async () => {
     const user = makeUser('u3');
     const driver = makeDriver(user.id, 'd3');
     vi.spyOn(authService as any, 'getDriverByUserId').mockResolvedValue(driver as any);
 
-    // mock db.select to return empty shifts (for shiftsTable path) and ensure driver lookup works
+    // mock db.select to return empty shifts (for shiftsTable path) and ensure driver and device lookups work
     dbModule.db.select = () => ({
       from: (table: any) => {
         // Check if this is the shiftsTable by comparing table reference
         const isShiftsTable = table === shiftsTable;
         return {
+          limit: async () => [],
           // where used by driver and shift queries -> return object with orderBy and limit
           where: () => ({ orderBy: () => ({ limit: async () => (isShiftsTable ? [] : [driver]) }), limit: async () => (isShiftsTable ? [] : [driver]) }),
           // orderBy used by shifts query: return object with limit

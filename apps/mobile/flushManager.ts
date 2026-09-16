@@ -125,8 +125,8 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
       if (response.status === 401) {
         return -1;
       }
-      if (response.status === 409) {
-        // Shift not active: discard stale points to prevent eternal queue jamming
+      if (response.status === 409 || response.status === 403) {
+        // Shift not active or device unauthorized: discard stale points to prevent eternal queue jamming
         const batchIds = new Set(batch.map((p) => p.localId));
         const persisted = queue.filter((p) => !batchIds.has(p.localId));
         await writeQueue(persisted);

@@ -104,6 +104,25 @@ export function MobileMapView({
     setSpanMeters(Math.max(1500, (restaurant.radiusMeters || 500) * 3));
   };
 
+  const panStep = (spanMeters * 0.3) / METERS_PER_DEGREE_LAT;
+
+  const handlePan = (dLat: number, dLng: number) => {
+    setCenterOffset((prev) => ({
+      latOffset: prev.latOffset + dLat,
+      lngOffset: prev.lngOffset + dLng / (latCos || 1),
+    }));
+  };
+
+  const handleFocusDriver = (driver: MapDriverPoint) => {
+    if (driver.location) {
+      setCenterOffset({
+        latOffset: driver.location.latitude - restaurant.latitude,
+        lngOffset: driver.location.longitude - restaurant.longitude,
+      });
+      setSpanMeters(1000);
+    }
+  };
+
   // Restaurant projection
   const restPos = projectCoord(restaurant.latitude, restaurant.longitude);
   const geofenceRadiusPx = (restaurant.radiusMeters || 500) * pixelsPerMeter;
@@ -212,6 +231,7 @@ export function MobileMapView({
                   top: pos.y - 14,
                   transform: [{ scale: isSelected ? 1.25 : 1.0 }],
                   zIndex: isSelected ? 50 : 20,
+                  opacity: driver.operationalStatus === 'OFFLINE' ? 0.65 : 1.0,
                 },
               ]}
             >
@@ -254,6 +274,20 @@ export function MobileMapView({
           </TouchableOpacity>
           <TouchableOpacity style={styles.controlButton} onPress={handleRecenter}>
             <Text style={styles.controlIconText}>🎯</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.controlButton} onPress={() => handlePan(panStep, 0)}>
+            <Text style={styles.controlButtonText}>▲</Text>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 2 }}>
+            <TouchableOpacity style={[styles.controlButton, { width: 17, minWidth: 17 }]} onPress={() => handlePan(0, -panStep)}>
+              <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#1e293b' }}>◀</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.controlButton, { width: 17, minWidth: 17 }]} onPress={() => handlePan(0, panStep)}>
+              <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#1e293b' }}>▶</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.controlButton} onPress={() => handlePan(-panStep, 0)}>
+            <Text style={styles.controlButtonText}>▼</Text>
           </TouchableOpacity>
         </View>
 
@@ -316,14 +350,26 @@ export function MobileMapView({
             )}
           </View>
 
-          {onViewDriverDetail && (
-            <TouchableOpacity
-              style={styles.detailButton}
-              onPress={() => onViewDriverDetail(selectedDriver)}
-            >
-              <Text style={styles.detailButtonText}>{t('map.viewDetails')}</Text>
-            </TouchableOpacity>
-          )}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+            {selectedDriver.location && (
+              <TouchableOpacity
+                style={[styles.detailButton, { flex: 1, backgroundColor: '#334155' }]}
+                onPress={() => handleFocusDriver(selectedDriver)}
+              >
+                <Text style={styles.detailButtonText}>
+                  🎯 {rtl ? 'تركيز الخريطة' : 'Focus'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {onViewDriverDetail && (
+              <TouchableOpacity
+                style={[styles.detailButton, { flex: 1 }]}
+                onPress={() => onViewDriverDetail(selectedDriver)}
+              >
+                <Text style={styles.detailButtonText}>{t('map.viewDetails')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       ) : (
         <View style={styles.hintContainer}>

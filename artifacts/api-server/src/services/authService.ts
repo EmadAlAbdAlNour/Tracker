@@ -603,6 +603,16 @@ export async function submitDriverLocation(
     throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
   }
 
+  const authorizedDevice = await db
+    .select()
+    .from(devicesTable)
+    .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)))
+    .limit(1);
+
+  if (!authorizedDevice[0]) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
+  }
+
   const activeShift = await db
     .select()
     .from(shiftsTable)
@@ -713,6 +723,16 @@ export async function submitDriverLocationBatch(userId: string, inputs: Array<{
 
   if (!driver.active) {
     throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
+  }
+
+  const authorizedDevice = await db
+    .select()
+    .from(devicesTable)
+    .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)))
+    .limit(1);
+
+  if (!authorizedDevice[0]) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
   }
 
   const activeShift = await db
@@ -874,6 +894,16 @@ export async function startDriverShift(userId: string) {
 
   if (!driver.active) {
     throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
+  }
+
+  const authorizedDevice = await db
+    .select()
+    .from(devicesTable)
+    .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)))
+    .limit(1);
+
+  if (!authorizedDevice[0]) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
   }
 
   const existingActive = await db

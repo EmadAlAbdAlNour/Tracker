@@ -62,49 +62,72 @@ export async function evaluateDriverAlerts(ctx: EvaluateAlertContext) {
     const driverName = ctx.driverName ?? "السائق";
     const now = new Date();
 
+    const GEOFENCE_HYSTERESIS_METERS = 30;
+    const GEOFENCE_TRANSITION_COOLDOWN_MS = 60 * 1000;
+
     // Calculate restaurant distance & geofence state
     let isInsideRestaurant = false;
+    let distanceToRestaurant: number | null = null;
     if (restaurantSettings.enabled) {
-      const distance = calculateDistanceMeters(
+      distanceToRestaurant = calculateDistanceMeters(
         ctx.latitude,
         ctx.longitude,
         restaurantSettings.latitude,
         restaurantSettings.longitude,
       );
-      isInsideRestaurant = distance <= restaurantSettings.radiusMeters;
+      isInsideRestaurant = distanceToRestaurant <= restaurantSettings.radiusMeters;
     }
 
-    // 1. Geofence Enter / Exit Alerts
-    if (alertSettings.restaurantGeofenceAlertEnabled && restaurantSettings.enabled) {
+    // 1. Geofence Enter / Exit Alerts with Hysteresis and Debounce
+    if (alertSettings.restaurantGeofenceAlertEnabled && restaurantSettings.enabled && distanceToRestaurant !== null) {
       const existingGeofenceState = await getAlertState(ctx.driverId, "GEOFENCE_STATUS");
       const wasInside = existingGeofenceState?.stateData === "INSIDE";
 
-      if (isInsideRestaurant && !wasInside) {
-        await updateAlertState(ctx.driverId, "GEOFENCE_STATUS", "INSIDE");
-        await createNotification({
-          type: "GEOFENCE_ENTER",
-          severity: "INFO",
-          titleAr: "وصول للمطعم",
-          titleEn: "Arrived at Restaurant",
-          messageAr: `وصل ${driverName} إلى محيط المطعم (${restaurantSettings.name})`,
-          messageEn: `${driverName} arrived at restaurant perimeter (${restaurantSettings.name})`,
-          driverId: ctx.driverId,
-          shiftId: ctx.shiftId,
-          metadata: { latitude: ctx.latitude, longitude: ctx.longitude },
-        });
-      } else if (!isInsideRestaurant && wasInside) {
-        await updateAlertState(ctx.driverId, "GEOFENCE_STATUS", "OUTSIDE");
-        await createNotification({
-          type: "GEOFENCE_EXIT",
-          severity: "INFO",
-          titleAr: "مغادرة المطعم",
-          titleEn: "Left Restaurant",
-          messageAr: `غادر ${driverName} محيط المطعم (${restaurantSettings.name})`,
-          messageEn: `${driverName} left restaurant perimeter (${restaurantSettings.name})`,
-          driverId: ctx.driverId,
-          shiftId: ctx.shiftId,
-          metadata: { latitude: ctx.latitude, longitude: ctx.longitude },
-        });
+      // Hysteresis calculation:
+      // To enter: distance <= radiusMeters
+      // To exit: distance > radiusMeters + GEOFENCE_HYSTERESIS_METERS
+      // In deadband [radius, radius + 30m]: retain previous state wasInside
+      let hysteresisInside = wasInside;
+      if (distanceToRestaurant <= restaurantSettings.radiusMeters) {
+        hysteresisInside = true;
+      } else if (distanceToRestaurant > restaurantSettings.radiusMeters + GEOFENCE_HYSTERESIS_METERS) {
+        hysteresisInside = false;
+      }
+
+      const timeSinceLastTransition = existingGeofenceState?.lastNotifiedAt
+        ? now.getTime() - new Date(existingGeofenceState.lastNotifiedAt).getTime()
+        : Infinity;
+
+      if (hysteresisInside && !wasInside) {
+        if (timeSinceLastTransition >= GEOFENCE_TRANSITION_COOLDOWN_MS) {
+          await updateAlertState(ctx.driverId, "GEOFENCE_STATUS", "INSIDE");
+          await createNotification({
+            type: "GEOFENCE_ENTER",
+            severity: "INFO",
+            titleAr: "وصول للمطعم",
+            titleEn: "Arrived at Restaurant",
+            messageAr: `وصل ${driverName} إلى محيط المطعم (${restaurantSettings.name})`,
+            messageEn: `${driverName} arrived at restaurant perimeter (${restaurantSettings.name})`,
+            driverId: ctx.driverId,
+            shiftId: ctx.shiftId,
+            metadata: { latitude: ctx.latitude, longitude: ctx.longitude, distanceMeters: Math.round(distanceToRestaurant) },
+          });
+        }
+      } else if (!hysteresisInside && wasInside) {
+        if (timeSinceLastTransition >= GEOFENCE_TRANSITION_COOLDOWN_MS) {
+          await updateAlertState(ctx.driverId, "GEOFENCE_STATUS", "OUTSIDE");
+          await createNotification({
+            type: "GEOFENCE_EXIT",
+            severity: "INFO",
+            titleAr: "مغادرة المطعم",
+            titleEn: "Left Restaurant",
+            messageAr: `غادر ${driverName} محيط المطعم (${restaurantSettings.name})`,
+            messageEn: `${driverName} left restaurant perimeter (${restaurantSettings.name})`,
+            driverId: ctx.driverId,
+            shiftId: ctx.shiftId,
+            metadata: { latitude: ctx.latitude, longitude: ctx.longitude, distanceMeters: Math.round(distanceToRestaurant) },
+          });
+        }
       } else if (!existingGeofenceState) {
         await updateAlertState(ctx.driverId, "GEOFENCE_STATUS", isInsideRestaurant ? "INSIDE" : "OUTSIDE");
       }

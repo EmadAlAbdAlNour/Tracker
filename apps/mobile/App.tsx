@@ -85,6 +85,49 @@ async function getOrCreateDeviceId(): Promise<string> {
   }
 }
 
+let activeRefreshPromise: Promise<Session | null> | null = null;
+
+async function refreshAuthSession(): Promise<Session | null> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
+  }
+
+  activeRefreshPromise = (async () => {
+    try {
+      const currentSession = await readSession();
+      if (!currentSession?.refreshToken) return null;
+
+      const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: currentSession.refreshToken }),
+      });
+
+      if (!refreshResponse.ok) {
+        if (refreshResponse.status === 401) {
+          await clearSession().catch(() => undefined);
+        }
+        return null;
+      }
+
+      const refreshedPayload = await refreshResponse.json();
+      if (!isValidSession(refreshedPayload)) {
+        await clearSession().catch(() => undefined);
+        return null;
+      }
+
+      await saveSession(refreshedPayload);
+      return refreshedPayload;
+    } catch {
+      return null;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
 async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -106,30 +149,13 @@ async function apiRequest<T>(
   });
 
   if (response.status === 401 && session?.refreshToken) {
-    try {
-      const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: session.refreshToken }),
+    const nextSession = await refreshAuthSession();
+    if (nextSession?.accessToken) {
+      headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
+      response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers,
       });
-
-      if (refreshResponse.ok) {
-        const refreshedPayload = await refreshResponse.json();
-        if (!isValidSession(refreshedPayload)) {
-          await clearSession().catch(() => undefined);
-          throw new Error('Invalid refresh session payload');
-        }
-
-        const nextSession: Session = refreshedPayload;
-        await saveSession(nextSession);
-        headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
-        response = await fetch(`${API_URL}${path}`, {
-          ...options,
-          headers,
-        });
-      }
-    } catch {
-      // refresh failure
     }
   }
 
@@ -141,6 +167,7 @@ async function apiRequest<T>(
 
   return (await response.json()) as T;
 }
+
 
 function LoginScreen({ navigation }: any): React.JSX.Element {
   const [emailOrPhone, setEmailOrPhone] = useState('');

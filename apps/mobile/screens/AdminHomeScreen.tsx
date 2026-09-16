@@ -38,6 +38,7 @@ export function AdminHomeScreen({
 
   // Fleet Data
   const [fleet, setFleet] = useState<any | null>(null);
+  const [fleetError, setFleetError] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [driverModalVisible, setDriverModalVisible] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
@@ -79,8 +80,9 @@ export function AdminHomeScreen({
     try {
       const data = await apiRequest<any>('/api/fleet/live');
       setFleet(data);
-    } catch {
-      // ignore
+      setFleetError(null);
+    } catch (err: any) {
+      setFleetError(err?.message || 'Failed to connect to server');
     }
   }, [apiRequest]);
 
@@ -160,35 +162,80 @@ export function AdminHomeScreen({
   };
 
   const handleDeviceReset = async (driverId: string) => {
-    await apiRequest(`/api/drivers/${driverId}/device/reset`, { method: 'POST' });
-    await loadFleet();
-    if (activeTab === 'devices') await loadDevices();
-    if (selectedDriver && selectedDriver.driverId === driverId) {
-      setSelectedDriver((prev: any) =>
-        prev ? { ...prev, device: prev.device ? { ...prev.device, authorized: false } : null } : null
-      );
+    try {
+      await apiRequest(`/api/drivers/${driverId}/device/reset`, { method: 'POST' });
+      Alert.alert(t('app.notice'), locale === 'ar' ? 'تمت إعادة تعيين الجهاز بنجاح' : 'Device reset successfully');
+      await loadFleet();
+      if (activeTab === 'devices') await loadDevices();
+      if (selectedDriver && selectedDriver.driverId === driverId) {
+        setSelectedDriver((prev: any) =>
+          prev ? { ...prev, device: prev.device ? { ...prev.device, authorized: false } : null } : null
+        );
+      }
+    } catch (err: any) {
+      Alert.alert(t('app.error'), err?.message || 'Failed to reset device');
     }
   };
 
   const handleSaveSettings = async () => {
+    const restName = settingsRestaurant.name?.trim();
+    if (!restName) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'اسم المطعم لا يمكن أن يكون فارغاً' : 'Restaurant name is required');
+      return;
+    }
+
+    const lat = Number(settingsRestaurant.latitude);
+    const lng = Number(settingsRestaurant.longitude);
+    const radius = Number(settingsRestaurant.radiusMeters);
+
+    if (Number.isNaN(lat) || lat < -90 || lat > 90) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'إحداثيات خط العرض غير صالحة (-90 إلى 90)' : 'Invalid latitude (-90 to 90)');
+      return;
+    }
+    if (Number.isNaN(lng) || lng < -180 || lng > 180) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'إحداثيات خط الطول غير صالحة (-180 إلى 180)' : 'Invalid longitude (-180 to 180)');
+      return;
+    }
+    if (Number.isNaN(radius) || radius <= 0 || radius > 50000) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'نصف القطر يجب أن يكون بين 1 و 50000 متر' : 'Radius must be between 1 and 50,000 meters');
+      return;
+    }
+
+    const maxStop = Number(settingsAlerts.maxStopDurationMinutes);
+    const offlineGrace = Number(settingsAlerts.offlineGraceMinutes);
+    const lowBatt = Number(settingsAlerts.lowBatteryThreshold);
+
+    if (Number.isNaN(maxStop) || maxStop < 1 || maxStop > 120) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'مدة التوقف القصوى يجب أن تكون بين 1 و 120 دقيقة' : 'Max stop duration must be between 1 and 120 minutes');
+      return;
+    }
+    if (Number.isNaN(offlineGrace) || offlineGrace < 1 || offlineGrace > 60) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'مهلة الانقطاع يجب أن تكون بين 1 و 60 دقيقة' : 'Offline grace must be between 1 and 60 minutes');
+      return;
+    }
+    if (Number.isNaN(lowBatt) || lowBatt < 1 || lowBatt > 100) {
+      Alert.alert(t('app.error'), locale === 'ar' ? 'حد انخفاض البطارية يجب أن يكون بين 1% و 100%' : 'Low battery threshold must be between 1% and 100%');
+      return;
+    }
+
     setSettingsSaving(true);
     try {
       await Promise.all([
         apiRequest('/api/settings/restaurant', {
           method: 'PUT',
           body: JSON.stringify({
-            name: settingsRestaurant.name,
-            latitude: Number(settingsRestaurant.latitude),
-            longitude: Number(settingsRestaurant.longitude),
-            radiusMeters: Number(settingsRestaurant.radiusMeters),
+            name: restName,
+            latitude: lat,
+            longitude: lng,
+            radiusMeters: radius,
           }),
         }),
         apiRequest('/api/settings/alerts', {
           method: 'PUT',
           body: JSON.stringify({
-            maxStopDurationMinutes: Number(settingsAlerts.maxStopDurationMinutes),
-            offlineGraceMinutes: Number(settingsAlerts.offlineGraceMinutes),
-            lowBatteryThreshold: Number(settingsAlerts.lowBatteryThreshold),
+            maxStopDurationMinutes: maxStop,
+            offlineGraceMinutes: offlineGrace,
+            lowBatteryThreshold: lowBatt,
           }),
         }),
       ]);
@@ -367,6 +414,15 @@ export function AdminHomeScreen({
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {fleetError && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>⚠️ {fleetError}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadFleet}>
+              <Text style={styles.retryButtonText}>{locale === 'ar' ? 'إعادة المحاولة' : 'Retry'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* TAB 1: DASHBOARD */}
         {activeTab === 'dashboard' && (
           <View>
@@ -1211,6 +1267,35 @@ const styles = StyleSheet.create({
   },
   textRed: {
     color: '#dc2626',
+  },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorBannerText: {
+    color: '#991b1b',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  retryButton: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
