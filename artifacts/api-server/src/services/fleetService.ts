@@ -201,7 +201,7 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
         isOnline,
         offlineDurationMinutes: offlineMinutes,
         lastSeen: lastSeenDate,
-      }).catch(() => {});
+      }).catch((err) => console.error("Fleet offline alert evaluation error:", err));
     }
 
     let isInsideGeofence = false;

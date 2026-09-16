@@ -7,6 +7,7 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead,
 } from "../services/notificationService";
+import { getDriverByUserId } from "../lib/auth";
 
 const router = Router();
 
@@ -18,10 +19,19 @@ const notificationQuerySchema = z.object({
   driverId: z.string().uuid().optional(),
 });
 
-router.get("/", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
+router.get("/", requireAuth, requireRole("ADMIN", "CALL_CENTER", "DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const query = notificationQuerySchema.parse(req.query);
-    const result = await listNotifications(query);
+    if (req.user!.role === "DRIVER") {
+      const driver = await getDriverByUserId(req.user!.id);
+      if (!driver) {
+        res.status(200).json({ items: [], total: 0, unreadCount: 0, page: 1, limit: query.limit });
+        return;
+      }
+      query.driverId = driver.id;
+    }
+
+    const result = await listNotifications(query, req.user!.id);
     res.status(200).json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -32,23 +42,23 @@ router.get("/", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: Au
   }
 });
 
-router.patch("/:id/read", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
+router.patch("/:id/read", requireAuth, requireRole("ADMIN", "CALL_CENTER", "DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const notification = await markNotificationAsRead(id);
+    const notification = await markNotificationAsRead(id, req.user!.id);
     if (!notification) {
       next(createError(404, "NOT_FOUND", "Notification not found"));
       return;
     }
-    res.status(200).json({ notification });
+    res.status(200).json({ notification: { ...notification, read: true } });
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/read-all", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (_req: AuthenticatedRequest, res, next) => {
+router.post("/read-all", requireAuth, requireRole("ADMIN", "CALL_CENTER", "DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
-    await markAllNotificationsAsRead();
+    await markAllNotificationsAsRead(req.user!.id);
     res.status(200).json({ success: true });
   } catch (error) {
     next(error);
@@ -56,4 +66,3 @@ router.post("/read-all", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async
 });
 
 export default router;
-

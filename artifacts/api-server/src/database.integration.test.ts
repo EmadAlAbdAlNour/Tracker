@@ -44,8 +44,8 @@ describe("REAL DISPOSABLE POSTGRESQL INTEGRATION SUITE", () => {
   let adminAccessToken: string;
   let adminRefreshToken: string;
 
-  let managerUser: any;
-  let managerAccessToken: string;
+  let callCenterUser: any;
+  let callCenterAccessToken: string;
 
   let driverUser: any;
   let driverRecord: any;
@@ -101,7 +101,7 @@ describe("REAL DISPOSABLE POSTGRESQL INTEGRATION SUITE", () => {
         active: true,
       })
       .returning();
-    managerUser = createdCallCenter;
+    callCenterUser = createdCallCenter;
   });
 
   afterAll(async () => {
@@ -163,7 +163,7 @@ describe("REAL DISPOSABLE POSTGRESQL INTEGRATION SUITE", () => {
     });
 
     it("logout - revokes refresh token in PostgreSQL", async () => {
-      // Login manager to test logout
+      // Login call center to test logout
       const loginRes = await agent
         .post("/api/auth/login")
         .set("X-Forwarded-For", "10.0.0.3")
@@ -183,7 +183,7 @@ describe("REAL DISPOSABLE POSTGRESQL INTEGRATION SUITE", () => {
       expect(logoutRes.status).toBe(200);
 
       // Token must now be revoked in DB
-      const check = await libAuth.findValidRefreshToken(callCenterRefreshToken, managerUser.id);
+      const check = await libAuth.findValidRefreshToken(callCenterRefreshToken, callCenterUser.id);
       expect(check).toBeNull();
     });
 

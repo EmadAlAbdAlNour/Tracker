@@ -24,7 +24,7 @@ export default {
         'FOREGROUND_SERVICE_LOCATION',
         'POST_NOTIFICATIONS',
       ],
-      usesCleartextTraffic: true,
+      usesCleartextTraffic: process.env.NODE_ENV !== 'production',
     },
     ios: {
       bundleIdentifier: 'com.tracker.driver',

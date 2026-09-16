@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { getEnv } from "./config/env";
+import { startAlertEvaluationScheduler } from "./services/alertService";
 
 const env = getEnv();
 
@@ -11,4 +12,7 @@ app.listen(env.port, (err) => {
   }
 
   logger.info({ port: env.port }, "Server listening");
+
+  // Start periodic background evaluation for offline and stopped drivers
+  startAlertEvaluationScheduler();
 });

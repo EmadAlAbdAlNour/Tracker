@@ -222,6 +222,28 @@ export const notificationsTable = pgTable(
   }),
 );
 
+export const notificationReadsTable = pgTable(
+  "notification_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    notificationId: uuid("notification_id")
+      .notNull()
+      .references(() => notificationsTable.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userNotificationUnique: uniqueIndex("notification_reads_user_notif_unique").on(
+      table.userId,
+      table.notificationId,
+    ),
+    userIdx: index("notification_reads_user_idx").on(table.userId),
+    notificationIdx: index("notification_reads_notification_idx").on(table.notificationId),
+  }),
+);
+
 export const alertStateTable = pgTable(
   "alert_state",
   {
@@ -303,6 +325,17 @@ export const alertStateRelations = relations(alertStateTable, ({ one }) => ({
   driver: one(driversTable, {
     fields: [alertStateTable.driverId],
     references: [driversTable.id],
+  }),
+}));
+
+export const notificationReadRelations = relations(notificationReadsTable, ({ one }) => ({
+  notification: one(notificationsTable, {
+    fields: [notificationReadsTable.notificationId],
+    references: [notificationsTable.id],
+  }),
+  user: one(usersTable, {
+    fields: [notificationReadsTable.userId],
+    references: [usersTable.id],
   }),
 }));
 
@@ -399,6 +432,12 @@ export const insertNotificationSchema = z.object({
   metadata: z.string().nullable().optional(),
 });
 
+export const insertNotificationReadSchema = z.object({
+  notificationId: z.string().uuid(),
+  userId: z.string().uuid(),
+  readAt: z.date().optional(),
+});
+
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type User = typeof usersTable.$inferSelect;
 export type Driver = typeof driversTable.$inferSelect;
@@ -410,6 +449,7 @@ export type LocationPoint = typeof locationPointsTable.$inferSelect;
 export type RestaurantSettings = typeof restaurantSettingsTable.$inferSelect;
 export type AlertSettings = typeof alertSettingsTable.$inferSelect;
 export type Notification = typeof notificationsTable.$inferSelect;
+export type NotificationRead = typeof notificationReadsTable.$inferSelect;
 export type AlertState = typeof alertStateTable.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -421,5 +461,6 @@ export type InsertLocationPoint = z.infer<typeof insertLocationPointSchema>;
 export type InsertRestaurantSettings = z.infer<typeof insertRestaurantSettingsSchema>;
 export type InsertAlertSettings = z.infer<typeof insertAlertSettingsSchema>;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type InsertNotificationRead = z.infer<typeof insertNotificationReadSchema>;
 
 

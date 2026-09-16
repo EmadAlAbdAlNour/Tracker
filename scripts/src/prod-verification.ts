@@ -29,12 +29,13 @@ async function runVerification() {
   console.log("3. POST /api/auth/login (nonexistent user) =>", nonExistent.status, await nonExistent.json());
 
   // 4. Valid Admin login with admin.integration@tracker.local
+  const adminPassword = process.env.PROD_ADMIN_PASSWORD ?? "Password123!";
   const validLogin = await fetch(`${prodUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       emailOrPhone: "admin.integration@tracker.local",
-      password: "Password123!",
+      password: adminPassword,
     }),
   });
   console.log("4. POST /api/auth/login (valid admin) =>", validLogin.status);

@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Platform,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -27,6 +28,15 @@ import {
 import { flushQueuedLocationsGuarded } from './flushManager';
 import { resolveHomeRoute } from './roleRouting';
 import { SESSION_ROLES, isAllowedRole, isValidSession, type Session } from './session';
+import {
+  formatWesternNumber,
+  getLocale,
+  initLocale,
+  isRtl,
+  setStoredLocale,
+  t,
+  type Locale,
+} from './i18n';
 
 const DEVICE_ID_KEY = 'tracker_device_id';
 const SESSION_KEY = 'tracker_driver_session';
@@ -36,20 +46,6 @@ const API_URL =
   (process.env.NODE_ENV === 'production'
     ? 'https://tracker-alpha-puce.vercel.app'
     : 'http://10.0.2.2:3000');
-
-// Western numerals formatter (0-9)
-function formatNumber(value: number | string | null | undefined): string {
-  if (value == null) return '';
-  if (typeof value === 'number') {
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
-  }
-  const str = String(value).replace(/[٠-٩]/g, (d) => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)] ?? d);
-  const num = Number(str);
-  if (!isNaN(num)) {
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
-  }
-  return str;
-}
 
 async function saveSession(session: Session): Promise<void> {
   if (!isValidSession(session)) {
@@ -135,21 +131,21 @@ async function apiRequest<T>(
 
       if (refreshResponse.ok) {
         const refreshedPayload = await refreshResponse.json();
-    if (!isValidSession(refreshedPayload)) {
-      await clearSession().catch(() => undefined);
-      throw new Error('Invalid refresh session payload');
-    }
+        if (!isValidSession(refreshedPayload)) {
+          await clearSession().catch(() => undefined);
+          throw new Error('Invalid refresh session payload');
+        }
 
-    const nextSession: Session = refreshedPayload;
-    await saveSession(nextSession);
-    headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
-    response = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers,
-    });
-  }
+        const nextSession: Session = refreshedPayload;
+        await saveSession(nextSession);
+        headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
+        response = await fetch(`${API_URL}${path}`, {
+          ...options,
+          headers,
+        });
+      }
     } catch {
-  // refresh failure
+      // refresh failure
     }
   }
 
@@ -166,14 +162,21 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isArabic, setIsArabic] = useState(true);
+  const [locale, setLocaleState] = useState<Locale>(getLocale());
+
+  useEffect(() => {
+    initLocale().then(setLocaleState);
+  }, []);
+
+  const toggleLanguage = async () => {
+    const next: Locale = locale === 'ar' ? 'en' : 'ar';
+    await setStoredLocale(next);
+    setLocaleState(next);
+  };
 
   const handleLogin = async () => {
     if (!emailOrPhone.trim() || !password) {
-      Alert.alert(
-        isArabic ? 'تنبيه' : 'Notice',
-        isArabic ? 'يرجى إدخال اسم المستخدم وكلمة المرور' : 'Please enter credentials'
-      );
+      Alert.alert(t('app.notice'), t('login.enterCredentials'));
       return;
     }
 
@@ -194,24 +197,18 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
 
       const payload = await response.json();
       if (!response.ok) {
-        const message = payload?.error?.message ?? payload?.message ?? 'Login failed';
+        const message = payload?.error?.message ?? payload?.message ?? t('login.failed');
         throw new Error(message);
       }
 
       const sessionCandidate = payload as Partial<Session>;
       if (!isValidSession(sessionCandidate)) {
-        Alert.alert(
-          isArabic ? 'خطأ في الصلاحية' : 'Permission Error',
-          isArabic ? 'جلسة تسجيل الدخول غير صالحة.' : 'Invalid login session payload.'
-        );
+        Alert.alert(t('app.error'), t('login.invalidSession'));
         return;
       }
 
       if (!isAllowedRole(sessionCandidate.user.role)) {
-        Alert.alert(
-          isArabic ? 'خطأ في الصلاحية' : 'Permission Error',
-          isArabic ? 'الدور غير مسموح به في هذا التطبيق.' : 'This role is not allowed in this app.'
-        );
+        Alert.alert(t('app.error'), t('login.roleNotAllowed'));
         return;
       }
 
@@ -219,7 +216,7 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
       navigation.replace(resolveHomeRoute(sessionCandidate.user.role));
     } catch (error) {
       Alert.alert(
-        isArabic ? 'فشل تسجيل الدخول' : 'Login Failed',
+        t('login.failed'),
         error instanceof Error ? error.message : 'Unexpected error'
       );
     } finally {
@@ -227,16 +224,15 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
     }
   };
 
+  const rtl = isRtl();
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       <View style={styles.loginCard}>
         {/* Language switch */}
-        <TouchableOpacity
-          style={styles.langButton}
-          onPress={() => setIsArabic(!isArabic)}
-        >
-          <Text style={styles.langButtonText}>{isArabic ? 'English' : 'العربية'}</Text>
+        <TouchableOpacity style={styles.langButton} onPress={toggleLanguage}>
+          <Text style={styles.langButtonText}>{locale === 'ar' ? 'English' : 'العربية'}</Text>
         </TouchableOpacity>
 
         {/* Logo and header */}
@@ -244,31 +240,27 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
           <Text style={styles.logoText}>T</Text>
         </View>
 
-        <Text style={styles.appTitle}>
-          {isArabic ? 'تطبيق السائق' : 'Driver Tracker'}
-        </Text>
-        <Text style={styles.appSubtitle}>
-          {isArabic ? 'سجل الدخول لبدء وردية العمل' : 'Sign in to start your shift'}
-        </Text>
+        <Text style={styles.appTitle}>{t('app.title')}</Text>
+        <Text style={styles.appSubtitle}>{t('app.subtitle')}</Text>
 
         <View style={styles.form}>
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>
-              {isArabic ? 'البريد الإلكتروني أو الهاتف' : 'Email or Phone'}
+            <Text style={[styles.label, { textAlign: rtl ? 'right' : 'left' }]}>
+              {t('login.emailOrPhone')}
             </Text>
             <TextInput
               value={emailOrPhone}
               onChangeText={setEmailOrPhone}
-              placeholder={isArabic ? 'driver@example.com' : 'driver@example.com'}
+              placeholder="driver@example.com"
               placeholderTextColor="#94a3b8"
               autoCapitalize="none"
-              style={[styles.input, { textAlign: isArabic ? 'right' : 'left' }]}
+              style={[styles.input, { textAlign: rtl ? 'right' : 'left' }]}
             />
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>
-              {isArabic ? 'كلمة المرور' : 'Password'}
+            <Text style={[styles.label, { textAlign: rtl ? 'right' : 'left' }]}>
+              {t('login.password')}
             </Text>
             <TextInput
               value={password}
@@ -276,7 +268,7 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
               placeholder="••••••••"
               placeholderTextColor="#94a3b8"
               secureTextEntry
-              style={[styles.input, { textAlign: isArabic ? 'right' : 'left' }]}
+              style={[styles.input, { textAlign: rtl ? 'right' : 'left' }]}
             />
           </View>
 
@@ -288,9 +280,7 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
             {loading ? (
               <ActivityIndicator color="#ffffff" size="small" />
             ) : (
-              <Text style={styles.primaryButtonText}>
-                {isArabic ? 'تسجيل الدخول' : 'Sign In'}
-              </Text>
+              <Text style={styles.primaryButtonText}>{t('login.signIn')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -299,9 +289,61 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   );
 }
 
+interface FleetDriverItem {
+  driverId: string;
+  driverName: string;
+  employeeId: string;
+  operationalStatus: string;
+  isOnline: boolean;
+  device?: {
+    batteryPercentage: number | null;
+    isCharging: boolean;
+    networkStatus: string;
+    lastSeen: string | null;
+  } | null;
+  location?: {
+    recordedAt: string | null;
+  } | null;
+}
+
+interface LiveFleetData {
+  summary: {
+    activeShifts: number;
+    onlineDrivers: number;
+    movingDrivers: number;
+    stoppedDrivers: number;
+    atRestaurantDrivers: number;
+    offlineDrivers: number;
+  };
+  drivers: FleetDriverItem[];
+}
+
 function OperatorHomeScreen({ navigation }: any): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
-  const [isArabic, setIsArabic] = useState(true);
+  const [locale, setLocaleState] = useState<Locale>(getLocale());
+  const [fleet, setFleet] = useState<LiveFleetData | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    initLocale().then(setLocaleState);
+  }, []);
+
+  const toggleLanguage = async () => {
+    const next: Locale = locale === 'ar' ? 'en' : 'ar';
+    await setStoredLocale(next);
+    setLocaleState(next);
+  };
+
+  const loadFleet = useCallback(async (activeSession?: Session | null) => {
+    const s = activeSession ?? session;
+    if (!s) return;
+    try {
+      const data = await apiRequest<LiveFleetData>('/api/fleet/live', {}, s);
+      setFleet(data);
+    } catch {
+      // ignore poll failure
+    }
+  }, [session]);
 
   useEffect(() => {
     (async () => {
@@ -312,8 +354,15 @@ function OperatorHomeScreen({ navigation }: any): React.JSX.Element {
         return;
       }
       setSession(current);
+      await loadFleet(current);
     })();
-  }, [navigation]);
+  }, [navigation, loadFleet]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadFleet();
+    setRefreshing(false);
+  };
 
   const handleLogout = async () => {
     const current = await readSession();
@@ -328,13 +377,47 @@ function OperatorHomeScreen({ navigation }: any): React.JSX.Element {
     navigation.replace('Login');
   };
 
+  const rtl = isRtl();
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'MOVING':
+        return '#059669';
+      case 'STOPPED':
+        return '#d97706';
+      case 'AT_RESTAURANT':
+        return '#0284c7';
+      case 'OFFLINE':
+      default:
+        return '#64748b';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'MOVING':
+        return t('operator.moving');
+      case 'STOPPED':
+        return t('operator.stopped');
+      case 'AT_RESTAURANT':
+        return t('operator.atRestaurant');
+      case 'OFFLINE':
+      default:
+        return t('operator.offline');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Top Bar */}
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.langSmallButton} onPress={() => setIsArabic(!isArabic)}>
-            <Text style={styles.langSmallText}>{isArabic ? 'English' : 'العربية'}</Text>
+          <TouchableOpacity style={styles.langSmallButton} onPress={toggleLanguage}>
+            <Text style={styles.langSmallText}>{locale === 'ar' ? 'English' : 'العربية'}</Text>
           </TouchableOpacity>
           <View style={styles.topBarUser}>
             <Text style={styles.topBarName}>{session?.user.name ?? 'Tracker'}</Text>
@@ -342,22 +425,106 @@ function OperatorHomeScreen({ navigation }: any): React.JSX.Element {
           </View>
         </View>
 
+        {/* Fleet KPI Summary Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {isArabic ? 'لوحة التشغيل' : 'Operations Console'}
+          <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+            {t('app.operatorTitle')}
           </Text>
-          <Text style={styles.cardDescription}>
-            {isArabic
-              ? 'هذا الحساب يملك صلاحية التشغيل والإشراف. سيظهر هذا التطبيق للمدير ووحدة التشغيل في وضع المراقبة.'
-              : 'This account is operating in monitoring mode. Admin and call-center roles use the shared operations dashboard.'}
+          <Text style={[styles.cardDescription, { textAlign: rtl ? 'right' : 'left' }]}>
+            {t('app.operatorSubtitle')}
           </Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.replace('Login')}>
-            <Text style={styles.primaryButtonText}>{isArabic ? 'العودة إلى تسجيل الدخول' : 'Return to Login'}</Text>
+
+          {fleet?.summary && (
+            <View style={styles.kpiGrid}>
+              <View style={styles.kpiBox}>
+                <Text style={styles.kpiNumber}>{formatWesternNumber(fleet.summary.activeShifts)}</Text>
+                <Text style={styles.kpiLabel}>{t('operator.activeShifts')}</Text>
+              </View>
+              <View style={styles.kpiBox}>
+                <Text style={[styles.kpiNumber, { color: '#059669' }]}>
+                  {formatWesternNumber(fleet.summary.onlineDrivers)}
+                </Text>
+                <Text style={styles.kpiLabel}>{t('operator.online')}</Text>
+              </View>
+              <View style={styles.kpiBox}>
+                <Text style={[styles.kpiNumber, { color: '#0284c7' }]}>
+                  {formatWesternNumber(fleet.summary.atRestaurantDrivers)}
+                </Text>
+                <Text style={styles.kpiLabel}>{t('operator.atRestaurant')}</Text>
+              </View>
+              <View style={styles.kpiBox}>
+                <Text style={[styles.kpiNumber, { color: '#64748b' }]}>
+                  {formatWesternNumber(fleet.summary.offlineDrivers)}
+                </Text>
+                <Text style={styles.kpiLabel}>{t('operator.offline')}</Text>
+              </View>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.outlineButton, refreshing && styles.disabledButton]}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator color="#0f172a" size="small" />
+            ) : (
+              <Text style={styles.outlineButtonText}>{t('operator.refresh')}</Text>
+            )}
           </TouchableOpacity>
         </View>
 
+        {/* Fleet Drivers List Card */}
+        <View style={styles.card}>
+          <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+            {t('diagnostics.driver')} ({formatWesternNumber(fleet?.drivers.length ?? 0)})
+          </Text>
+
+          {(!fleet?.drivers || fleet.drivers.length === 0) ? (
+            <Text style={[styles.emptyText, { textAlign: rtl ? 'right' : 'left' }]}>
+              {t('operator.noDrivers')}
+            </Text>
+          ) : (
+            fleet.drivers.map((driver) => {
+              const statusColor = getStatusColor(driver.operationalStatus);
+              const battery = driver.device?.batteryPercentage;
+              return (
+                <View key={driver.driverId} style={styles.driverCard}>
+                  <View style={styles.driverHeader}>
+                    <View style={[styles.driverBadge, { backgroundColor: statusColor + '20' }]}>
+                      <Text style={[styles.driverBadgeText, { color: statusColor }]}>
+                        {getStatusLabel(driver.operationalStatus)}
+                      </Text>
+                    </View>
+                    <View style={styles.driverTitleGroup}>
+                      <Text style={styles.driverName}>{driver.driverName}</Text>
+                      <Text style={styles.driverIdText}>
+                        {t('diagnostics.employeeId')} {formatWesternNumber(driver.employeeId)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.driverMetaRow}>
+                    {battery != null && (
+                      <Text style={[styles.metaText, battery <= 20 ? styles.textRed : undefined]}>
+                        {t('operator.battery')}: {formatWesternNumber(battery)}%
+                        {driver.device?.isCharging ? ' ⚡' : ''}
+                      </Text>
+                    )}
+                    {driver.device?.networkStatus && (
+                      <Text style={styles.metaText}>
+                        {driver.device.networkStatus.toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>{isArabic ? 'تسجيل الخروج' : 'Log Out'}</Text>
+          <Text style={styles.logoutButtonText}>{t('app.logout')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -371,7 +538,17 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
   const [flushing, setFlushing] = useState(false);
-  const [isArabic, setIsArabic] = useState(true);
+  const [locale, setLocaleState] = useState<Locale>(getLocale());
+
+  useEffect(() => {
+    initLocale().then(setLocaleState);
+  }, []);
+
+  const toggleLanguage = async () => {
+    const next: Locale = locale === 'ar' ? 'en' : 'ar';
+    await setStoredLocale(next);
+    setLocaleState(next);
+  };
 
   const refreshState = async (activeSession?: Session | null) => {
     const s = activeSession ?? session;
@@ -459,15 +636,9 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
       await flushQueuedLocationsGuarded(API_URL);
       const count = await getQueuedLocationCount();
       setQueuedCount(count);
-      Alert.alert(
-        isArabic ? 'تمت المزامنة' : 'Synced',
-        isArabic ? 'تم إرسال النقاط المسجلة بنجاح' : 'Queued locations sent successfully'
-      );
+      Alert.alert(t('app.notice'), t('app.synced'));
     } catch {
-      Alert.alert(
-        isArabic ? 'تنبيه' : 'Notice',
-        isArabic ? 'تعذر الاتصال بالخادم، سيتم المحاولة لاحقاً' : 'Could not connect, will retry'
-      );
+      Alert.alert(t('app.notice'), t('app.syncError'));
     } finally {
       setFlushing(false);
     }
@@ -482,14 +653,18 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
         setTrackingEnabled(Boolean(started));
         await flushQueuedLocationsGuarded(API_URL);
         await refreshState();
-        Alert.alert(
-          isArabic ? 'تم بدء الوردية' : 'Shift Started',
-          isArabic ? 'تتبع الموقع يعمل الآن في الخلفية' : 'Location tracking is active'
-        );
+        if (started) {
+          Alert.alert(t('shift.started'), t('shift.activeTrackingNotice'));
+        } else {
+          Alert.alert(
+            t('shift.bgPermissionRequiredTitle'),
+            t('shift.bgPermissionRequiredMessage')
+          );
+        }
       }
     } catch (err) {
       Alert.alert(
-        isArabic ? 'فشل بدء الوردية' : 'Start Shift Failed',
+        t('app.error'),
         err instanceof Error ? err.message : 'Unable to start shift'
       );
     } finally {
@@ -502,18 +677,13 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
     try {
       await stopBackgroundTracking();
       setTrackingEnabled(false);
-      // Flush any queued points collected during this active shift FIRST
       await flushQueuedLocationsGuarded(API_URL).catch(() => {});
-      // Now end the shift on the server
       await apiRequest('/api/drivers/me/shifts/end', { method: 'POST' });
       await refreshState();
-      Alert.alert(
-        isArabic ? 'تم إنهاء الوردية' : 'Shift Ended',
-        isArabic ? 'تم إيقاف تتبع الموقع وحفظ ساعات العمل' : 'Location tracking has been stopped'
-      );
+      Alert.alert(t('shift.ended'), t('shift.offDuty'));
     } catch (err) {
       Alert.alert(
-        isArabic ? 'فشل إنهاء الوردية' : 'End Shift Failed',
+        t('app.error'),
         err instanceof Error ? err.message : 'Unable to end shift'
       );
     } finally {
@@ -523,12 +693,7 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
 
   const handleLogout = async () => {
     if (trackingEnabled) {
-      Alert.alert(
-        isArabic ? 'تنبيه' : 'Warning',
-        isArabic
-          ? 'يرجى إنهاء الوردية أولاً قبل تسجيل الخروج.'
-          : 'Please end your active shift before logging out.'
-      );
+      Alert.alert(t('app.warning'), t('shift.endShiftFirst'));
       return;
     }
 
@@ -547,25 +712,24 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
     }
   };
 
+  const rtl = isRtl();
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Top bar */}
         <View style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.langSmallButton}
-            onPress={() => setIsArabic(!isArabic)}
-          >
-            <Text style={styles.langSmallText}>{isArabic ? 'English' : 'العربية'}</Text>
+          <TouchableOpacity style={styles.langSmallButton} onPress={toggleLanguage}>
+            <Text style={styles.langSmallText}>{locale === 'ar' ? 'English' : 'العربية'}</Text>
           </TouchableOpacity>
 
           <View style={styles.topBarUser}>
             <Text style={styles.topBarName}>{session?.user.name}</Text>
             <Text style={styles.topBarRole}>
               {profile?.employeeId
-                ? `${isArabic ? 'الرقم الوظيفي' : 'ID'}: ${formatNumber(profile.employeeId)}`
-                : isArabic ? 'سائق' : 'Driver'}
+                ? `${t('diagnostics.employeeId')} ${formatWesternNumber(profile.employeeId)}`
+                : t('diagnostics.driver')}
             </Text>
           </View>
         </View>
@@ -573,9 +737,7 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
         {/* Shift Control Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>
-              {isArabic ? 'حالة الوردية والتتبع' : 'Shift & Tracking'}
-            </Text>
+            <Text style={styles.cardTitle}>{t('shift.title')}</Text>
             <View
               style={[
                 styles.statusBadge,
@@ -588,21 +750,15 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
                   trackingEnabled ? styles.statusTextActive : styles.statusTextInactive,
                 ]}
               >
-                {trackingEnabled
-                  ? isArabic ? 'على رأس العمل' : 'ON DUTY'
-                  : isArabic ? 'خارج الوردية' : 'OFF DUTY'}
+                {trackingEnabled ? t('shift.onDuty') : t('shift.offDuty')}
               </Text>
             </View>
           </View>
 
-          <Text style={styles.cardDescription}>
+          <Text style={[styles.cardDescription, { textAlign: rtl ? 'right' : 'left' }]}>
             {trackingEnabled
-              ? isArabic
-                ? 'نظام التتبع يرسل موقعك تلقائياً للوحة التحكم لضمان سلامة العمليات.'
-                : 'Background GPS tracking is actively transmitting your location.'
-              : isArabic
-              ? 'اضغط أدناه لبدء الوردية وتفعيل تتبع الموقع الجغرافي.'
-              : 'Press below to start your operational shift and GPS tracking.'}
+              ? t('shift.activeTrackingNotice')
+              : t('shift.inactiveNotice')}
           </Text>
 
           <TouchableOpacity
@@ -618,9 +774,7 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
               <ActivityIndicator color="#ffffff" size="small" />
             ) : (
               <Text style={styles.actionButtonText}>
-                {trackingEnabled
-                  ? isArabic ? 'إنهاء الوردية (إيقاف التتبع)' : 'End Shift (Stop Tracking)'
-                  : isArabic ? 'بدء الوردية (تفعيل التتبع)' : 'Start Shift (Start Tracking)'}
+                {trackingEnabled ? t('shift.endShift') : t('shift.startShift')}
               </Text>
             )}
           </TouchableOpacity>
@@ -628,29 +782,20 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
 
         {/* Telemetry / Queue Diagnostics Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {isArabic ? 'بيانات الاتصال والمزامنة' : 'Sync & Diagnostics'}
+          <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+            {t('diagnostics.title')}
           </Text>
 
           <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>
-              {isArabic ? 'حالة التتبع:' : 'Tracking Status:'}
-            </Text>
-            <Text
-              style={[
-                styles.diagValue,
-                trackingEnabled ? styles.textGreen : styles.textGray,
-              ]}
-            >
-              {trackingEnabled ? (isArabic ? 'نشط' : 'Active') : (isArabic ? 'معطل' : 'Inactive')}
+            <Text style={styles.diagLabel}>{t('diagnostics.trackingStatus')}</Text>
+            <Text style={[styles.diagValue, trackingEnabled ? styles.textGreen : styles.textGray]}>
+              {trackingEnabled ? t('diagnostics.active') : t('diagnostics.inactive')}
             </Text>
           </View>
 
           <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>
-              {isArabic ? 'نقاط الموقع المخزنة بالهاتف:' : 'Queued Locations:'}
-            </Text>
-            <Text style={styles.diagValue}>{formatNumber(queuedCount)}</Text>
+            <Text style={styles.diagLabel}>{t('diagnostics.queuedLocations')}</Text>
+            <Text style={styles.diagValue}>{formatWesternNumber(queuedCount)}</Text>
           </View>
 
           <TouchableOpacity
@@ -661,9 +806,7 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
             {flushing ? (
               <ActivityIndicator color="#0f172a" size="small" />
             ) : (
-              <Text style={styles.outlineButtonText}>
-                {isArabic ? 'مزامنة البيانات الآن' : 'Sync Now'}
-              </Text>
+              <Text style={styles.outlineButtonText}>{t('app.sync')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -674,9 +817,7 @@ function DriverHomeScreen({ navigation }: any): React.JSX.Element {
           onPress={handleLogout}
           disabled={loading}
         >
-          <Text style={styles.logoutButtonText}>
-            {isArabic ? 'تسجيل الخروج' : 'Log Out'}
-          </Text>
+          <Text style={styles.logoutButtonText}>{t('app.logout')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -801,7 +942,6 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
-  // Home styles
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -928,6 +1068,9 @@ const styles = StyleSheet.create({
   textGray: {
     color: '#94a3b8',
   },
+  textRed: {
+    color: '#e11d48',
+  },
   outlineButton: {
     marginTop: 14,
     paddingVertical: 10,
@@ -955,5 +1098,77 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     color: '#e11d48',
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 12,
+  },
+  kpiBox: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  kpiNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0f172a',
+  },
+  kpiLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    paddingVertical: 16,
+  },
+  driverCard: {
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingVertical: 12,
+  },
+  driverHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  driverTitleGroup: {
+    alignItems: 'flex-end',
+  },
+  driverName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0f172a',
+  },
+  driverIdText: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  driverBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  driverBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  driverMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  metaText: {
+    fontSize: 11,
+    color: '#64748b',
   },
 });

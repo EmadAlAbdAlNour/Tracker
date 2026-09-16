@@ -1,4 +1,4 @@
-﻿import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Battery from 'expo-battery';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -188,10 +188,20 @@ export function registerBackgroundLocationTask(): void {
 
 export async function ensureTrackingPermissions(): Promise<{ foreground: boolean; background: boolean }> {
   const foreground = await Location.requestForegroundPermissionsAsync();
-  const background = await Location.requestBackgroundPermissionsAsync();
+  let backgroundGranted = false;
+
+  if (foreground.status === 'granted') {
+    try {
+      const background = await Location.requestBackgroundPermissionsAsync();
+      backgroundGranted = background.status === 'granted';
+    } catch {
+      backgroundGranted = false;
+    }
+  }
+
   return {
     foreground: foreground.status === 'granted',
-    background: background.status === 'granted',
+    background: backgroundGranted,
   };
 }
 
@@ -200,7 +210,8 @@ export async function startBackgroundTracking(): Promise<boolean> {
   if (serviceStatus) return true;
 
   const permissionResult = await ensureTrackingPermissions();
-  if (!permissionResult.foreground) {
+  if (!permissionResult.foreground || !permissionResult.background) {
+    console.warn('Background tracking aborted: missing permissions', permissionResult);
     return false;
   }
 

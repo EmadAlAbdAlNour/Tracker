@@ -685,8 +685,8 @@ export async function submitDriverLocation(
       recordedAt,
       batteryPercentage: input.batteryPercentage,
       locationServicesEnabled: input.locationServicesEnabled,
-    }).catch(() => {});
-  }).catch(() => {});
+    }).catch((err) => console.error("Single location alert evaluation error:", err));
+  }).catch((err) => console.error("Alert service module load error:", err));
 
   return point;
 }
@@ -795,8 +795,8 @@ export async function submitDriverLocationBatch(userId: string, inputs: Array<{
       recordedAt: new Date(lastPoint.recordedAt),
       batteryPercentage: lastPoint.batteryPercentage,
       locationServicesEnabled: lastPoint.locationServicesEnabled,
-    }).catch(() => {});
-  }).catch(() => {});
+    }).catch((err) => console.error("Batch location alert evaluation error:", err));
+  }).catch((err) => console.error("Alert service module load error in batch:", err));
 
   return { accepted, duplicates, acceptedClientIds: insertedClientIds };
 }

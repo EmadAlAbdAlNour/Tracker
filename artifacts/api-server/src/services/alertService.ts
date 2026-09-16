@@ -1,5 +1,13 @@
-import { db, alertStateTable } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
+import {
+  db,
+  alertStateTable,
+  shiftsTable,
+  driversTable,
+  usersTable,
+  devicesTable,
+  locationPointsTable,
+} from "@workspace/db";
+import { eq, and, isNull, desc } from "drizzle-orm";
 import { getAlertSettings, getRestaurantSettings } from "./settingsService";
 import { createNotification } from "./notificationService";
 
@@ -236,7 +244,20 @@ export async function evaluateDriverOfflineAlert(params: {
 
     if (!params.isOnline) {
       if (!offlineState) {
-        await updateAlertState(params.driverId, "DRIVER_OFFLINE", "OFFLINE", params.lastSeen ?? now);
+        await updateAlertState(params.driverId, "DRIVER_OFFLINE", "ALERTED", params.lastSeen ?? now);
+        const driverName = params.driverName ?? "السائق";
+        const duration = Math.round(params.offlineDurationMinutes ?? alertSettings.offlineGraceMinutes);
+        await createNotification({
+          type: "DRIVER_OFFLINE",
+          severity: "WARNING",
+          titleAr: "انقطاع الاتصال بالسائق",
+          titleEn: "Driver Offline",
+          messageAr: `انقطع الاتصال بـ ${driverName} منذ ${duration} دقيقة`,
+          messageEn: `Lost connection to ${driverName} for ${duration} minutes`,
+          driverId: params.driverId,
+          shiftId: params.shiftId,
+          metadata: { offlineDurationMinutes: duration, lastSeen: params.lastSeen },
+        });
       } else {
         const isFirstAlert = offlineState.stateData !== "ALERTED";
         const timeSinceLastNotif = now.getTime() - new Date(offlineState.lastNotifiedAt).getTime();
@@ -345,5 +366,99 @@ export async function resolveAlertState(driverId: string, alertType: string) {
       .where(eq(alertStateTable.id, existing.id));
   }
 }
+
+export async function evaluateAllActiveDriverAlerts() {
+  try {
+    const alertSettings = await getAlertSettings();
+    if (!alertSettings.offlineAlertEnabled && !alertSettings.stopAlertEnabled) {
+      return;
+    }
+
+    const activeShifts = await db
+      .select({
+        shiftId: shiftsTable.id,
+        driverId: shiftsTable.driverId,
+        startedAt: shiftsTable.startedAt,
+        userName: usersTable.name,
+      })
+      .from(shiftsTable)
+      .innerJoin(driversTable, eq(driversTable.id, shiftsTable.driverId))
+      .innerJoin(usersTable, eq(usersTable.id, driversTable.userId))
+      .where(eq(shiftsTable.status, "ACTIVE"));
+
+    if (!activeShifts.length) {
+      return;
+    }
+
+    const now = Date.now();
+    const offlineThresholdMs = (alertSettings.offlineGraceMinutes || 5) * 60 * 1000;
+
+    for (const shift of activeShifts) {
+      const device = await db
+        .select()
+        .from(devicesTable)
+        .where(eq(devicesTable.driverId, shift.driverId))
+        .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.updatedAt))
+        .limit(1);
+
+      const location = await db
+        .select()
+        .from(locationPointsTable)
+        .where(eq(locationPointsTable.driverId, shift.driverId))
+        .orderBy(desc(locationPointsTable.recordedAt))
+        .limit(1);
+
+      let lastSeenDate: Date | null = null;
+      if (device[0]?.lastSeen) {
+        lastSeenDate = new Date(device[0].lastSeen);
+      } else if (location[0]?.recordedAt) {
+        lastSeenDate = new Date(location[0].recordedAt);
+      }
+
+      const isOnline = lastSeenDate ? now - lastSeenDate.getTime() <= offlineThresholdMs : false;
+      const offlineMinutes = (!isOnline && lastSeenDate)
+        ? Math.floor((now - lastSeenDate.getTime()) / 60000)
+        : (alertSettings.offlineGraceMinutes || 5);
+
+      await evaluateDriverOfflineAlert({
+        driverId: shift.driverId,
+        driverName: shift.userName,
+        shiftId: shift.shiftId,
+        isOnline,
+        offlineDurationMinutes: offlineMinutes,
+        lastSeen: lastSeenDate,
+      });
+    }
+  } catch (err) {
+    console.error("Proactive alert evaluation cycle failed:", err);
+  }
+}
+
+let schedulerTimer: NodeJS.Timeout | null = null;
+
+export function startAlertEvaluationScheduler(intervalMs = 30000): void {
+  if (process.env.NODE_ENV === "test") return;
+  if (schedulerTimer) return;
+
+  setTimeout(() => {
+    evaluateAllActiveDriverAlerts().catch((err) => {
+      console.error("Initial alert evaluation failed:", err);
+    });
+  }, 5000);
+
+  schedulerTimer = setInterval(() => {
+    evaluateAllActiveDriverAlerts().catch((err) => {
+      console.error("Scheduled alert evaluation failed:", err);
+    });
+  }, intervalMs);
+}
+
+export function stopAlertEvaluationScheduler(): void {
+  if (schedulerTimer) {
+    clearInterval(schedulerTimer);
+    schedulerTimer = null;
+  }
+}
+
 
 
