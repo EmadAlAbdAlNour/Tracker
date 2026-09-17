@@ -7,10 +7,10 @@ export default {
     userInterfaceStyle: 'light',
     extra: {
       apiUrl:
-        process.env.EXPO_PUBLIC_API_URL ??
-        (process.env.NODE_ENV === 'production'
-          ? 'https://tracker-alpha-puce.vercel.app'
-          : 'http://10.0.2.2:3000'),
+        process.env.EXPO_PUBLIC_API_URL ||
+        (process.env.NODE_ENV === 'development'
+          ? 'http://10.0.2.2:3000'
+          : 'https://tracker-alpha-puce.vercel.app'),
       locationIntervalMs: Number(process.env.EXPO_PUBLIC_LOCATION_INTERVAL_MS ?? 20000),
       locationDistanceMeters: Number(process.env.EXPO_PUBLIC_LOCATION_DISTANCE_METERS ?? 25),
     },

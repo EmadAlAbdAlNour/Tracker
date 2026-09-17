@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// Rebuilt Driver Cockpit for Tracker Mobile
+// Single-Glance 5-Question Answers, State Machine Clarity, Bottom Tabs, Zero-Emoji
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +15,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
+import { colors, radius, shadows, spacing, typography } from '../designSystem';
+import { AppIcon } from '../components/AppIcon';
+import { CompactHeader } from '../components/CompactHeader';
+import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import {
   collectDriverTelemetry,
   getQueuedLocationCount,
@@ -22,6 +28,7 @@ import {
   type DriverTelemetryState,
 } from '../location';
 import { flushQueuedLocationsGuarded } from '../flushManager';
+import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
 
 interface DriverHomeScreenProps {
@@ -41,12 +48,15 @@ export type DriverOperationalState =
   | 'SYNCING'
   | 'DEVICE_UNAUTHORIZED';
 
+type DriverTab = 'cockpit' | 'shift' | 'diagnostics' | 'profile';
+
 export function DriverHomeScreen({
   session,
   apiUrl,
   apiRequest,
   onLogout,
 }: DriverHomeScreenProps): React.JSX.Element {
+  const [activeTab, setActiveTab] = useState<DriverTab>('cockpit');
   const [locale, setLocaleState] = useState<Locale>(getLocale());
   const [profile, setProfile] = useState<any>(null);
   const [activeShift, setActiveShift] = useState<any | null>(null);
@@ -62,6 +72,8 @@ export function DriverHomeScreen({
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const rtl = isRtl();
+
   const toggleLanguage = async () => {
     const next: Locale = locale === 'ar' ? 'en' : 'ar';
     await setStoredLocale(next);
@@ -69,39 +81,30 @@ export function DriverHomeScreen({
   };
 
   // Compute Granular Driver State
-  const computeDriverState = (): DriverOperationalState => {
+  const driverState: DriverOperationalState = useMemo(() => {
     if (syncing) return 'SYNCING';
     if (!activeShift) {
       if (queuedCount > 0) return 'SYNC_PENDING';
       return 'OFF_DUTY';
     }
-    // Shift is active
     if (telemetry.locationServicesEnabled === false) return 'GPS_DISABLED';
     if (telemetry.networkStatus === 'offline') return 'NETWORK_OFFLINE';
-    if (trackingActive) {
-      return 'TRACKING_ACTIVE';
-    }
+    if (trackingActive) return 'TRACKING_ACTIVE';
     if (queuedCount > 0) return 'SYNC_PENDING';
     return 'SHIFT_ACTIVE';
-  };
-
-  const driverState = computeDriverState();
+  }, [syncing, activeShift, queuedCount, telemetry, trackingActive]);
 
   const refreshState = useCallback(async () => {
     try {
-      // 1. Telemetry
       const telem = await collectDriverTelemetry();
       setTelemetry(telem);
 
-      // 2. Queue count
       const count = await getQueuedLocationCount();
       setQueuedCount(count);
 
-      // 3. Driver Profile
       const prof = await apiRequest<{ driver: any }>('/api/drivers/me').catch(() => null);
       if (prof?.driver) setProfile(prof.driver);
 
-      // 4. Active Shift
       const shifts = await apiRequest<{ items: any[] }>('/api/drivers/me/shifts?status=ACTIVE').catch(
         () => ({ items: [] })
       );
@@ -118,7 +121,6 @@ export function DriverHomeScreen({
     refreshState();
     flushQueuedLocationsGuarded(apiUrl).then(() => getQueuedLocationCount().then(setQueuedCount));
 
-    // Telemetry and queue polling every 10s
     const interval = setInterval(async () => {
       const telem = await collectDriverTelemetry();
       setTelemetry(telem);
@@ -162,10 +164,10 @@ export function DriverHomeScreen({
     } catch (err: any) {
       if (err?.message?.includes('DEVICE_UNAUTHORIZED') || err?.code === 'DEVICE_UNAUTHORIZED') {
         Alert.alert(
-          locale === 'ar' ? 'الجهاز غير مصرح' : 'Device Unauthorized',
-          locale === 'ar'
+          rtl ? 'الجهاز غير مصرح' : 'Device Unauthorized',
+          rtl
             ? 'تمت إعادة تعيين الجهاز من قِبل الإدارة. يرجى تسجيل الدخول مجدداً أو مراجعة المشرف.'
-            : 'Device authorization was revoked by an administrator. Please log in again or contact your manager.'
+            : 'Device authorization revoked. Please re-login.'
         );
       } else {
         Alert.alert(t('app.error'), err?.message || 'Unable to start shift');
@@ -214,488 +216,541 @@ export function DriverHomeScreen({
     onLogout();
   };
 
-  const rtl = isRtl();
-
   // State visuals mapping
   const getStateVisuals = (state: DriverOperationalState) => {
     switch (state) {
       case 'TRACKING_ACTIVE':
         return {
-          color: '#059669',
-          bg: '#d1fae5',
-          border: '#a7f3d0',
-          label: t('driverStates.TRACKING_ACTIVE'),
-          instructions: t('driverStates.instructionsActive'),
+          color: colors.status.online,
+          bg: colors.status.onlineBg,
+          border: colors.status.onlineBorder,
+          title: rtl ? 'التتبع المباشر نشط' : 'Live Tracking Active',
+          desc: rtl ? 'الموقع يتم إرساله تلقائياً للوحة التحكم في الخلفية' : 'Background GPS tracking is actively transmitting',
         };
       case 'SHIFT_ACTIVE':
         return {
-          color: '#0284c7',
-          bg: '#e0f2fe',
+          color: colors.accent,
+          bg: colors.accentLight,
           border: '#bae6fd',
-          label: t('driverStates.SHIFT_ACTIVE'),
-          instructions: t('driverStates.instructionsActive'),
+          title: rtl ? 'الوردية نشطة' : 'Shift Active',
+          desc: rtl ? 'الوردية قيد التشغيل' : 'Operational shift is active',
         };
       case 'GPS_DISABLED':
         return {
-          color: '#dc2626',
-          bg: '#fee2e2',
-          border: '#fecaca',
-          label: t('driverStates.GPS_DISABLED'),
-          instructions: t('driverStates.instructionsGpsOff'),
+          color: colors.status.critical,
+          bg: colors.status.criticalBg,
+          border: colors.status.criticalBorder,
+          title: rtl ? 'خدمة الموقع (GPS) معطلة' : 'GPS Disabled',
+          desc: rtl ? 'يرجى تفعيل خدمة تحديد الموقع لمواصلة التتبع' : 'Enable location services in system settings',
         };
       case 'NETWORK_OFFLINE':
         return {
-          color: '#d97706',
-          bg: '#fef3c7',
-          border: '#fde68a',
-          label: t('driverStates.NETWORK_OFFLINE'),
-          instructions: t('driverStates.instructionsOffline'),
+          color: colors.status.stopped,
+          bg: colors.status.stoppedBg,
+          border: colors.status.stoppedBorder,
+          title: rtl ? 'غير متصل بالإنترنت' : 'Network Offline',
+          desc: rtl ? 'يتم حفظ النقاط محلياً في الهاتف حتى عودة الاتصال' : 'Points are buffered locally until connection restores',
         };
       case 'SYNC_PENDING':
         return {
-          color: '#b45309',
-          bg: '#ffedd5',
-          border: '#fed7aa',
-          label: t('driverStates.SYNC_PENDING'),
-          instructions: t('driverStates.instructionsActive'),
+          color: colors.status.stopped,
+          bg: colors.status.stoppedBg,
+          border: colors.status.stoppedBorder,
+          title: rtl ? 'بيانات بانتظار المزامنة' : 'Sync Pending',
+          desc: rtl ? `يوجد ${formatWesternNumber(queuedCount)} نقاط مخزنة محلياً` : `${formatWesternNumber(queuedCount)} points buffered`,
         };
       case 'SYNCING':
         return {
           color: '#2563eb',
           bg: '#dbeafe',
           border: '#bfdbfe',
-          label: t('driverStates.SYNCING'),
-          instructions: t('driverStates.instructionsActive'),
+          title: rtl ? 'جارٍ مزامنة المواقع...' : 'Syncing Locations...',
+          desc: rtl ? 'يتم رفع النقاط المخزنة للخادم' : 'Uploading buffered points to server',
         };
       case 'DEVICE_UNAUTHORIZED':
         return {
-          color: '#dc2626',
-          bg: '#fee2e2',
-          border: '#fecaca',
-          label: t('driverStates.DEVICE_UNAUTHORIZED'),
-          instructions: t('login.invalidSession'),
+          color: colors.status.critical,
+          bg: colors.status.criticalBg,
+          border: colors.status.criticalBorder,
+          title: rtl ? 'الجهاز غير مصرح' : 'Device Unauthorized',
+          desc: rtl ? 'تم إلغاء اعتماد هذا الجهاز، يرجى مراجعة الإدارة' : 'Device authorization revoked',
         };
       case 'OFF_DUTY':
       default:
         return {
-          color: '#64748b',
-          bg: '#f1f5f9',
-          border: '#e2e8f0',
-          label: t('driverStates.OFF_DUTY'),
-          instructions: t('driverStates.instructionsOffDuty'),
+          color: colors.text.muted,
+          bg: colors.surfaceSubtle,
+          border: colors.border,
+          title: rtl ? 'خارج الوردية' : 'Off Duty',
+          desc: rtl ? 'اضغط أدناه لبدء وردية العمل وتفعيل التتبع الميداني' : 'Press start shift to enable background tracking',
         };
     }
   };
 
   const visuals = getStateVisuals(driverState);
 
+  const bottomTabs: TabItem[] = [
+    { id: 'cockpit', label: rtl ? 'الرئيسية' : 'Cockpit', icon: 'dashboard' },
+    { id: 'shift', label: rtl ? 'الوردية' : 'Shift', icon: 'driver' },
+    { id: 'diagnostics', label: rtl ? 'التشخيص' : 'Diagnostics', icon: 'device', badgeCount: queuedCount > 0 ? queuedCount : undefined },
+    { id: 'profile', label: rtl ? 'حسابي' : 'Profile', icon: 'users' },
+  ];
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarActions}>
-          <TouchableOpacity style={styles.langButton} onPress={toggleLanguage}>
-            <Text style={styles.langButtonText}>{locale === 'ar' ? 'English' : 'العربية'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutSmallButton} onPress={handleLogoutPress}>
-            <Text style={styles.logoutSmallText}>{t('app.logout')}</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Sleek Compact Header */}
+      <CompactHeader
+        title={rtl ? 'تطبيق السائق الميداني' : 'Driver Console'}
+        role="DRIVER"
+        userName={profile?.driverName || session.user.name}
+        locale={locale}
+        onToggleLanguage={toggleLanguage}
+        onLogout={handleLogoutPress}
+      />
 
-        <View style={styles.topBarUser}>
-          <Text style={styles.topBarName}>{session.user.name}</Text>
-          <Text style={styles.topBarRole}>
-            {profile?.employeeId
-              ? `${t('diagnostics.employeeId')} ${formatWesternNumber(profile.employeeId)}`
-              : t('diagnostics.driver')}
-          </Text>
-        </View>
+      <View style={styles.body}>
+        {/* TAB 1: COCKPIT (SINGLE-GLANCE 5-QUESTIONS ANSWER) */}
+        {activeTab === 'cockpit' && (
+          <ScrollView
+            contentContainerStyle={styles.scrollContainer}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          >
+            {/* 1. Primary Prominent State Status Card */}
+            <View style={[styles.stateHeroCard, { backgroundColor: visuals.bg, borderColor: visuals.border }]}>
+              <View style={[styles.stateHeroHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.stateDot, { backgroundColor: visuals.color }]} />
+                <Text style={[styles.stateHeroTitle, { color: visuals.color }]}>{visuals.title}</Text>
+              </View>
+              <Text style={[styles.stateHeroDesc, { textAlign: rtl ? 'right' : 'left' }]}>
+                {visuals.desc}
+              </Text>
+            </View>
+
+            {/* 2. Primary Shift Action Button */}
+            <TouchableOpacity
+              style={[
+                styles.primaryShiftButton,
+                activeShift ? styles.endShiftBtn : styles.startShiftBtn,
+                loading && styles.disabledButton,
+              ]}
+              onPress={activeShift ? handleEndShift : handleStartShift}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <View style={[styles.btnContentRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <AppIcon name={activeShift ? 'pause' : 'play'} size={18} color="#ffffff" />
+                  <Text style={styles.primaryShiftButtonText}>
+                    {activeShift
+                      ? rtl ? 'إنهاء الوردية (إيقاف التتبع)' : 'End Shift (Stop Tracking)'
+                      : rtl ? 'بدء الوردية (تفعيل التتبع)' : 'Start Shift (Start Tracking)'}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* 3. The 5 Core Operational Questions Checklist Grid */}
+            <View style={styles.checklistCard}>
+              <Text style={[styles.checklistCardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'فحص الجاهزية التشغيلية (5 مؤشرات)' : 'Operational Readiness (5 Checks)'}
+              </Text>
+
+              {/* Q1: Shift */}
+              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={styles.checkLeft}>
+                  <AppIcon name="driver" size={16} color={activeShift ? colors.status.online : colors.text.muted} />
+                  <Text style={styles.checkQuestionText}>{rtl ? 'حالة الوردية:' : 'Operational Shift:'}</Text>
+                </View>
+                <View style={[styles.checkPill, { backgroundColor: activeShift ? colors.status.onlineBg : colors.surfaceSubtle }]}>
+                  <Text style={[styles.checkPillText, { color: activeShift ? colors.status.online : colors.text.muted }]}>
+                    {activeShift ? t('shift.onDuty') : t('shift.offDuty')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Q2: Live Tracking */}
+              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={styles.checkLeft}>
+                  <AppIcon name="gps" size={16} color={trackingActive ? colors.status.online : colors.text.muted} />
+                  <Text style={styles.checkQuestionText}>{rtl ? 'التتبع المباشر:' : 'Live Tracking:'}</Text>
+                </View>
+                <View style={[styles.checkPill, { backgroundColor: trackingActive ? colors.status.onlineBg : colors.surfaceSubtle }]}>
+                  <Text style={[styles.checkPillText, { color: trackingActive ? colors.status.online : colors.text.muted }]}>
+                    {trackingActive ? (rtl ? 'يعمل في الخلفية' : 'Active') : (rtl ? 'متوقف' : 'Stopped')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Q3: GPS Service */}
+              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={styles.checkLeft}>
+                  <AppIcon name="target" size={16} color={telemetry.locationServicesEnabled ? colors.status.online : colors.status.critical} />
+                  <Text style={styles.checkQuestionText}>{rtl ? 'خدمة الموقع (GPS):' : 'Location Services (GPS):'}</Text>
+                </View>
+                <View style={[styles.checkPill, { backgroundColor: telemetry.locationServicesEnabled ? colors.status.onlineBg : colors.status.criticalBg }]}>
+                  <Text style={[styles.checkPillText, { color: telemetry.locationServicesEnabled ? colors.status.online : colors.status.critical }]}>
+                    {telemetry.locationServicesEnabled ? (rtl ? 'مفعّل' : 'Enabled') : (rtl ? 'معطّل' : 'Disabled')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Q4: Network Connection */}
+              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={styles.checkLeft}>
+                  <AppIcon name="wifi" size={16} color={telemetry.networkStatus !== 'offline' ? colors.status.online : colors.status.stopped} />
+                  <Text style={styles.checkQuestionText}>{rtl ? 'الاتصال بالإنترنت:' : 'Internet Connection:'}</Text>
+                </View>
+                <View style={[styles.checkPill, { backgroundColor: telemetry.networkStatus !== 'offline' ? colors.status.onlineBg : colors.status.stoppedBg }]}>
+                  <Text style={[styles.checkPillText, { color: telemetry.networkStatus !== 'offline' ? colors.status.online : colors.status.stopped }]}>
+                    {telemetry.networkStatus !== 'offline' ? (rtl ? 'متصل' : 'Connected') : (rtl ? 'غير متصل (تخزين محلي)' : 'Offline')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Q5: Synchronization / Queue */}
+              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={styles.checkLeft}>
+                  <AppIcon name="sync" size={16} color={queuedCount === 0 ? colors.status.online : colors.status.stopped} />
+                  <Text style={styles.checkQuestionText}>{rtl ? 'مزامنة المواقع:' : 'Data Synchronization:'}</Text>
+                </View>
+                <View style={[styles.checkPill, { backgroundColor: queuedCount === 0 ? colors.status.onlineBg : colors.status.stoppedBg }]}>
+                  <Text style={[styles.checkPillText, { color: queuedCount === 0 ? colors.status.online : colors.status.stopped }]}>
+                    {queuedCount === 0 ? (rtl ? 'متزامن بنجاح' : 'Up to date') : `${formatWesternNumber(queuedCount)} ${rtl ? 'نقاط بالانتظار' : 'pending'}`}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Background Service Educational Notice */}
+            <View style={[styles.infoNotice, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <AppIcon name="warning" size={14} color={colors.text.muted} />
+              <Text style={[styles.infoNoticeText, { textAlign: rtl ? 'right' : 'left' }]}>
+                {t('shift.bgPermissionRequiredMessage')}
+              </Text>
+            </View>
+          </ScrollView>
+        )}
+
+        {/* TAB 2: SHIFT DETAILS */}
+        {activeTab === 'shift' && (
+          <ScrollView contentContainerStyle={styles.scrollContainer}>
+            <View style={styles.card}>
+              <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'تفاصيل وردية العمل الحالية' : 'Active Shift Overview'}
+              </Text>
+
+              {activeShift ? (
+                <>
+                  <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                    <Text style={styles.detailLabel}>{rtl ? 'حالة الوردية:' : 'Status:'}</Text>
+                    <Text style={[styles.detailValue, { color: colors.status.online, fontWeight: '700' }]}>
+                      {t('shift.onDuty')}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                    <Text style={styles.detailLabel}>{rtl ? 'وقت البدء:' : 'Started At:'}</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(activeShift.startedAt).toLocaleTimeString()}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                    <Text style={styles.detailLabel}>{rtl ? 'المدة المنقضية:' : 'Duration:'}</Text>
+                    <Text style={styles.detailValue}>
+                      {formatWesternNumber(Math.round((Date.now() - new Date(activeShift.startedAt).getTime()) / 60000))} {rtl ? 'دقيقة' : 'minutes'}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.emptyNoticeText}>
+                  {rtl ? 'لا توجد وردية نشطة حالياً. يرجى الضغط على زر بدء الوردية من الشاشة الرئيسية.' : 'No active shift currently.'}
+                </Text>
+              )}
+            </View>
+          </ScrollView>
+        )}
+
+        {/* TAB 3: DIAGNOSTICS & SYNC */}
+        {activeTab === 'diagnostics' && (
+          <ScrollView contentContainerStyle={styles.scrollContainer}>
+            <View style={styles.card}>
+              <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'تشخيص عتاد الهاتف والاتصال' : 'Hardware & Diagnostics'}
+              </Text>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{rtl ? 'مستوى البطارية:' : 'Battery Level:'}</Text>
+                <Text style={styles.detailValue}>
+                  {telemetry.batteryPercentage != null
+                    ? `${formatWesternNumber(telemetry.batteryPercentage)}% ${telemetry.isCharging ? '(متصل بالشاحن)' : ''}`
+                    : '—'}
+                </Text>
+              </View>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{rtl ? 'نوع الشبكة:' : 'Network Type:'}</Text>
+                <Text style={styles.detailValue}>
+                  {telemetry.networkStatus?.toUpperCase() ?? 'UNKNOWN'}
+                </Text>
+              </View>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{rtl ? 'النقاط المخزنة محلياً:' : 'Queued Locations:'}</Text>
+                <Text style={[styles.detailValue, { fontWeight: '700' }]}>
+                  {formatWesternNumber(queuedCount)}
+                </Text>
+              </View>
+
+              {/* Manual Sync Button */}
+              <TouchableOpacity
+                style={[styles.syncButton, syncing && styles.disabledButton]}
+                onPress={handleManualSync}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <ActivityIndicator color="#0f766e" size="small" />
+                ) : (
+                  <View style={[styles.btnContentRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                    <AppIcon name="sync" size={16} color={colors.primary} />
+                    <Text style={styles.syncButtonText}>{t('app.sync')}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+
+        {/* TAB 4: PROFILE */}
+        {activeTab === 'profile' && (
+          <ScrollView contentContainerStyle={styles.scrollContainer}>
+            <View style={styles.card}>
+              <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'الملف التعريفي للسائق' : 'Driver Profile'}
+              </Text>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{rtl ? 'الاسم:' : 'Name:'}</Text>
+                <Text style={styles.detailValue}>{profile?.driverName || session.user.name}</Text>
+              </View>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{t('diagnostics.employeeId')}</Text>
+                <Text style={styles.detailValue}>{formatWesternNumber(profile?.employeeId || '—')}</Text>
+              </View>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{rtl ? 'رقم الهاتف:' : 'Phone:'}</Text>
+                <Text style={styles.detailValue}>{session.user.phone || '—'}</Text>
+              </View>
+
+              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.detailLabel}>{rtl ? 'نوع المركبة:' : 'Vehicle:'}</Text>
+                <Text style={styles.detailValue}>{profile?.vehicleType || 'Motorcycle'}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.logoutRowButton} onPress={handleLogoutPress}>
+              <AppIcon name="logout" size={16} color="#dc2626" />
+              <Text style={styles.logoutRowButtonText}>{t('app.logout')}</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Prominent State Machine Card */}
-        <View style={[styles.stateCard, { borderColor: visuals.border, backgroundColor: visuals.bg }]}>
-          <View style={styles.stateBadgeRow}>
-            <View style={[styles.stateBadge, { backgroundColor: visuals.color }]}>
-              <Text style={styles.stateBadgeText}>{visuals.label}</Text>
-            </View>
-            <View style={styles.pulseDot}>
-              <View
-                style={[
-                  styles.innerPulseDot,
-                  { backgroundColor: trackingActive ? '#059669' : '#94a3b8' },
-                ]}
-              />
-            </View>
-          </View>
-
-          <Text style={[styles.stateInstructions, { color: visuals.color, textAlign: rtl ? 'right' : 'left' }]}>
-            {visuals.instructions}
-          </Text>
-        </View>
-
-        {/* Operational Shift Control Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>{t('shift.title')}</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                activeShift ? styles.statusBadgeActive : styles.statusBadgeInactive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusBadgeText,
-                  activeShift ? styles.statusTextActive : styles.statusTextInactive,
-                ]}
-              >
-                {activeShift ? t('shift.onDuty') : t('shift.offDuty')}
-              </Text>
-            </View>
-          </View>
-
-          {activeShift && (
-            <View style={styles.shiftInfoRow}>
-              <Text style={styles.shiftStartedLabel}>
-                {t('driverDetail.shiftDuration')}:{' '}
-                {formatWesternNumber(
-                  Math.round(
-                    (Date.now() - new Date(activeShift.startedAt).getTime()) / (1000 * 60)
-                  )
-                )}{' '}
-                دقيقة / min
-              </Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              activeShift ? styles.endShiftButton : styles.startShiftButton,
-              loading && styles.disabledButton,
-            ]}
-            onPress={activeShift ? handleEndShift : handleStartShift}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text style={styles.actionButtonText}>
-                {activeShift ? t('shift.endShift') : t('shift.startShift')}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Real-time Hardware & Telemetry Card */}
-        <View style={styles.card}>
-          <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-            📱 {t('driverDetail.deviceInfo')}
-          </Text>
-
-          {/* Battery */}
-          <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>🔋 {t('driverDetail.battery')}:</Text>
-            <Text
-              style={[
-                styles.diagValue,
-                telemetry.batteryPercentage != null && telemetry.batteryPercentage <= 20
-                  ? styles.textRed
-                  : styles.textGreen,
-              ]}
-            >
-              {telemetry.batteryPercentage != null
-                ? `${formatWesternNumber(telemetry.batteryPercentage)}% ${
-                    telemetry.isCharging ? '⚡ (متصل بالشاحن)' : ''
-                  }`
-                : '—'}
-            </Text>
-          </View>
-
-          {/* Network Type */}
-          <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>📶 {t('driverDetail.network')}:</Text>
-            <Text style={styles.diagValue}>{telemetry.networkStatus?.toUpperCase() ?? 'UNKNOWN'}</Text>
-          </View>
-
-          {/* GPS Services */}
-          <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>📍 {t('driverDetail.status')}:</Text>
-            <Text
-              style={[
-                styles.diagValue,
-                telemetry.locationServicesEnabled ? styles.textGreen : styles.textRed,
-              ]}
-            >
-              {telemetry.locationServicesEnabled ? 'GPS مفعّل' : 'GPS معطّل'}
-            </Text>
-          </View>
-
-          {/* Queued Points */}
-          <View style={styles.diagRow}>
-            <Text style={styles.diagLabel}>📦 {t('diagnostics.queuedLocations')}</Text>
-            <Text
-              style={[
-                styles.diagValue,
-                queuedCount > 0 ? styles.textOrange : styles.textGray,
-              ]}
-            >
-              {formatWesternNumber(queuedCount)}
-            </Text>
-          </View>
-
-          {/* Manual Sync Button */}
-          <TouchableOpacity
-            style={[styles.outlineButton, syncing && styles.disabledButton]}
-            onPress={handleManualSync}
-            disabled={syncing}
-          >
-            {syncing ? (
-              <ActivityIndicator color="#0f172a" size="small" />
-            ) : (
-              <Text style={styles.outlineButtonText}>🔄 {t('app.sync')}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Background Tracking Educational Note */}
-        <View style={styles.infoBox}>
-          <Text style={[styles.infoBoxText, { textAlign: rtl ? 'right' : 'left' }]}>
-            🛡️ {t('shift.bgPermissionRequiredMessage')}
-          </Text>
-        </View>
-      </ScrollView>
+      <BottomTabBar
+        tabs={bottomTabs}
+        activeTab={activeTab}
+        onTabChange={(id) => setActiveTab(id as DriverTab)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.background,
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+  body: {
+    flex: 1,
   },
-  topBarActions: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
+  scrollContainer: {
+    padding: spacing.lg,
+    gap: spacing.md,
   },
-  langButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#f1f5f9',
+  stateHeroCard: {
+    borderRadius: radius.md,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    gap: spacing.xs,
+    ...shadows.card,
   },
-  langButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  logoutSmallButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#fee2e2',
-  },
-  logoutSmallText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#dc2626',
-  },
-  topBarUser: {
-    alignItems: 'flex-end',
-  },
-  topBarName: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  topBarRole: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-    gap: 16,
-  },
-  stateCard: {
-    borderRadius: 14,
-    borderWidth: 1.5,
-    padding: 16,
-  },
-  stateBadgeRow: {
-    flexDirection: 'row',
+  stateHeroHeader: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    gap: spacing.sm,
   },
-  stateBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  stateBadgeText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  pulseDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.05)',
-  },
-  innerPulseDot: {
+  stateDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
   },
-  stateInstructions: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
+  stateHeroTitle: {
+    fontSize: 16,
+    fontWeight: '800',
   },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  statusBadgeActive: {
-    backgroundColor: '#d1fae5',
-  },
-  statusBadgeInactive: {
-    backgroundColor: '#f1f5f9',
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  statusTextActive: {
-    color: '#065f46',
-  },
-  statusTextInactive: {
-    color: '#64748b',
-  },
-  shiftInfoRow: {
-    marginBottom: 12,
-  },
-  shiftStartedLabel: {
+  stateHeroDesc: {
     fontSize: 12,
-    color: '#059669',
-    fontWeight: '600',
+    color: colors.text.secondary,
   },
-  actionButton: {
+  primaryShiftButton: {
+    borderRadius: radius.md,
     paddingVertical: 14,
-    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.float,
   },
-  startShiftButton: {
-    backgroundColor: '#059669',
+  startShiftBtn: {
+    backgroundColor: colors.status.online,
   },
-  endShiftButton: {
+  endShiftBtn: {
     backgroundColor: '#dc2626',
   },
-  actionButtonText: {
+  primaryShiftButtonText: {
     color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '800',
   },
-  diagRow: {
+  btnContentRow: {
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  checklistCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...shadows.card,
+  },
+  checklistCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  checkRow: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  checkLeft: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  checkQuestionText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontWeight: '600',
+  },
+  checkPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.xs,
+  },
+  checkPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  infoNotice: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  infoNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.text.muted,
+    lineHeight: 16,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...shadows.card,
+  },
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  detailRow: {
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingVertical: 4,
   },
-  diagLabel: {
-    fontSize: 13,
-    color: '#64748b',
-  },
-  diagValue: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  textGreen: {
-    color: '#059669',
-  },
-  textOrange: {
-    color: '#d97706',
-  },
-  textRed: {
-    color: '#dc2626',
-  },
-  textGray: {
-    color: '#94a3b8',
-  },
-  outlineButton: {
-    marginTop: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  outlineButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  infoBox: {
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 12,
-    padding: 12,
-  },
-  infoBoxText: {
+  detailLabel: {
     fontSize: 12,
-    color: '#166534',
-    lineHeight: 18,
+    color: colors.text.muted,
+  },
+  detailValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  emptyNoticeText: {
+    fontSize: 12,
+    color: colors.text.muted,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  syncButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  syncButtonText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  logoutRowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    gap: spacing.sm,
+  },
+  logoutRowButtonText: {
+    color: '#dc2626',
+    fontSize: 13,
+    fontWeight: '700',
   },
   disabledButton: {
     opacity: 0.6,
   },
 });
-

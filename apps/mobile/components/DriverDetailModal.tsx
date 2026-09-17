@@ -1,3 +1,6 @@
+// Rebuilt Driver Operational Profile Modal
+// Explicit Freshness Semantics, Connection vs Movement Separation, Zero-Emoji
+
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,6 +13,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { colors, radius, spacing, typography, shadows } from '../designSystem';
+import { AppIcon } from './AppIcon';
 import { formatWesternNumber, isRtl, t } from '../i18n';
 
 interface DriverDetailModalProps {
@@ -33,19 +38,53 @@ export function DriverDetailModal({
 
   const rtl = isRtl();
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'MOVING':
-        return '#059669';
-      case 'STOPPED':
-        return '#d97706';
-      case 'AT_RESTAURANT':
-        return '#0284c7';
-      case 'OFFLINE':
+  // Freshness & Connection vs Movement Logic
+  const isOnline = driver.operationalStatus !== 'OFFLINE';
+  const recordedAtMs = driver.location?.recordedAt ? new Date(driver.location.recordedAt).getTime() : 0;
+  const elapsedMinutes = recordedAtMs > 0 ? Math.max(0, Math.round((Date.now() - recordedAtMs) / 60000)) : null;
+
+  // Connection State: Online / Delayed / Offline
+  const connectionState = !isOnline
+    ? 'offline'
+    : elapsedMinutes != null && elapsedMinutes > 5
+    ? 'delayed'
+    : 'online';
+
+  // Movement State: Moving / Stopped / Unknown
+  const speedKmh =
+    driver.location?.speed != null ? Math.round(Number(driver.location.speed) * 3.6) : null;
+  const movementState = !isOnline
+    ? 'unknown'
+    : speedKmh != null && speedKmh > 3
+    ? 'moving'
+    : 'stopped';
+
+  const getConnectionBadge = () => {
+    switch (connectionState) {
+      case 'online':
+        return { label: rtl ? 'متصل الآن' : 'ONLINE', bg: colors.status.onlineBg, text: colors.status.online, border: colors.status.onlineBorder };
+      case 'delayed':
+        return { label: rtl ? 'اتصال متأخر' : 'DELAYED', bg: colors.status.warningBg, text: colors.status.warning, border: colors.status.warningBorder };
+      case 'offline':
       default:
-        return '#64748b';
+        return { label: rtl ? 'غير متصل' : 'OFFLINE', bg: colors.status.offlineBg, text: colors.status.offline, border: colors.status.offlineBorder };
     }
   };
+
+  const getMovementBadge = () => {
+    switch (movementState) {
+      case 'moving':
+        return { label: rtl ? 'في حركة' : 'MOVING', color: colors.status.moving };
+      case 'stopped':
+        return { label: rtl ? 'متوقف' : 'STOPPED', color: colors.status.stopped };
+      case 'unknown':
+      default:
+        return { label: rtl ? 'غير معروف' : 'UNKNOWN', color: colors.text.muted };
+    }
+  };
+
+  const connBadge = getConnectionBadge();
+  const movBadge = getMovementBadge();
 
   const handleResetPress = () => {
     Alert.alert(
@@ -73,11 +112,6 @@ export function DriverDetailModal({
     );
   };
 
-  const speedKmh =
-    driver.location?.speed != null
-      ? Math.round(Number(driver.location.speed) * 3.6)
-      : null;
-
   return (
     <Modal
       visible={visible}
@@ -87,11 +121,12 @@ export function DriverDetailModal({
     >
       <SafeAreaView style={styles.modalContainer}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Text style={styles.closeButtonText}>✕</Text>
+        <View style={[styles.header, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityLabel="Close">
+            <AppIcon name="close" size={16} color={colors.text.primary} />
           </TouchableOpacity>
-          <View style={styles.headerTitleGroup}>
+
+          <View style={[styles.headerTitleGroup, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
             <Text style={styles.headerTitle}>{driver.driverName}</Text>
             <Text style={styles.headerSub}>
               {t('diagnostics.employeeId')} {formatWesternNumber(driver.employeeId)}
@@ -100,209 +135,137 @@ export function DriverDetailModal({
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Status Badge Card */}
+          {/* Status & Freshness Header Card */}
           <View style={styles.card}>
-            <View style={styles.statusRow}>
-              <Text style={styles.sectionTitle}>{t('driverDetail.status')}</Text>
-              <View
-                style={[
-                  styles.statusBadge,
-                  { backgroundColor: getStatusColor(driver.operationalStatus) + '20' },
-                ]}
-              >
+            <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.cardSectionTitle}>{rtl ? 'الحالة والاتصال الميداني' : 'Connection & Status'}</Text>
+              <View style={[styles.badgePill, { backgroundColor: connBadge.bg, borderColor: connBadge.border }]}>
+                <Text style={[styles.badgePillText, { color: connBadge.text }]}>{connBadge.label}</Text>
+              </View>
+            </View>
+
+            {/* Freshness Timestamp */}
+            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Contact:'}</Text>
+              <Text style={styles.metaValue}>
+                {elapsedMinutes != null
+                  ? elapsedMinutes === 0
+                    ? rtl ? 'منذ ثوانٍ' : 'seconds ago'
+                    : rtl ? `منذ ${formatWesternNumber(elapsedMinutes)} دقيقة` : `${formatWesternNumber(elapsedMinutes)}m ago`
+                  : rtl ? 'لا توجد بيانات' : 'No telemetry'}
+              </Text>
+            </View>
+
+            {/* Movement Status */}
+            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.metaLabel}>{rtl ? 'حالة الحركة الحالية:' : 'Movement State:'}</Text>
+              <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700' }]}>
+                {movBadge.label}
+              </Text>
+            </View>
+          </View>
+
+          {/* Telemetry Card (Explicit Stale vs Live Semantics) */}
+          <View style={styles.card}>
+            <View style={[styles.telemetryHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.cardSectionTitle}>
+                {isOnline
+                  ? rtl ? 'بيانات التتبع المباشرة' : 'Live Telemetry'
+                  : rtl ? 'آخر بيانات معروفة (تاريخية)' : 'Last Known Telemetry'}
+              </Text>
+              {!isOnline && (
+                <View style={styles.staleNoticePill}>
+                  <Text style={styles.staleNoticeText}>{rtl ? 'غير مباشر' : 'Stale'}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.grid2Col}>
+              {/* Speed */}
+              <View style={styles.gridCell}>
+                <Text style={styles.gridCellLabel}>
+                  {isOnline ? rtl ? 'السرعة الحالية' : 'Speed' : rtl ? 'السرعة وقت آخر تحديث' : 'Speed at last update'}
+                </Text>
+                <Text style={styles.gridCellValue}>
+                  {speedKmh != null ? `${formatWesternNumber(speedKmh)} ${t('driverDetail.speedUnit')}` : '—'}
+                </Text>
+              </View>
+
+              {/* Heading */}
+              <View style={styles.gridCell}>
+                <Text style={styles.gridCellLabel}>
+                  {isOnline ? rtl ? 'الاتجاه' : 'Heading' : rtl ? 'الاتجاه وقت آخر تحديث' : 'Heading at last update'}
+                </Text>
+                <Text style={styles.gridCellValue}>
+                  {driver.location?.heading != null ? `${formatWesternNumber(Math.round(driver.location.heading))}°` : '—'}
+                </Text>
+              </View>
+
+              {/* Geofence */}
+              <View style={styles.gridCell}>
+                <Text style={styles.gridCellLabel}>{rtl ? 'نطاق المطعم' : 'Geofence'}</Text>
                 <Text
                   style={[
-                    styles.statusBadgeText,
-                    { color: getStatusColor(driver.operationalStatus) },
+                    styles.gridCellValue,
+                    { color: driver.isInsideGeofence ? colors.status.online : colors.status.warning },
                   ]}
                 >
-                  {t(`operator.${driver.operationalStatus.toLowerCase()}`) ||
-                    driver.operationalStatus}
+                  {driver.isInsideGeofence ? t('driverDetail.insideGeofence') : t('driverDetail.outsideGeofence')}
+                </Text>
+              </View>
+
+              {/* Distance */}
+              <View style={styles.gridCell}>
+                <Text style={styles.gridCellLabel}>{rtl ? 'المسافة عن المطعم' : 'Distance'}</Text>
+                <Text style={styles.gridCellValue}>
+                  {driver.distanceToRestaurantMeters != null
+                    ? `~${formatWesternNumber(Math.round(driver.distanceToRestaurantMeters))} ${t('driverDetail.meters')}`
+                    : '—'}
                 </Text>
               </View>
             </View>
-
-            {driver.isInsideGeofence != null && (
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>{t('map.geofenceBoundary')}:</Text>
-                <Text
-                  style={[
-                    styles.value,
-                    driver.isInsideGeofence ? styles.textGreen : styles.textOrange,
-                  ]}
-                >
-                  {driver.isInsideGeofence
-                    ? t('driverDetail.insideGeofence')
-                    : t('driverDetail.outsideGeofence')}
-                </Text>
-              </View>
-            )}
-
-            {driver.distanceToRestaurantMeters != null && (
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>{t('driverDetail.distanceToRestaurant')}:</Text>
-                <Text style={styles.value}>
-                  {formatWesternNumber(Math.round(driver.distanceToRestaurantMeters))}{' '}
-                  {t('driverDetail.meters')}
-                </Text>
-              </View>
-            )}
           </View>
 
-          {/* Telemetry Card */}
+          {/* Shift & Device Hardware */}
           <View style={styles.card}>
-            <Text style={[styles.sectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('driverDetail.telemetry')}
+            <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+              {rtl ? 'بيانات الوردية والجهاز المعتمد' : 'Shift & Authorized Device'}
             </Text>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('driverDetail.speed')}:</Text>
-              <Text style={styles.value}>
-                {speedKmh != null
-                  ? `${formatWesternNumber(speedKmh)} ${t('driverDetail.speedUnit')}`
-                  : '—'}
+            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.metaLabel}>{rtl ? 'حالة الوردية:' : 'Shift:'}</Text>
+              <Text style={[styles.metaValue, { color: driver.shift ? colors.status.online : colors.text.muted, fontWeight: '700' }]}>
+                {driver.shift ? t('shift.onDuty') : t('shift.offDuty')}
               </Text>
             </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('driverDetail.heading')}:</Text>
-              <Text style={styles.value}>
-                {driver.location?.heading != null
-                  ? `${formatWesternNumber(Math.round(driver.location.heading))}°`
-                  : '—'}
-              </Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('driverDetail.accuracy')}:</Text>
-              <Text style={styles.value}>
-                {driver.location?.accuracy != null
-                  ? `±${formatWesternNumber(Math.round(driver.location.accuracy))} ${t('driverDetail.meters')}`
-                  : '—'}
-              </Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('admin.lastLocationAt')}:</Text>
-              <Text style={styles.value}>
-                {driver.location?.recordedAt
-                  ? new Date(driver.location.recordedAt).toLocaleTimeString()
-                  : t('admin.never')}
-              </Text>
-            </View>
-          </View>
-
-          {/* Shift Details Card */}
-          <View style={styles.card}>
-            <Text style={[styles.sectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('shift.title')}
-            </Text>
-            {driver.shift ? (
-              <>
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>{t('driverDetail.status')}:</Text>
-                  <Text style={[styles.value, styles.textGreen]}>{t('shift.onDuty')}</Text>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>{t('driverDetail.shiftDuration')}:</Text>
-                  <Text style={styles.value}>
-                    {formatWesternNumber(driver.shift.durationMinutes ?? 0)} دقيقة / min
-                  </Text>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.label}>بدء الوردية:</Text>
-                  <Text style={styles.value}>
-                    {new Date(driver.shift.startedAt).toLocaleTimeString()}
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <Text style={styles.emptyText}>{t('driverDetail.noShift')}</Text>
-            )}
-          </View>
-
-          {/* Device & Hardware Card */}
-          <View style={styles.card}>
-            <Text style={[styles.sectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('driverDetail.deviceInfo')}
-            </Text>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('driverDetail.battery')}:</Text>
-              <Text
-                style={[
-                  styles.value,
-                  driver.device?.batteryPercentage != null &&
-                  driver.device.batteryPercentage <= 20
-                    ? styles.textRed
-                    : undefined,
-                ]}
-              >
+            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.metaLabel}>{rtl ? 'مستوى البطارية:' : 'Battery:'}</Text>
+              <Text style={styles.metaValue}>
                 {driver.device?.batteryPercentage != null
-                  ? `${formatWesternNumber(driver.device.batteryPercentage)}% ${
-                      driver.device.isCharging
-                        ? `(⚡ ${t('driverDetail.charging')})`
-                        : `(${t('driverDetail.notCharging')})`
-                    }`
+                  ? `${formatWesternNumber(driver.device.batteryPercentage)}% ${driver.device.isCharging ? '(شاحن)' : ''}`
                   : '—'}
               </Text>
             </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('driverDetail.network')}:</Text>
-              <Text style={styles.value}>
-                {driver.device?.networkStatus
-                  ? driver.device.networkStatus.toUpperCase()
-                  : '—'}
+            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.metaLabel}>{rtl ? 'معرف الجهاز المعتمد:' : 'Device ID:'}</Text>
+              <Text style={[styles.metaValue, { fontSize: 10, fontFamily: 'monospace' }]}>
+                {driver.device?.deviceIdentifier ? `${driver.device.deviceIdentifier.slice(0, 12)}...` : '—'}
               </Text>
             </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('admin.platform')}:</Text>
-              <Text style={styles.value}>{driver.device?.platform ?? '—'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('admin.appVersion')}:</Text>
-              <Text style={styles.value}>{driver.device?.appVersion ?? '—'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('admin.activeStatus')}:</Text>
-              <Text
-                style={[
-                  styles.value,
-                  driver.device?.authorized !== false ? styles.textGreen : styles.textRed,
-                ]}
-              >
-                {driver.device?.authorized !== false
-                  ? t('admin.authorized')
-                  : t('admin.unauthorized')}
-              </Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>{t('operator.lastSeen')}:</Text>
-              <Text style={styles.value}>
-                {driver.device?.lastSeen
-                  ? new Date(driver.device.lastSeen).toLocaleTimeString()
-                  : t('admin.never')}
-              </Text>
-            </View>
-
-            {/* ADMIN ONLY: Device Reset Button */}
+            {/* Admin Destructive Action: Reset Device */}
             {isAdmin && (
               <TouchableOpacity
-                style={[styles.resetButton, resetting && styles.disabledButton]}
+                style={[styles.destructiveResetButton, resetting && styles.disabledButton]}
                 onPress={handleResetPress}
                 disabled={resetting}
               >
                 {resetting ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
-                  <Text style={styles.resetButtonText}>
-                    {t('driverDetail.resetDeviceAction')}
-                  </Text>
+                  <Text style={styles.destructiveResetText}>{t('admin.resetDevice')}</Text>
                 )}
               </TouchableOpacity>
             )}
@@ -316,120 +279,140 @@ export function DriverDetailModal({
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#ffffff',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.md,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f1f5f9',
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSubtle,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-  },
-  closeButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#475569',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   headerTitleGroup: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
   headerSub: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
+    fontSize: 11,
+    color: colors.text.muted,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-    gap: 12,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...shadows.card,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cardSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  rowBetween: {
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  statusBadge: {
+  badgePill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: radius.xs,
+    borderWidth: 1,
   },
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
+  badgePillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
-  infoRow: {
-    flexDirection: 'row',
+  metaRow: {
     justifyContent: 'space-between',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
+    alignItems: 'center',
+    paddingVertical: 2,
   },
-  label: {
-    fontSize: 13,
-    color: '#64748b',
+  metaLabel: {
+    fontSize: 12,
+    color: colors.text.muted,
   },
-  value: {
-    fontSize: 13,
+  metaValue: {
+    fontSize: 12,
     fontWeight: '600',
-    color: '#0f172a',
+    color: colors.text.primary,
   },
-  textGreen: {
-    color: '#059669',
-  },
-  textOrange: {
-    color: '#d97706',
-  },
-  textRed: {
-    color: '#e11d48',
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#94a3b8',
-    paddingVertical: 8,
-  },
-  resetButton: {
-    marginTop: 16,
-    backgroundColor: '#dc2626',
-    paddingVertical: 12,
-    borderRadius: 10,
+  telemetryHeaderRow: {
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  resetButtonText: {
-    color: '#ffffff',
+  staleNoticePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.xs,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  staleNoticeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.text.muted,
+  },
+  grid2Col: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: 4,
+  },
+  gridCell: {
+    flexBasis: '48%',
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  gridCellLabel: {
+    fontSize: 10,
+    color: colors.text.muted,
+    marginBottom: 2,
+  },
+  gridCellValue: {
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  destructiveResetButton: {
+    backgroundColor: '#dc2626',
+    borderRadius: radius.sm,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  destructiveResetText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   disabledButton: {
     opacity: 0.6,
   },
 });
-

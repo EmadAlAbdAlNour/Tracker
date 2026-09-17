@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// Rebuilt Admin Experience for Tracker Mobile
+// Bottom Tab Navigation, Compact Header, Real Geographic Map, Operational Density
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,9 +15,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
-import { MobileMapView, type MapDriverPoint, type MapRestaurantPoint } from '../components/MobileMapView';
+import { colors, radius, shadows, spacing, typography } from '../designSystem';
+import { AppIcon } from '../components/AppIcon';
+import { CompactHeader } from '../components/CompactHeader';
+import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
+import { RealGeographicMapView, type MapDriverPoint, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
+import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
 
 interface AdminHomeScreenProps {
@@ -24,7 +31,8 @@ interface AdminHomeScreenProps {
   onLogout: () => Promise<void>;
 }
 
-type TabType = 'dashboard' | 'map' | 'drivers' | 'devices' | 'settings' | 'users' | 'notifications';
+type MainTab = 'dashboard' | 'map' | 'drivers' | 'more';
+type MoreSection = 'menu' | 'devices' | 'users' | 'settings' | 'notifications';
 
 export function AdminHomeScreen({
   session,
@@ -32,16 +40,19 @@ export function AdminHomeScreen({
   apiRequest,
   onLogout,
 }: AdminHomeScreenProps): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
+  const [moreSection, setMoreSection] = useState<MoreSection>('menu');
   const [locale, setLocaleState] = useState<Locale>(getLocale());
   const [refreshing, setRefreshing] = useState(false);
 
-  // Fleet Data
+  // Fleet & Telemetry Data
   const [fleet, setFleet] = useState<any | null>(null);
+  const [fleetLoading, setFleetLoading] = useState(true);
   const [fleetError, setFleetError] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [driverModalVisible, setDriverModalVisible] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
+  const [mapFilter, setMapFilter] = useState<string>('ALL');
 
   // Devices Data
   const [devices, setDevices] = useState<any[]>([]);
@@ -50,9 +61,9 @@ export function AdminHomeScreen({
   // Settings Data
   const [settingsRestaurant, setSettingsRestaurant] = useState<any>({
     name: '',
-    latitude: 24.7136,
-    longitude: 46.6753,
-    radiusMeters: 500,
+    latitude: 30.0444,
+    longitude: 31.2357,
+    radiusMeters: 1500,
   });
   const [settingsAlerts, setSettingsAlerts] = useState<any>({
     maxStopDurationMinutes: 15,
@@ -69,24 +80,28 @@ export function AdminHomeScreen({
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  const rtl = isRtl();
+
   const toggleLanguage = async () => {
     const next: Locale = locale === 'ar' ? 'en' : 'ar';
     await setStoredLocale(next);
     setLocaleState(next);
   };
 
-  // Load Fleet Live
+  // 1. Load Fleet Data
   const loadFleet = useCallback(async () => {
     try {
+      setFleetError(null);
       const data = await apiRequest<any>('/api/fleet/live');
       setFleet(data);
-      setFleetError(null);
     } catch (err: any) {
       setFleetError(err?.message || 'Failed to connect to server');
+    } finally {
+      setFleetLoading(false);
     }
   }, [apiRequest]);
 
-  // Load Devices
+  // 2. Load Devices
   const loadDevices = useCallback(async () => {
     setDevicesLoading(true);
     try {
@@ -99,7 +114,7 @@ export function AdminHomeScreen({
     }
   }, [apiRequest]);
 
-  // Load Settings
+  // 3. Load Settings
   const loadSettings = useCallback(async () => {
     try {
       const [restRes, alertRes] = await Promise.all([
@@ -113,7 +128,7 @@ export function AdminHomeScreen({
     }
   }, [apiRequest]);
 
-  // Load Users
+  // 4. Load Users
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
     try {
@@ -126,7 +141,7 @@ export function AdminHomeScreen({
     }
   }, [apiRequest]);
 
-  // Load Notifications
+  // 5. Load Notifications
   const loadNotifications = useCallback(async () => {
     try {
       const data = await apiRequest<any>('/api/notifications?limit=30');
@@ -143,61 +158,65 @@ export function AdminHomeScreen({
   }, [loadFleet, loadNotifications]);
 
   useEffect(() => {
-    if (activeTab === 'devices') loadDevices();
-    if (activeTab === 'settings') loadSettings();
-    if (activeTab === 'users') loadUsers();
-    if (activeTab === 'notifications') loadNotifications();
-  }, [activeTab, loadDevices, loadSettings, loadUsers, loadNotifications]);
+    if (activeTab === 'more') {
+      if (moreSection === 'devices') loadDevices();
+      if (moreSection === 'settings') loadSettings();
+      if (moreSection === 'users') loadUsers();
+      if (moreSection === 'notifications') loadNotifications();
+    }
+  }, [activeTab, moreSection, loadDevices, loadSettings, loadUsers, loadNotifications]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
       loadFleet(),
-      activeTab === 'devices' ? loadDevices() : Promise.resolve(),
-      activeTab === 'settings' ? loadSettings() : Promise.resolve(),
-      activeTab === 'users' ? loadUsers() : Promise.resolve(),
-      activeTab === 'notifications' ? loadNotifications() : Promise.resolve(),
+      loadNotifications(),
+      moreSection === 'devices' ? loadDevices() : Promise.resolve(),
+      moreSection === 'settings' ? loadSettings() : Promise.resolve(),
+      moreSection === 'users' ? loadUsers() : Promise.resolve(),
     ]);
     setRefreshing(false);
   };
 
+  // Device Reset
   const handleDeviceReset = async (driverId: string) => {
     try {
       await apiRequest(`/api/drivers/${driverId}/device/reset`, { method: 'POST' });
-      Alert.alert(t('app.notice'), locale === 'ar' ? 'تمت إعادة تعيين الجهاز بنجاح' : 'Device reset successfully');
+      Alert.alert(t('app.notice'), t('admin.resetSuccess'));
       await loadFleet();
-      if (activeTab === 'devices') await loadDevices();
+      if (moreSection === 'devices') await loadDevices();
       if (selectedDriver && selectedDriver.driverId === driverId) {
         setSelectedDriver((prev: any) =>
           prev ? { ...prev, device: prev.device ? { ...prev.device, authorized: false } : null } : null
         );
       }
     } catch (err: any) {
-      Alert.alert(t('app.error'), err?.message || 'Failed to reset device');
+      Alert.alert(t('app.error'), err?.message || t('admin.resetFailed'));
     }
   };
 
+  // Save Settings with strict numeric validation
   const handleSaveSettings = async () => {
     const restName = settingsRestaurant.name?.trim();
     if (!restName) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'اسم المطعم لا يمكن أن يكون فارغاً' : 'Restaurant name is required');
+      Alert.alert(t('app.error'), rtl ? 'اسم المطعم مطلوب' : 'Restaurant name is required');
       return;
     }
 
     const lat = Number(settingsRestaurant.latitude);
     const lng = Number(settingsRestaurant.longitude);
-    const radius = Number(settingsRestaurant.radiusMeters);
+    const radiusM = Number(settingsRestaurant.radiusMeters);
 
     if (Number.isNaN(lat) || lat < -90 || lat > 90) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'إحداثيات خط العرض غير صالحة (-90 إلى 90)' : 'Invalid latitude (-90 to 90)');
+      Alert.alert(t('app.error'), rtl ? 'خط العرض غير صالح (-90 إلى 90)' : 'Invalid latitude (-90 to 90)');
       return;
     }
     if (Number.isNaN(lng) || lng < -180 || lng > 180) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'إحداثيات خط الطول غير صالحة (-180 إلى 180)' : 'Invalid longitude (-180 to 180)');
+      Alert.alert(t('app.error'), rtl ? 'خط الطول غير صالح (-180 إلى 180)' : 'Invalid longitude (-180 to 180)');
       return;
     }
-    if (Number.isNaN(radius) || radius <= 0 || radius > 50000) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'نصف القطر يجب أن يكون بين 1 و 50000 متر' : 'Radius must be between 1 and 50,000 meters');
+    if (Number.isNaN(radiusM) || radiusM < 50 || radiusM > 50000) {
+      Alert.alert(t('app.error'), rtl ? 'نصف القطر يجب أن يكون بين 50 و 50000 متر' : 'Radius must be 50-50,000m');
       return;
     }
 
@@ -205,16 +224,16 @@ export function AdminHomeScreen({
     const offlineGrace = Number(settingsAlerts.offlineGraceMinutes);
     const lowBatt = Number(settingsAlerts.lowBatteryThreshold);
 
-    if (Number.isNaN(maxStop) || maxStop < 1 || maxStop > 120) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'مدة التوقف القصوى يجب أن تكون بين 1 و 120 دقيقة' : 'Max stop duration must be between 1 and 120 minutes');
+    if (Number.isNaN(maxStop) || maxStop < 1 || maxStop > 240) {
+      Alert.alert(t('app.error'), rtl ? 'مدة التوقف القصوى يجب أن تكون بين 1 و 240 دقيقة' : 'Max stop must be 1-240m');
       return;
     }
-    if (Number.isNaN(offlineGrace) || offlineGrace < 1 || offlineGrace > 60) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'مهلة الانقطاع يجب أن تكون بين 1 و 60 دقيقة' : 'Offline grace must be between 1 and 60 minutes');
+    if (Number.isNaN(offlineGrace) || offlineGrace < 1 || offlineGrace > 120) {
+      Alert.alert(t('app.error'), rtl ? 'مهلة الانقطاع يجب أن تكون بين 1 و 120 دقيقة' : 'Offline grace must be 1-120m');
       return;
     }
-    if (Number.isNaN(lowBatt) || lowBatt < 1 || lowBatt > 100) {
-      Alert.alert(t('app.error'), locale === 'ar' ? 'حد انخفاض البطارية يجب أن يكون بين 1% و 100%' : 'Low battery threshold must be between 1% and 100%');
+    if (Number.isNaN(lowBatt) || lowBatt < 5 || lowBatt > 50) {
+      Alert.alert(t('app.error'), rtl ? 'حد البطارية يجب أن يكون بين 5% و 50%' : 'Low battery must be 5-50%');
       return;
     }
 
@@ -227,7 +246,7 @@ export function AdminHomeScreen({
             name: restName,
             latitude: lat,
             longitude: lng,
-            radiusMeters: radius,
+            radiusMeters: radiusM,
           }),
         }),
         apiRequest('/api/settings/alerts', {
@@ -249,15 +268,6 @@ export function AdminHomeScreen({
     }
   };
 
-  const handleMarkNotificationRead = async (id: string) => {
-    try {
-      await apiRequest(`/api/notifications/${id}/read`, { method: 'PATCH' });
-      await loadNotifications();
-    } catch {
-      // ignore
-    }
-  };
-
   const handleMarkAllNotificationsRead = async () => {
     try {
       await apiRequest('/api/notifications/read-all', { method: 'POST' });
@@ -268,627 +278,799 @@ export function AdminHomeScreen({
     }
   };
 
-  const rtl = isRtl();
+  // Map Restaurant Point
+  const restaurantPoint: MapRestaurantPoint = useMemo(() => ({
+    name: fleet?.restaurant?.name || settingsRestaurant.name || 'Branch Base',
+    latitude: fleet?.restaurant?.latitude ?? settingsRestaurant.latitude ?? 30.0444,
+    longitude: fleet?.restaurant?.longitude ?? settingsRestaurant.longitude ?? 31.2357,
+    radiusMeters: fleet?.restaurant?.radiusMeters ?? settingsRestaurant.radiusMeters ?? 1500,
+  }), [fleet, settingsRestaurant]);
 
-  const restaurantPoint: MapRestaurantPoint = {
-    name: fleet?.restaurant?.name || settingsRestaurant.name || 'Restaurant',
-    latitude: fleet?.restaurant?.latitude ?? settingsRestaurant.latitude,
-    longitude: fleet?.restaurant?.longitude ?? settingsRestaurant.longitude,
-    radiusMeters: fleet?.restaurant?.radiusMeters ?? settingsRestaurant.radiusMeters,
-  };
+  // Filtered drivers
+  const filteredDrivers = useMemo(() => {
+    return (fleet?.drivers ?? []).filter((d: any) => {
+      // Search query
+      if (driverSearch.trim()) {
+        const q = driverSearch.toLowerCase().trim();
+        const matchesName = d.driverName?.toLowerCase().includes(q);
+        const matchesEmp = d.employeeId?.toLowerCase().includes(q);
+        if (!matchesName && !matchesEmp) return false;
+      }
+      // Status filter
+      if (mapFilter === 'MOVING') return d.operationalStatus === 'MOVING';
+      if (mapFilter === 'STOPPED') return d.operationalStatus === 'STOPPED';
+      if (mapFilter === 'AT_RESTAURANT') return d.operationalStatus === 'AT_RESTAURANT';
+      if (mapFilter === 'OFFLINE') return d.operationalStatus === 'OFFLINE';
+      return true;
+    });
+  }, [fleet, driverSearch, mapFilter]);
 
-  const filteredDrivers = (fleet?.drivers ?? []).filter((d: any) => {
-    if (!driverSearch.trim()) return true;
-    const query = driverSearch.toLowerCase().trim();
-    return (
-      d.driverName.toLowerCase().includes(query) ||
-      d.employeeId.toLowerCase().includes(query)
-    );
-  });
+  // Operational Driver metrics computed from real state
+  const metrics = useMemo(() => {
+    const driversList = fleet?.drivers ?? [];
+    const total = driversList.length;
+    const inShift = driversList.filter((d: any) => Boolean(d.shift)).length;
+    const tracking = driversList.filter((d: any) => d.operationalStatus !== 'OFFLINE' && d.location).length;
+    const online = driversList.filter((d: any) => d.operationalStatus !== 'OFFLINE').length;
+    const offline = total - online;
+    const activeAlerts = (fleet?.alerts ?? []).length;
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'MOVING':
-        return '#059669';
-      case 'STOPPED':
-        return '#d97706';
-      case 'AT_RESTAURANT':
-        return '#0284c7';
-      case 'OFFLINE':
-      default:
-        return '#64748b';
-    }
-  };
+    return { total, inShift, tracking, online, offline, activeAlerts };
+  }, [fleet]);
+
+  // Bottom tabs definition
+  const bottomTabs: TabItem[] = [
+    { id: 'dashboard', label: rtl ? 'الرئيسية' : 'Dashboard', icon: 'dashboard' },
+    { id: 'map', label: rtl ? 'الخريطة' : 'Map', icon: 'map' },
+    { id: 'drivers', label: rtl ? 'السائقون' : 'Drivers', icon: 'driver', badgeCount: metrics.online > 0 ? metrics.online : undefined },
+    { id: 'more', label: rtl ? 'المزيد' : 'More', icon: 'more', badgeCount: unreadCount > 0 ? unreadCount : undefined },
+  ];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Top Header */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarActions}>
-          <TouchableOpacity style={styles.langButton} onPress={toggleLanguage}>
-            <Text style={styles.langButtonText}>{locale === 'ar' ? 'English' : 'العربية'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutSmallButton} onPress={onLogout}>
-            <Text style={styles.logoutSmallText}>{t('app.logout')}</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Sleek Compact Header (52dp) */}
+      <CompactHeader
+        title={
+          activeTab === 'dashboard'
+            ? rtl ? 'لوحة القيادة والمراقبة' : 'Fleet Console'
+            : activeTab === 'map'
+            ? rtl ? 'الخريطة الميدانية' : 'Live Fleet Map'
+            : activeTab === 'drivers'
+            ? rtl ? 'دليل السائقين' : 'Active Drivers'
+            : rtl ? 'إدارة النظام والمزيد' : 'System & More'
+        }
+        role="ADMIN"
+        userName={session.user.name}
+        locale={locale}
+        onToggleLanguage={toggleLanguage}
+        onLogout={onLogout}
+      />
 
-        <View style={styles.topBarUser}>
-          <Text style={styles.topBarName}>{session.user.name}</Text>
-          <View style={styles.roleBadge}>
-            <Text style={styles.roleBadgeText}>ADMIN</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Segmented Tab Navigation */}
-      <View style={styles.tabsContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsScroll}
-        >
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'dashboard' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('dashboard')}
-          >
-            <Text
-              style={[styles.tabButtonText, activeTab === 'dashboard' && styles.tabButtonTextActive]}
-            >
-              📊 {t('admin.dashboard')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'map' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('map')}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'map' && styles.tabButtonTextActive]}>
-              🗺️ {t('admin.map')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'drivers' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('drivers')}
-          >
-            <Text
-              style={[styles.tabButtonText, activeTab === 'drivers' && styles.tabButtonTextActive]}
-            >
-              🚗 {t('admin.drivers')} ({formatWesternNumber(fleet?.drivers?.length ?? 0)})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'devices' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('devices')}
-          >
-            <Text
-              style={[styles.tabButtonText, activeTab === 'devices' && styles.tabButtonTextActive]}
-            >
-              📱 {t('admin.devices')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'settings' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('settings')}
-          >
-            <Text
-              style={[styles.tabButtonText, activeTab === 'settings' && styles.tabButtonTextActive]}
-            >
-              ⚙️ {t('admin.settings')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'users' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('users')}
-          >
-            <Text style={[styles.tabButtonText, activeTab === 'users' && styles.tabButtonTextActive]}>
-              👥 {t('admin.users')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'notifications' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('notifications')}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                activeTab === 'notifications' && styles.tabButtonTextActive,
-              ]}
-            >
-              🔔 {t('admin.notifications')}
-              {unreadCount > 0 ? ` (${formatWesternNumber(unreadCount)})` : ''}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* Main Content Area */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {fleetError && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorBannerText}>⚠️ {fleetError}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadFleet}>
-              <Text style={styles.retryButtonText}>{locale === 'ar' ? 'إعادة المحاولة' : 'Retry'}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
+      {/* Active Tab Screen Content */}
+      <View style={styles.body}>
         {/* TAB 1: DASHBOARD */}
         {activeTab === 'dashboard' && (
-          <View>
-            <View style={styles.card}>
-              <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-                {t('app.adminTitle')}
-              </Text>
-              <Text style={[styles.cardDescription, { textAlign: rtl ? 'right' : 'left' }]}>
-                {t('app.adminSubtitle')}
+          <ScrollView
+            contentContainerStyle={styles.scrollContainer}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          >
+            {/* Error Banner with Retry */}
+            {fleetError && (
+              <View style={styles.errorBanner}>
+                <AppIcon name="warning" size={16} color="#b91c1c" />
+                <Text style={styles.errorBannerText}>{fleetError}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={loadFleet}>
+                  <Text style={styles.retryButtonText}>{rtl ? 'إعادة المحاولة' : 'Retry'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Section 1: Real-time Operational KPI Summary */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'ملخص الأسطول في الوقت الفعلي' : 'Live Fleet Overview'}
               </Text>
 
-              {fleet?.summary && (
-                <View style={styles.kpiGrid}>
-                  <View style={styles.kpiBox}>
-                    <Text style={styles.kpiNumber}>
-                      {formatWesternNumber(fleet.summary.activeShifts)}
-                    </Text>
-                    <Text style={styles.kpiLabel}>{t('operator.activeShifts')}</Text>
-                  </View>
-                  <View style={styles.kpiBox}>
-                    <Text style={[styles.kpiNumber, { color: '#059669' }]}>
-                      {formatWesternNumber(fleet.summary.onlineDrivers)}
-                    </Text>
-                    <Text style={styles.kpiLabel}>{t('operator.online')}</Text>
-                  </View>
-                  <View style={styles.kpiBox}>
-                    <Text style={[styles.kpiNumber, { color: '#0284c7' }]}>
-                      {formatWesternNumber(fleet.summary.atRestaurant)}
-                    </Text>
-                    <Text style={styles.kpiLabel}>{t('operator.atRestaurant')}</Text>
-                  </View>
-                  <View style={styles.kpiBox}>
-                    <Text style={[styles.kpiNumber, { color: '#d97706' }]}>
-                      {formatWesternNumber(fleet.summary.moving)}
-                    </Text>
-                    <Text style={styles.kpiLabel}>{t('operator.moving')}</Text>
-                  </View>
-                  <View style={styles.kpiBox}>
-                    <Text style={[styles.kpiNumber, { color: '#e11d48' }]}>
-                      {formatWesternNumber(fleet.summary.lowBatteryCount)}
-                    </Text>
-                    <Text style={styles.kpiLabel}>{t('operator.lowBattery')}</Text>
-                  </View>
-                  <View style={styles.kpiBox}>
-                    <Text style={[styles.kpiNumber, { color: '#64748b' }]}>
-                      {formatWesternNumber(fleet.summary.offline)}
-                    </Text>
-                    <Text style={styles.kpiLabel}>{t('operator.offline')}</Text>
-                  </View>
+              <View style={styles.kpiGrid}>
+                {/* Total Drivers */}
+                <View style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>{rtl ? 'إجمالي السائقين' : 'Total Drivers'}</Text>
+                  <Text style={styles.kpiValue}>{formatWesternNumber(metrics.total)}</Text>
                 </View>
-              )}
+
+                {/* In Shift */}
+                <View style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>{rtl ? 'في وردية عمل' : 'On Shift'}</Text>
+                  <Text style={[styles.kpiValue, { color: colors.primary }]}>
+                    {formatWesternNumber(metrics.inShift)}
+                  </Text>
+                </View>
+
+                {/* Tracking Active */}
+                <View style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>{rtl ? 'تتبع نشط الآن' : 'Tracking Now'}</Text>
+                  <Text style={[styles.kpiValue, { color: colors.status.online }]}>
+                    {formatWesternNumber(metrics.tracking)}
+                  </Text>
+                </View>
+
+                {/* Online */}
+                <View style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>{rtl ? 'متصل' : 'Online'}</Text>
+                  <Text style={[styles.kpiValue, { color: colors.status.online }]}>
+                    {formatWesternNumber(metrics.online)}
+                  </Text>
+                </View>
+
+                {/* Offline */}
+                <View style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>{rtl ? 'غير متصل' : 'Offline'}</Text>
+                  <Text style={[styles.kpiValue, { color: colors.text.muted }]}>
+                    {formatWesternNumber(metrics.offline)}
+                  </Text>
+                </View>
+
+                {/* Active Alerts */}
+                <View style={styles.kpiCard}>
+                  <Text style={styles.kpiLabel}>{rtl ? 'تنبيهات نشطة' : 'Active Alerts'}</Text>
+                  <Text style={[styles.kpiValue, { color: metrics.activeAlerts > 0 ? colors.status.critical : colors.text.muted }]}>
+                    {formatWesternNumber(metrics.activeAlerts)}
+                  </Text>
+                </View>
+              </View>
             </View>
 
-            {/* Quick Map Preview */}
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{t('map.title')}</Text>
+            {/* Section 2: Active Critical Alerts (If any) */}
+            {(fleet?.alerts ?? []).length > 0 && (
+              <View style={styles.section}>
+                <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.sectionTitle}>{rtl ? 'التنبيهات الميدانية النشطة' : 'Active Alerts'}</Text>
+                  <View style={styles.alertCountBadge}>
+                    <Text style={styles.alertCountText}>{formatWesternNumber((fleet.alerts ?? []).length)}</Text>
+                  </View>
+                </View>
+
+                {(fleet.alerts ?? []).slice(0, 3).map((al: any) => (
+                  <View key={al.id} style={styles.alertCard}>
+                    <AppIcon name="warning" size={16} color={colors.status.critical} />
+                    <View style={styles.alertBody}>
+                      <Text style={styles.alertTitle}>{al.title || al.type}</Text>
+                      <Text style={styles.alertMessage}>{al.message}</Text>
+                    </View>
+                    <Text style={styles.alertTime}>
+                      {al.createdAt ? new Date(al.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Section 3: Live Map Preview Container */}
+            <View style={styles.section}>
+              <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.sectionTitle}>{rtl ? 'معاينة الخريطة الميدانية' : 'Fleet Map Preview'}</Text>
                 <TouchableOpacity onPress={() => setActiveTab('map')}>
-                  <Text style={styles.linkText}>{t('admin.map')} →</Text>
+                  <Text style={styles.sectionActionLink}>{rtl ? 'فتح الخريطة الكاملة ←' : 'Full Map →'}</Text>
                 </TouchableOpacity>
               </View>
 
-              <MobileMapView
-                restaurant={restaurantPoint}
-                drivers={fleet?.drivers ?? []}
-                selectedDriverId={selectedDriver?.driverId}
-                onSelectDriver={(d) => {
-                  const full = fleet?.drivers?.find((x: any) => x.driverId === d.driverId);
-                  setSelectedDriver(full ?? d);
-                }}
-                onViewDriverDetail={(d) => {
-                  const full = fleet?.drivers?.find((x: any) => x.driverId === d.driverId);
-                  setSelectedDriver(full ?? d);
-                  setDriverModalVisible(true);
-                }}
-              />
+              <View style={styles.mapPreviewFrame}>
+                <RealGeographicMapView
+                  restaurant={restaurantPoint}
+                  drivers={fleet?.drivers ?? []}
+                  height={190}
+                  isCompactPreview
+                />
+              </View>
             </View>
-          </View>
-        )}
 
-        {/* TAB 2: MAP */}
-        {activeTab === 'map' && (
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('map.title')}
-            </Text>
-            <Text style={[styles.cardDescription, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('map.driverCountOnMap')} {formatWesternNumber(fleet?.drivers?.length ?? 0)}
-            </Text>
+            {/* Section 4: Live Drivers Quick Overview */}
+            <View style={styles.section}>
+              <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <Text style={styles.sectionTitle}>{rtl ? 'السائقون الميدانيون' : 'Active Fleet'}</Text>
+                <TouchableOpacity onPress={() => setActiveTab('drivers')}>
+                  <Text style={styles.sectionActionLink}>{rtl ? 'عرض الكل ←' : 'View All →'}</Text>
+                </TouchableOpacity>
+              </View>
 
-            <MobileMapView
-              restaurant={restaurantPoint}
-              drivers={fleet?.drivers ?? []}
-              selectedDriverId={selectedDriver?.driverId}
-              onSelectDriver={(d) => {
-                const full = fleet?.drivers?.find((x: any) => x.driverId === d.driverId);
-                setSelectedDriver(full ?? d);
-              }}
-              onViewDriverDetail={(d) => {
-                const full = fleet?.drivers?.find((x: any) => x.driverId === d.driverId);
-                setSelectedDriver(full ?? d);
-                setDriverModalVisible(true);
-              }}
-            />
-          </View>
-        )}
-
-        {/* TAB 3: DRIVERS */}
-        {activeTab === 'drivers' && (
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('admin.drivers')} ({formatWesternNumber(filteredDrivers.length)})
-            </Text>
-
-            <TextInput
-              style={[styles.searchInput, { textAlign: rtl ? 'right' : 'left' }]}
-              placeholder="بحث بالاسم أو الرقم الوظيفي..."
-              placeholderTextColor="#94a3b8"
-              value={driverSearch}
-              onChangeText={setDriverSearch}
-            />
-
-            {filteredDrivers.length === 0 ? (
-              <Text style={styles.emptyText}>{t('operator.noDrivers')}</Text>
-            ) : (
-              filteredDrivers.map((driver: any) => {
-                const statusColor = getStatusColor(driver.operationalStatus);
-                const battery = driver.device?.batteryPercentage;
+              {(fleet?.drivers ?? []).slice(0, 4).map((d: any) => {
+                const isDOnline = d.operationalStatus !== 'OFFLINE';
                 return (
                   <TouchableOpacity
-                    key={driver.driverId}
-                    style={styles.driverItem}
+                    key={d.driverId}
+                    style={[styles.driverRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
                     onPress={() => {
-                      setSelectedDriver(driver);
+                      setSelectedDriver(d);
                       setDriverModalVisible(true);
                     }}
+                    activeOpacity={0.7}
                   >
-                    <View style={styles.driverItemHeader}>
-                      <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                        <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                          {t(`operator.${driver.operationalStatus.toLowerCase()}`) ||
-                            driver.operationalStatus}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
-                        <Text style={styles.driverName}>{driver.driverName}</Text>
-                        <Text style={styles.driverSub}>
-                          {t('diagnostics.employeeId')} {formatWesternNumber(driver.employeeId)}
-                        </Text>
-                      </View>
+                    <View style={[styles.driverStatusDot, { backgroundColor: isDOnline ? colors.status.online : colors.status.offline }]} />
+
+                    <View style={[styles.driverInfo, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
+                      <Text style={styles.driverName}>{d.driverName}</Text>
+                      <Text style={styles.driverMeta}>
+                        {t('diagnostics.employeeId')} {formatWesternNumber(d.employeeId)}
+                      </Text>
                     </View>
 
-                    <View style={styles.driverMetaRow}>
-                      {battery != null && (
-                        <Text style={[styles.metaText, battery <= 20 ? styles.textRed : undefined]}>
-                          🔋 {formatWesternNumber(battery)}%
-                          {driver.device?.isCharging ? ' ⚡' : ''}
-                        </Text>
-                      )}
-                      {driver.location?.speed != null && (
-                        <Text style={styles.metaText}>
-                          🚀 {formatWesternNumber(Math.round(driver.location.speed * 3.6))}{' '}
-                          {t('driverDetail.speedUnit')}
-                        </Text>
-                      )}
-                      <Text style={styles.metaLinkText}>{t('map.viewDetails')} →</Text>
+                    <View style={[styles.driverTelemetryCol, { alignItems: rtl ? 'flex-start' : 'flex-end' }]}>
+                      <Text style={styles.driverSpeedText}>
+                        {d.location?.speed != null && isDOnline
+                          ? `${formatWesternNumber(Math.round(Number(d.location.speed) * 3.6))} ${t('driverDetail.speedUnit')}`
+                          : isDOnline ? t('operator.stopped') : t('operator.offline')}
+                      </Text>
+                      <Text style={styles.driverBatteryText}>
+                        {d.device?.batteryPercentage != null ? `${formatWesternNumber(d.device.batteryPercentage)}%` : '—'}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 );
-              })
-            )}
+              })}
+            </View>
+          </ScrollView>
+        )}
+
+        {/* TAB 2: FULLSCREEN LIVE MAP */}
+        {activeTab === 'map' && (
+          <View style={styles.mapScreenContainer}>
+            {/* Status Filter Bar */}
+            <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
+                <TouchableOpacity
+                  key={statusKey}
+                  style={[styles.filterPill, mapFilter === statusKey && styles.filterPillActive]}
+                  onPress={() => setMapFilter(statusKey)}
+                >
+                  <Text style={[styles.filterPillText, mapFilter === statusKey && styles.filterPillTextActive]}>
+                    {statusKey === 'ALL'
+                      ? rtl ? 'الكل' : 'All'
+                      : statusKey === 'MOVING'
+                      ? rtl ? 'متحرك' : 'Moving'
+                      : statusKey === 'AT_RESTAURANT'
+                      ? rtl ? 'بالمطعم' : 'Base'
+                      : statusKey === 'STOPPED'
+                      ? rtl ? 'متوقف' : 'Stopped'
+                      : rtl ? 'غير متصل' : 'Offline'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Real Geographic Map */}
+            <RealGeographicMapView
+              restaurant={restaurantPoint}
+              drivers={filteredDrivers}
+              selectedDriverId={selectedDriver?.driverId}
+              onSelectDriver={(d) => setSelectedDriver(d)}
+              onViewDriverDetail={(d) => {
+                setSelectedDriver(d);
+                setDriverModalVisible(true);
+              }}
+              height="100%"
+            />
           </View>
         )}
 
-        {/* TAB 4: DEVICES */}
-        {activeTab === 'devices' && (
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('admin.deviceManagement')} ({formatWesternNumber(devices.length)})
-            </Text>
-
-            {devicesLoading ? (
-              <ActivityIndicator color="#0f172a" style={{ marginVertical: 20 }} />
-            ) : devices.length === 0 ? (
-              <Text style={styles.emptyText}>لا توجد أجهزة مسجلة</Text>
-            ) : (
-              devices.map((dev) => (
-                <View key={dev.id} style={styles.deviceCard}>
-                  <View style={styles.deviceHeader}>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        { backgroundColor: dev.authorized ? '#d1fae5' : '#fee2e2' },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusBadgeText,
-                          { color: dev.authorized ? '#065f46' : '#991b1b' },
-                        ]}
-                      >
-                        {dev.authorized ? t('admin.authorized') : t('admin.unauthorized')}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
-                      <Text style={styles.deviceName}>{dev.driverName}</Text>
-                      <Text style={styles.deviceSub}>
-                        {dev.platform?.toUpperCase()} • v{dev.appVersion ?? '1.0'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.deviceMetaRow}>
-                    <Text style={styles.deviceMetaText}>
-                      {t('operator.lastSeen')}:{' '}
-                      {dev.lastSeen ? new Date(dev.lastSeen).toLocaleTimeString() : t('admin.never')}
-                    </Text>
-                  </View>
-
-                  {dev.authorized && (
-                    <TouchableOpacity
-                      style={styles.resetSmallButton}
-                      onPress={() => {
-                        Alert.alert(
-                          t('admin.confirmResetTitle'),
-                          t('admin.confirmResetMessage'),
-                          [
-                            { text: t('app.cancel'), style: 'cancel' },
-                            {
-                              text: t('admin.resetDevice'),
-                              style: 'destructive',
-                              onPress: () => handleDeviceReset(dev.driverId),
-                            },
-                          ]
-                        );
-                      }}
-                    >
-                      <Text style={styles.resetSmallButtonText}>{t('admin.resetDevice')}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        {/* TAB 5: SETTINGS */}
-        {activeTab === 'settings' && (
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('admin.restaurantSettings')}
-            </Text>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>{t('admin.restaurantName')}</Text>
+        {/* TAB 3: DRIVERS DIRECTORY */}
+        {activeTab === 'drivers' && (
+          <View style={styles.driversScreenContainer}>
+            {/* Search Input */}
+            <View style={styles.searchBar}>
+              <AppIcon name="search" size={16} color={colors.text.muted} />
               <TextInput
-                style={styles.formInput}
-                value={settingsRestaurant.name}
-                onChangeText={(v) => setSettingsRestaurant((p: any) => ({ ...p, name: v }))}
+                value={driverSearch}
+                onChangeText={setDriverSearch}
+                placeholder={rtl ? 'بحث بالاسم أو الرقم الوظيفي...' : 'Search by name or ID...'}
+                placeholderTextColor={colors.text.light}
+                style={[styles.searchInput, { textAlign: rtl ? 'right' : 'left' }]}
               />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>{t('admin.geofenceRadius')}</Text>
-              <TextInput
-                style={styles.formInput}
-                keyboardType="numeric"
-                value={String(settingsRestaurant.radiusMeters)}
-                onChangeText={(v) =>
-                  setSettingsRestaurant((p: any) => ({ ...p, radiusMeters: Number(v) || 0 }))
-                }
-              />
-            </View>
-
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.formLabel}>{t('admin.latitude')}</Text>
-                <TextInput
-                  style={styles.formInput}
-                  keyboardType="numeric"
-                  value={String(settingsRestaurant.latitude)}
-                  onChangeText={(v) =>
-                    setSettingsRestaurant((p: any) => ({ ...p, latitude: Number(v) || 0 }))
-                  }
-                />
-              </View>
-              <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.formLabel}>{t('admin.longitude')}</Text>
-                <TextInput
-                  style={styles.formInput}
-                  keyboardType="numeric"
-                  value={String(settingsRestaurant.longitude)}
-                  onChangeText={(v) =>
-                    setSettingsRestaurant((p: any) => ({ ...p, longitude: Number(v) || 0 }))
-                  }
-                />
-              </View>
-            </View>
-
-            <Text style={[styles.cardTitle, { marginTop: 20, textAlign: rtl ? 'right' : 'left' }]}>
-              {t('admin.alertThresholds')}
-            </Text>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>{t('admin.maxStopDuration')}</Text>
-              <TextInput
-                style={styles.formInput}
-                keyboardType="numeric"
-                value={String(settingsAlerts.maxStopDurationMinutes)}
-                onChangeText={(v) =>
-                  setSettingsAlerts((p: any) => ({
-                    ...p,
-                    maxStopDurationMinutes: Number(v) || 0,
-                  }))
-                }
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>{t('admin.offlineGraceMinutes')}</Text>
-              <TextInput
-                style={styles.formInput}
-                keyboardType="numeric"
-                value={String(settingsAlerts.offlineGraceMinutes)}
-                onChangeText={(v) =>
-                  setSettingsAlerts((p: any) => ({
-                    ...p,
-                    offlineGraceMinutes: Number(v) || 0,
-                  }))
-                }
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>{t('admin.lowBatteryThreshold')}</Text>
-              <TextInput
-                style={styles.formInput}
-                keyboardType="numeric"
-                value={String(settingsAlerts.lowBatteryThreshold)}
-                onChangeText={(v) =>
-                  setSettingsAlerts((p: any) => ({
-                    ...p,
-                    lowBatteryThreshold: Number(v) || 0,
-                  }))
-                }
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.saveButton, settingsSaving && styles.disabledButton]}
-              onPress={handleSaveSettings}
-              disabled={settingsSaving}
-            >
-              {settingsSaving ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.saveButtonText}>{t('app.save')}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* TAB 6: USERS */}
-        {activeTab === 'users' && (
-          <View style={styles.card}>
-            <Text style={[styles.cardTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {t('admin.usersList')} ({formatWesternNumber(users.length)})
-            </Text>
-
-            {usersLoading ? (
-              <ActivityIndicator color="#0f172a" style={{ marginVertical: 20 }} />
-            ) : (
-              users.map((u) => (
-                <View key={u.id} style={styles.userCard}>
-                  <View style={styles.userHeader}>
-                    <View
-                      style={[
-                        styles.roleBadge,
-                        {
-                          backgroundColor:
-                            u.role === 'ADMIN'
-                              ? '#dbeafe'
-                              : u.role === 'CALL_CENTER'
-                              ? '#fef3c7'
-                              : '#d1fae5',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.roleBadgeText,
-                          {
-                            color:
-                              u.role === 'ADMIN'
-                                ? '#1e40af'
-                                : u.role === 'CALL_CENTER'
-                                ? '#92400e'
-                                : '#065f46',
-                          },
-                        ]}
-                      >
-                        {u.role}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: rtl ? 'flex-start' : 'flex-end' }}>
-                      <Text style={styles.userName}>{u.name}</Text>
-                      <Text style={styles.userSub}>{u.email}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.userMetaRow}>
-                    <Text
-                      style={[styles.userStatus, u.active ? styles.textGreen : styles.textRed]}
-                    >
-                      {u.active ? t('admin.active') : t('admin.inactive')}
-                    </Text>
-                    {u.phone ? <Text style={styles.userPhone}>{u.phone}</Text> : null}
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        {/* TAB 7: NOTIFICATIONS */}
-        {activeTab === 'notifications' && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>
-                {t('notifications.title')} ({formatWesternNumber(notifications.length)})
-              </Text>
-              {unreadCount > 0 && (
-                <TouchableOpacity onPress={handleMarkAllNotificationsRead}>
-                  <Text style={styles.linkText}>{t('notifications.markAllRead')}</Text>
+              {driverSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setDriverSearch('')}>
+                  <AppIcon name="close" size={14} color={colors.text.muted} />
                 </TouchableOpacity>
               )}
             </View>
 
-            {notifications.length === 0 ? (
-              <Text style={styles.emptyText}>{t('notifications.noNotifications')}</Text>
-            ) : (
-              notifications.map((n) => (
-                <TouchableOpacity
-                  key={n.id}
-                  style={[styles.notificationCard, !n.read && styles.notificationUnread]}
-                  onPress={() => handleMarkNotificationRead(n.id)}
-                >
-                  <View style={styles.notifHeader}>
-                    {!n.read && (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadBadgeText}>{t('notifications.unread')}</Text>
+            {/* Drivers List */}
+            <ScrollView
+              contentContainerStyle={styles.driversListContent}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            >
+              {filteredDrivers.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <AppIcon name="driver" size={32} color={colors.text.light} />
+                  <Text style={styles.emptyStateText}>{t('operator.noDrivers')}</Text>
+                </View>
+              ) : (
+                filteredDrivers.map((d: any) => {
+                  const isDOnline = d.operationalStatus !== 'OFFLINE';
+                  const speed = d.location?.speed != null ? Math.round(Number(d.location.speed) * 3.6) : null;
+                  return (
+                    <TouchableOpacity
+                      key={d.driverId}
+                      style={[styles.operationalDriverCard, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                      onPress={() => {
+                        setSelectedDriver(d);
+                        setDriverModalVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      {/* Status Column */}
+                      <View style={[styles.driverStatusCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
+                        <View
+                          style={[
+                            styles.statusBadgePill,
+                            {
+                              backgroundColor: isDOnline ? colors.status.onlineBg : colors.status.offlineBg,
+                              borderColor: isDOnline ? colors.status.onlineBorder : colors.status.offlineBorder,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusBadgePillText,
+                              { color: isDOnline ? colors.status.online : colors.status.offline },
+                            ]}
+                          >
+                            {isDOnline ? t('operator.online') : t('operator.offline')}
+                          </Text>
+                        </View>
+                        <Text style={styles.employeeIdLabel}>
+                          {t('diagnostics.employeeId')} {formatWesternNumber(d.employeeId)}
+                        </Text>
+                      </View>
+
+                      {/* Main Driver Info */}
+                      <View style={[styles.driverMainCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
+                        <Text style={styles.cardDriverName}>{d.driverName}</Text>
+                        <Text style={styles.cardDriverFreshness}>
+                          {isDOnline
+                            ? rtl ? 'متصل الآن' : 'Live'
+                            : rtl ? 'آخر بيانات معروفة' : 'Last known state'}
+                        </Text>
+                      </View>
+
+                      {/* Right Telemetry Column */}
+                      <View style={[styles.driverRightCol, { alignItems: rtl ? 'flex-start' : 'flex-end' }]}>
+                        <Text style={styles.driverCardSpeed}>
+                          {speed != null ? `${formatWesternNumber(speed)} ${t('driverDetail.speedUnit')}` : '—'}
+                        </Text>
+                        <Text style={styles.driverCardBattery}>
+                          {d.device?.batteryPercentage != null ? `${formatWesternNumber(d.device.batteryPercentage)}%` : '—'}
+                        </Text>
+                      </View>
+
+                      {/* Chevron Arrow */}
+                      <View style={styles.chevronCol}>
+                        <AppIcon name={rtl ? 'arrow-left' : 'arrow-right'} size={14} color={colors.text.light} />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* TAB 4: MORE HUB & SUBSCREENS */}
+        {activeTab === 'more' && (
+          <View style={styles.moreContainer}>
+            {/* SUBVIEW: MENU HUB */}
+            {moreSection === 'menu' && (
+              <ScrollView contentContainerStyle={styles.scrollContainer}>
+                {/* Administration Group */}
+                <View style={styles.moreGroup}>
+                  <Text style={[styles.moreGroupTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                    {rtl ? 'الإدارة والرقابة' : 'Administration'}
+                  </Text>
+
+                  {/* Devices */}
+                  <TouchableOpacity
+                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    onPress={() => setMoreSection('devices')}
+                  >
+                    <View style={styles.moreRowLeft}>
+                      <AppIcon name="device" size={18} color={colors.primary} />
+                      <Text style={styles.moreRowText}>{t('admin.deviceManagement')}</Text>
+                    </View>
+                    <AppIcon name={rtl ? 'arrow-left' : 'arrow-right'} size={14} color={colors.text.light} />
+                  </TouchableOpacity>
+
+                  {/* Users */}
+                  <TouchableOpacity
+                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    onPress={() => setMoreSection('users')}
+                  >
+                    <View style={styles.moreRowLeft}>
+                      <AppIcon name="users" size={18} color={colors.primary} />
+                      <Text style={styles.moreRowText}>{t('admin.usersList')}</Text>
+                    </View>
+                    <AppIcon name={rtl ? 'arrow-left' : 'arrow-right'} size={14} color={colors.text.light} />
+                  </TouchableOpacity>
+
+                  {/* Notifications */}
+                  <TouchableOpacity
+                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    onPress={() => setMoreSection('notifications')}
+                  >
+                    <View style={styles.moreRowLeft}>
+                      <AppIcon name="bell" size={18} color={colors.primary} />
+                      <Text style={styles.moreRowText}>{t('notifications.title')}</Text>
+                    </View>
+                    {unreadCount > 0 && (
+                      <View style={styles.moreBadge}>
+                        <Text style={styles.moreBadgeText}>{formatWesternNumber(unreadCount)}</Text>
                       </View>
                     )}
-                    <Text style={styles.notifTime}>
-                      {new Date(n.createdAt).toLocaleTimeString()}
-                    </Text>
+                    <AppIcon name={rtl ? 'arrow-left' : 'arrow-right'} size={14} color={colors.text.light} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* System Settings Group */}
+                <View style={styles.moreGroup}>
+                  <Text style={[styles.moreGroupTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                    {rtl ? 'تهيئة النظام' : 'System Configuration'}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    onPress={() => setMoreSection('settings')}
+                  >
+                    <View style={styles.moreRowLeft}>
+                      <AppIcon name="settings" size={18} color={colors.primary} />
+                      <Text style={styles.moreRowText}>{t('admin.settings')}</Text>
+                    </View>
+                    <AppIcon name={rtl ? 'arrow-left' : 'arrow-right'} size={14} color={colors.text.light} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Session Group */}
+                <View style={styles.moreGroup}>
+                  <Text style={[styles.moreGroupTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                    {rtl ? 'الجلسة' : 'Session'}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    onPress={toggleLanguage}
+                  >
+                    <View style={styles.moreRowLeft}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>🌐</Text>
+                      <Text style={styles.moreRowText}>
+                        {rtl ? 'تغيير اللغة (English)' : 'Change Language (العربية)'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    onPress={onLogout}
+                  >
+                    <View style={styles.moreRowLeft}>
+                      <AppIcon name="logout" size={18} color="#dc2626" />
+                      <Text style={[styles.moreRowText, { color: '#dc2626', fontWeight: '700' }]}>
+                        {t('app.logout')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+
+            {/* SUBVIEW: DEVICES LIST */}
+            {moreSection === 'devices' && (
+              <View style={{ flex: 1 }}>
+                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
+                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.subviewTitle}>{t('admin.deviceManagement')}</Text>
+                </View>
+
+                <ScrollView contentContainerStyle={styles.subviewScroll}>
+                  {devicesLoading ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 24 }} />
+                  ) : devices.length === 0 ? (
+                    <Text style={styles.emptyText}>{rtl ? 'لا توجد أجهزة مسجلة' : 'No devices found'}</Text>
+                  ) : (
+                    devices.map((dev: any) => (
+                      <View key={dev.id} style={styles.deviceCard}>
+                        <View style={[styles.deviceCardHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                          <View>
+                            <Text style={styles.deviceDriverName}>{dev.driverName || 'Driver'}</Text>
+                            <Text style={styles.deviceIdText}>{dev.deviceIdentifier}</Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.authBadge,
+                              {
+                                backgroundColor: dev.isAuthorized ? colors.status.onlineBg : colors.status.criticalBg,
+                                borderColor: dev.isAuthorized ? colors.status.onlineBorder : colors.status.criticalBorder,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.authBadgeText,
+                                { color: dev.isAuthorized ? colors.status.online : colors.status.critical },
+                              ]}
+                            >
+                              {dev.isAuthorized ? t('admin.authorized') : t('admin.unauthorized')}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={[styles.deviceMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                          <Text style={styles.deviceMetaItem}>
+                            {dev.platform || 'Android'} • v{dev.appVersion || '1.0.0'}
+                          </Text>
+                          <Text style={styles.deviceMetaItem}>
+                            {dev.lastSeenAt
+                              ? new Date(dev.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : t('admin.never')}
+                          </Text>
+                        </View>
+
+                        {dev.isAuthorized && (
+                          <TouchableOpacity
+                            style={styles.deviceResetButton}
+                            onPress={() => handleDeviceReset(dev.driverId)}
+                          >
+                            <Text style={styles.deviceResetButtonText}>{t('admin.resetDevice')}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* SUBVIEW: USERS LIST */}
+            {moreSection === 'users' && (
+              <View style={{ flex: 1 }}>
+                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
+                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.subviewTitle}>{t('admin.usersList')}</Text>
+                </View>
+
+                <ScrollView contentContainerStyle={styles.subviewScroll}>
+                  {usersLoading ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 24 }} />
+                  ) : (
+                    users.map((u: any) => (
+                      <View key={u.id} style={[styles.userRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <View style={[styles.userInfo, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
+                          <Text style={styles.userName}>{u.name}</Text>
+                          <Text style={styles.userPhone}>{u.phone || u.email}</Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.userRoleBadge,
+                            {
+                              backgroundColor:
+                                u.role === 'ADMIN'
+                                  ? colors.status.onlineBg
+                                  : u.role === 'CALL_CENTER'
+                                  ? colors.status.atRestaurantBg
+                                  : colors.surfaceSubtle,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.userRoleBadgeText,
+                              {
+                                color:
+                                  u.role === 'ADMIN'
+                                    ? colors.status.online
+                                    : u.role === 'CALL_CENTER'
+                                    ? colors.status.atRestaurant
+                                    : colors.text.secondary,
+                              },
+                            ]}
+                          >
+                            {u.role}
+                          </Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* SUBVIEW: SETTINGS FORM */}
+            {moreSection === 'settings' && (
+              <View style={{ flex: 1 }}>
+                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
+                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.subviewTitle}>{t('admin.settings')}</Text>
+                </View>
+
+                <ScrollView contentContainerStyle={styles.subviewScroll}>
+                  {/* Restaurant Geofence Card */}
+                  <View style={styles.settingsCard}>
+                    <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <AppIcon name="restaurant" size={18} color={colors.primary} />
+                      <Text style={[styles.settingsCardTitle, { marginBottom: 0 }]}>
+                        {t('admin.restaurantSettings')}
+                      </Text>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.restaurantName')}
+                      </Text>
+                      <TextInput
+                        value={settingsRestaurant.name}
+                        onChangeText={(t) => setSettingsRestaurant((prev: any) => ({ ...prev, name: t }))}
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.geofenceRadius')}
+                      </Text>
+                      <TextInput
+                        value={String(settingsRestaurant.radiusMeters ?? 1500)}
+                        onChangeText={(t) => setSettingsRestaurant((prev: any) => ({ ...prev, radiusMeters: t }))}
+                        keyboardType="numeric"
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.latitude')}
+                      </Text>
+                      <TextInput
+                        value={String(settingsRestaurant.latitude ?? 30.0444)}
+                        onChangeText={(t) => setSettingsRestaurant((prev: any) => ({ ...prev, latitude: t }))}
+                        keyboardType="decimal-pad"
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.longitude')}
+                      </Text>
+                      <TextInput
+                        value={String(settingsRestaurant.longitude ?? 31.2357)}
+                        onChangeText={(t) => setSettingsRestaurant((prev: any) => ({ ...prev, longitude: t }))}
+                        keyboardType="decimal-pad"
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
                   </View>
-                  <Text style={styles.notifTitle}>{n.title}</Text>
-                  <Text style={styles.notifMessage}>{n.message}</Text>
-                </TouchableOpacity>
-              ))
+
+                  {/* Alert Thresholds Card */}
+                  <View style={styles.settingsCard}>
+                    <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <AppIcon name="warning" size={18} color={colors.status.critical} />
+                      <Text style={[styles.settingsCardTitle, { marginBottom: 0 }]}>
+                        {t('admin.alertThresholds')}
+                      </Text>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.maxStopDuration')}
+                      </Text>
+                      <TextInput
+                        value={String(settingsAlerts.maxStopDurationMinutes ?? 15)}
+                        onChangeText={(t) => setSettingsAlerts((prev: any) => ({ ...prev, maxStopDurationMinutes: t }))}
+                        keyboardType="numeric"
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.offlineGraceMinutes')}
+                      </Text>
+                      <TextInput
+                        value={String(settingsAlerts.offlineGraceMinutes ?? 10)}
+                        onChangeText={(t) => setSettingsAlerts((prev: any) => ({ ...prev, offlineGraceMinutes: t }))}
+                        keyboardType="numeric"
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {t('admin.lowBatteryThreshold')}
+                      </Text>
+                      <TextInput
+                        value={String(settingsAlerts.lowBatteryThreshold ?? 20)}
+                        onChangeText={(t) => setSettingsAlerts((prev: any) => ({ ...prev, lowBatteryThreshold: t }))}
+                        keyboardType="numeric"
+                        style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.primarySaveButton, settingsSaving && styles.disabledButton]}
+                    onPress={handleSaveSettings}
+                    disabled={settingsSaving}
+                  >
+                    {settingsSaving ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.primarySaveButtonText}>{t('app.save')}</Text>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* SUBVIEW: NOTIFICATIONS */}
+            {moreSection === 'notifications' && (
+              <View style={{ flex: 1 }}>
+                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
+                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.subviewTitle}>{t('notifications.title')}</Text>
+                  <TouchableOpacity onPress={handleMarkAllNotificationsRead} style={styles.markAllReadButton}>
+                    <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView contentContainerStyle={styles.subviewScroll}>
+                  {notifications.length === 0 ? (
+                    <View style={styles.emptyState}>
+                      <AppIcon name="bell" size={32} color={colors.text.light} />
+                      <Text style={styles.emptyStateText}>{t('notifications.noNotifications')}</Text>
+                    </View>
+                  ) : (
+                    notifications.map((n: any) => (
+                      <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
+                        <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                          <Text style={styles.notificationTitle}>{n.title || 'System Alert'}</Text>
+                          {!n.isRead && (
+                            <View style={styles.unreadPill}>
+                              <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
+                          {n.message}
+                        </Text>
+                        <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
+                          {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
             )}
           </View>
         )}
-      </ScrollView>
+      </View>
 
-      {/* Driver Detail Modal */}
+      {/* Screen-Fitted Bottom Tab Bar */}
+      <BottomTabBar
+        tabs={bottomTabs}
+        activeTab={activeTab}
+        onTabChange={(tabId) => {
+          setActiveTab(tabId as MainTab);
+          if (tabId === 'more') setMoreSection('menu');
+        }}
+      />
+
+      {/* Driver Detail Modal with explicit freshness */}
       <DriverDetailModal
         visible={driverModalVisible}
         driver={selectedDriver}
@@ -901,401 +1083,566 @@ export function AdminHomeScreen({
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.background,
   },
-  topBar: {
+  body: {
+    flex: 1,
+  },
+  scrollContainer: {
+    padding: spacing.lg,
+    gap: spacing.lg,
+  },
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  topBarActions: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  langButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#fef2f2',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#fecaca',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
   },
-  langButtonText: {
+  errorBannerText: {
+    flex: 1,
     fontSize: 12,
+    color: '#b91c1c',
     fontWeight: '600',
-    color: '#475569',
   },
-  logoutSmallButton: {
-    paddingVertical: 6,
+  retryButton: {
+    backgroundColor: '#dc2626',
     paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#fee2e2',
+    paddingVertical: 4,
+    borderRadius: radius.xs,
   },
-  logoutSmallText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#dc2626',
-  },
-  topBarUser: {
-    alignItems: 'flex-end',
-  },
-  topBarName: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  roleBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: '#dbeafe',
-    marginTop: 2,
-  },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#1d4ed8',
-  },
-  tabsContainer: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  tabsScroll: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  tabButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#f1f5f9',
-  },
-  tabButtonActive: {
-    backgroundColor: '#0f172a',
-  },
-  tabButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  tabButtonTextActive: {
+  retryButtonText: {
     color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-    gap: 16,
+  section: {
+    gap: spacing.sm,
   },
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
-  cardHeader: {
-    flexDirection: 'row',
+  sectionHeaderRow: {
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  cardDescription: {
+  sectionActionLink: {
     fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-    marginBottom: 12,
+    fontWeight: '700',
+    color: colors.primary,
   },
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
+    gap: spacing.sm,
   },
-  kpiBox: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    padding: 12,
-    alignItems: 'center',
+  kpiCard: {
+    flexBasis: '31%',
+    flexGrow: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.sm,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  kpiNumber: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#0f172a',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 68,
+    ...shadows.card,
   },
   kpiLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 2,
+    fontSize: 10,
+    color: colors.text.muted,
+    fontWeight: '600',
+    marginBottom: 2,
+    textAlign: 'center',
   },
-  linkText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#059669',
+  kpiValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text.primary,
   },
-  searchInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    marginBottom: 12,
-    color: '#0f172a',
-  },
-  driverItem: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingVertical: 12,
-  },
-  driverItemHeader: {
+  alertCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  alertCountBadge: {
+    backgroundColor: colors.status.critical,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+  },
+  alertCountText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  alertBody: {
+    flex: 1,
+  },
+  alertTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9a3412',
+  },
+  alertMessage: {
+    fontSize: 11,
+    color: '#c2410c',
+  },
+  alertTime: {
+    fontSize: 10,
+    color: '#ea580c',
+  },
+  mapPreviewFrame: {
+    height: 190,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  driverRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.sm,
+    ...shadows.card,
+  },
+  driverStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  driverInfo: {
+    flex: 1,
   },
   driverName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
-  driverSub: {
+  driverMeta: {
+    fontSize: 10,
+    color: colors.text.muted,
+  },
+  driverTelemetryCol: {
+    minWidth: 70,
+  },
+  driverSpeedText: {
     fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+  driverBatteryText: {
+    fontSize: 10,
+    color: colors.text.muted,
   },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: 'bold',
+  mapScreenContainer: {
+    flex: 1,
   },
-  driverMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
+  filterBar: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.xs,
   },
-  metaText: {
-    fontSize: 11,
-    color: '#64748b',
+  filterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  metaLinkText: {
+  filterPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterPillText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#0284c7',
+    color: colors.text.secondary,
+  },
+  filterPillTextActive: {
+    color: '#ffffff',
+  },
+  driversScreenContainer: {
+    flex: 1,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text.primary,
+    paddingVertical: 4,
+  },
+  driversListContent: {
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  operationalDriverCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 64,
+    ...shadows.card,
+  },
+  driverStatusCol: {
+    minWidth: 72,
+    gap: 2,
+  },
+  statusBadgePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.xs,
+    borderWidth: 1,
+  },
+  statusBadgePillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  employeeIdLabel: {
+    fontSize: 9,
+    color: colors.text.muted,
+  },
+  driverMainCol: {
+    flex: 1,
+  },
+  cardDriverName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  cardDriverFreshness: {
+    fontSize: 10,
+    color: colors.text.muted,
+  },
+  driverRightCol: {
+    minWidth: 60,
+  },
+  driverCardSpeed: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  driverCardBattery: {
+    fontSize: 10,
+    color: colors.text.muted,
+  },
+  chevronCol: {
+    paddingHorizontal: 2,
+  },
+  moreContainer: {
+    flex: 1,
+  },
+  moreGroup: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    ...shadows.card,
+  },
+  moreGroupTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text.muted,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 4,
+    backgroundColor: colors.surfaceSubtle,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  moreRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  moreRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  moreRowText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  moreBadge: {
+    backgroundColor: colors.status.critical,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+  },
+  moreBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  subviewHeader: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.xs,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subviewTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  markAllReadButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  markAllReadText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  subviewScroll: {
+    padding: spacing.md,
+    gap: spacing.md,
   },
   deviceCard: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.xs,
+    ...shadows.card,
   },
-  deviceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  deviceCardHeader: {
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  deviceName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0f172a',
+  deviceDriverName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
-  deviceSub: {
-    fontSize: 11,
-    color: '#64748b',
+  deviceIdText: {
+    fontSize: 10,
+    fontFamily: 'monospace',
+    color: colors.text.muted,
+  },
+  authBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.xs,
+    borderWidth: 1,
+  },
+  authBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   deviceMetaRow: {
+    justifyContent: 'space-between',
     marginTop: 4,
   },
-  deviceMetaText: {
-    fontSize: 11,
-    color: '#64748b',
+  deviceMetaItem: {
+    fontSize: 10,
+    color: colors.text.muted,
   },
-  resetSmallButton: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    backgroundColor: '#fee2e2',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
-  resetSmallButtonText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#dc2626',
-  },
-  formGroup: {
-    marginBottom: 12,
-  },
-  formRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  formLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 4,
-  },
-  formInput: {
-    backgroundColor: '#f8fafc',
+  deviceResetButton: {
+    backgroundColor: '#fef2f2',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#0f172a',
-  },
-  saveButton: {
-    backgroundColor: '#059669',
-    paddingVertical: 12,
-    borderRadius: 10,
+    borderColor: '#fecaca',
+    borderRadius: radius.xs,
+    paddingVertical: 6,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 6,
   },
-  saveButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  deviceResetButtonText: {
+    color: '#dc2626',
+    fontSize: 11,
+    fontWeight: '700',
   },
-  userCard: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingVertical: 10,
-  },
-  userHeader: {
-    flexDirection: 'row',
+  userRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'space-between',
+    ...shadows.card,
+  },
+  userInfo: {
+    flex: 1,
   },
   userName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  userSub: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  userMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  userStatus: {
-    fontSize: 11,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
   },
   userPhone: {
     fontSize: 11,
-    color: '#64748b',
+    color: colors.text.muted,
   },
-  notificationCard: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingVertical: 10,
-  },
-  notificationUnread: {
-    backgroundColor: '#f0fdf4',
+  userRoleBadge: {
     paddingHorizontal: 8,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: radius.xs,
   },
-  notifHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  userRoleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  settingsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+    ...shadows.card,
+  },
+  settingsCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
     marginBottom: 4,
   },
-  unreadBadge: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+  inputGroup: {
+    gap: 4,
   },
-  unreadBadgeText: {
-    fontSize: 10,
-    color: '#ffffff',
-    fontWeight: 'bold',
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text.secondary,
   },
-  notifTime: {
-    fontSize: 10,
-    color: '#94a3b8',
-  },
-  notifTitle: {
+  textInput: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     fontSize: 13,
-    fontWeight: 'bold',
-    color: '#0f172a',
+    color: colors.text.primary,
   },
-  notifMessage: {
+  primarySaveButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    ...shadows.card,
+  },
+  primarySaveButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  notificationCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+    ...shadows.card,
+  },
+  unreadNotification: {
+    borderColor: colors.primary,
+    backgroundColor: '#f0fdfa',
+  },
+  notificationHeaderRow: {
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notificationTitle: {
     fontSize: 12,
-    color: '#475569',
-    marginTop: 2,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  unreadPill: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+  },
+  unreadPillText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  notificationMessage: {
+    fontSize: 11,
+    color: colors.text.secondary,
+  },
+  notificationTime: {
+    fontSize: 10,
+    color: colors.text.muted,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    gap: spacing.sm,
+  },
+  emptyStateText: {
+    fontSize: 12,
+    color: colors.text.muted,
   },
   emptyText: {
-    fontSize: 13,
-    color: '#94a3b8',
-    paddingVertical: 16,
     textAlign: 'center',
+    fontSize: 12,
+    color: colors.text.muted,
+    marginVertical: 20,
   },
   disabledButton: {
     opacity: 0.6,
   },
-  textGreen: {
-    color: '#059669',
-  },
-  textRed: {
-    color: '#dc2626',
-  },
-  errorBanner: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fecaca',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  errorBannerText: {
-    color: '#991b1b',
-    fontSize: 13,
-    fontWeight: '500',
-    flex: 1,
-  },
-  retryButton: {
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  retryButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
 });
-

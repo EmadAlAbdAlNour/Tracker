@@ -26,10 +26,10 @@ const SESSION_KEY = 'tracker_driver_session';
 const STACK = createNativeStackNavigator<any>();
 
 const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === 'production'
-    ? 'https://tracker-alpha-puce.vercel.app'
-    : 'http://10.0.2.2:3000');
+  process.env.EXPO_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === 'development'
+    ? 'http://10.0.2.2:3000'
+    : 'https://tracker-alpha-puce.vercel.app');
 
 async function saveSession(session: Session): Promise<void> {
   if (!isValidSession(session)) {
