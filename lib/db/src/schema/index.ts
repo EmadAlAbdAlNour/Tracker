@@ -26,7 +26,6 @@ export const usersTable = pgTable(
     passwordHash: text("password_hash").notNull(),
     role: userRoleEnum("role").notNull(),
     active: boolean("active").notNull().default(true),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -45,7 +44,6 @@ export const driversTable = pgTable(
     }),
     employeeId: text("employee_id").notNull().unique(),
     active: boolean("active").notNull().default(true),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -204,10 +202,10 @@ export const notificationsTable = pgTable(
     messageAr: text("message_ar").notNull(),
     messageEn: text("message_en").notNull(),
     driverId: uuid("driver_id").references(() => driversTable.id, {
-      onDelete: "set null",
+      onDelete: "cascade",
     }),
     shiftId: uuid("shift_id").references(() => shiftsTable.id, {
-      onDelete: "set null",
+      onDelete: "cascade",
     }),
     metadata: text("metadata"), // JSON string
     read: boolean("read").notNull().default(false),

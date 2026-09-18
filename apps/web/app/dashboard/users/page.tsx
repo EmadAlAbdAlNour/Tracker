@@ -324,7 +324,7 @@ export default function UsersPage() {
                                 type="button"
                                 onClick={() => setDeleteTargetUser(user)}
                                 className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition"
-                                title={rtl ? 'حذف نهائي وتجهيل البيانات' : 'Permanently Delete & Anonymize'}
+                                title={rtl ? 'حذف الحساب نهائياً' : 'Permanently Delete Account'}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                                 <span>{rtl ? 'حذف نهائي' : 'Delete'}</span>
@@ -476,15 +476,15 @@ export default function UsersPage() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  {rtl ? 'تأكيد الحذف النهائي وتجهيل البيانات' : 'Confirm Permanent Deletion'}
+                  {rtl ? 'تأكيد الحذف النهائي للحساب' : 'Confirm Permanent Account Deletion'}
                 </h3>
                 <p className="text-xs text-rose-600 font-medium">
-                  {rtl ? 'إجراء غير قابل للتراجع (سياسة 1B)' : 'Irreversible Action (Policy 1B)'}
+                  {rtl ? 'إجراء نهائي غير قابل للتراجع' : 'Permanent & Irreversible Action'}
                 </p>
               </div>
             </div>
 
-            <div className="py-4 text-xs text-slate-600 space-y-2.5">
+            <div className="py-4 text-xs text-slate-600 space-y-3">
               <p>
                 {rtl ? (
                   <>
@@ -496,14 +496,21 @@ export default function UsersPage() {
                   </>
                 )}
               </p>
+
+              <div className="rounded-xl border border-rose-300 bg-rose-50/80 p-3 text-xs font-semibold text-rose-800 leading-relaxed">
+                {rtl
+                  ? 'سيتم حذف الحساب وجميع بياناته نهائياً ولا يمكن التراجع عن هذا الإجراء.'
+                  : 'This permanently deletes the account and all associated data. This action cannot be undone.'}
+              </div>
+
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-[11px]">
                 <div className="font-semibold text-slate-700">
-                  {rtl ? 'الآثار المترتبة على هذا الإجراء:' : 'Consequences of this action:'}
+                  {rtl ? 'تفاصيل الحذف الشامل:' : 'Deletion Breakdown:'}
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-slate-500">
-                  <li>{rtl ? 'تجهيل ومسح البيانات الشخصية (الاسم، البريد، الهاتف) بالكامل.' : 'Permanently scrub personally identifiable data (name, email, phone).'}</li>
-                  <li>{rtl ? 'إلغاء صلاحية تسجيل الدخول والجلسات واعتماد الأجهزة فوراً.' : 'Revoke credentials, refresh sessions, and unbind devices immediately.'}</li>
-                  <li>{rtl ? 'الاحتفاظ بمسارات وبيانات الموقع الجغرافي والورديات السابقة للتدقيق التشغيلي.' : 'Retain historical location points and shifts for fleet audit reports.'}</li>
+                  <li>{rtl ? 'حذف الحساب والبيانات الشخصية وكلمة المرور وجلسات الدخول نهائياً.' : 'Completely purge account credentials, sessions, and personal data.'}</li>
+                  <li>{rtl ? 'تحرير البريد الإلكتروني ورقم الهاتف لإعادة الاستخدام مستقبلاً.' : 'Free email and phone number for future re-registration.'}</li>
+                  <li>{rtl ? 'حذف جميع بيانات الموقع والورديات وسجلات التتبع بالكامل.' : 'Permanently delete all driver shifts, telemetry points, devices, and notifications.'}</li>
                 </ul>
               </div>
               {deleteError && (

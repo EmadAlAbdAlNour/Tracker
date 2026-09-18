@@ -1,5 +1,16 @@
-import { db, usersTable, driversTable, devicesTable, shiftsTable, refreshTokensTable } from "@workspace/db";
-import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
+import {
+  db,
+  usersTable,
+  driversTable,
+  devicesTable,
+  shiftsTable,
+  refreshTokensTable,
+  notificationsTable,
+  notificationReadsTable,
+  locationPointsTable,
+  alertStateTable,
+} from "@workspace/db";
+import { eq, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
 import { hashPassword, sanitizeUser, revokeUserRefreshTokens } from "../lib/auth";
 import { createError } from "../lib/errors";
 
@@ -176,7 +187,7 @@ export async function deactivateUser(id: string) {
   return updateUser(id, { active: false });
 }
 
-export async function permanentDeleteAndAnonymizeUser(id: string, requestingAdminId?: string) {
+export async function permanentDeleteUser(id: string, requestingAdminId?: string) {
   if (requestingAdminId && id === requestingAdminId) {
     throw createError(400, "CANNOT_DELETE_SELF", "Administrators cannot permanently delete their own account");
   }
@@ -187,7 +198,18 @@ export async function permanentDeleteAndAnonymizeUser(id: string, requestingAdmi
   }
 
   const user = existing[0];
-  const shortId = id.replace(/-/g, "").slice(0, 8);
+
+  // Prevent deleting the last active admin
+  if (user.role === "ADMIN") {
+    const remainingAdmins = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(usersTable)
+      .where(and(eq(usersTable.role, "ADMIN"), sql`${usersTable.id} != ${id}`, eq(usersTable.active, true)));
+    const remainingCount = Number(remainingAdmins[0]?.count ?? 0);
+    if (remainingCount <= 0) {
+      throw createError(400, "CANNOT_DELETE_LAST_ADMIN", "Cannot delete the only remaining active administrator");
+    }
+  }
 
   return db.transaction(async (tx) => {
     // 1. Check if user is associated with a driver profile
@@ -195,67 +217,59 @@ export async function permanentDeleteAndAnonymizeUser(id: string, requestingAdmi
     const driver = driverRows[0];
 
     if (driver) {
-      // 1a. Close any active shifts
-      await tx
-        .update(shiftsTable)
-        .set({
-          status: "COMPLETED",
-          endedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(shiftsTable.driverId, driver.id), eq(shiftsTable.status, "ACTIVE")));
+      // Find all shifts belonging to this driver
+      const driverShifts = await tx
+        .select({ id: shiftsTable.id })
+        .from(shiftsTable)
+        .where(eq(shiftsTable.driverId, driver.id));
+      const shiftIds = driverShifts.map((s) => s.id);
 
-      // 1b. Unauthorize devices and scrub identifier
-      await tx
-        .update(devicesTable)
-        .set({
-          authorized: false,
-          deviceIdentifier: null,
-          updatedAt: new Date(),
-        } as any)
-        .where(eq(devicesTable.driverId, driver.id));
+      // 1a. Delete all notifications associated with this driver or driver shifts
+      if (shiftIds.length > 0) {
+        await tx
+          .delete(notificationsTable)
+          .where(or(eq(notificationsTable.driverId, driver.id), inArray(notificationsTable.shiftId, shiftIds)));
+      } else {
+        await tx
+          .delete(notificationsTable)
+          .where(eq(notificationsTable.driverId, driver.id));
+      }
 
-      // 1c. Anonymize driver employeeId to free up original employeeId while preserving uniqueness
-      await tx
-        .update(driversTable)
-        .set({
-          employeeId: `DEL-${shortId}`,
-          active: false,
-          deletedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(driversTable.id, driver.id));
+      // 1b. Delete all location points for this driver
+      await tx.delete(locationPointsTable).where(eq(locationPointsTable.driverId, driver.id));
 
-      // Historical location_points, shifts, and alert_state are STRICTLY PRESERVED for audit!
+      // 1c. Delete all shifts for this driver
+      await tx.delete(shiftsTable).where(eq(shiftsTable.driverId, driver.id));
+
+      // 1d. Delete all devices for this driver
+      await tx.delete(devicesTable).where(eq(devicesTable.driverId, driver.id));
+
+      // 1e. Delete alert state for this driver
+      await tx.delete(alertStateTable).where(eq(alertStateTable.driverId, driver.id));
+
+      // 1f. Delete driver profile
+      await tx.delete(driversTable).where(eq(driversTable.id, driver.id));
     }
 
-    // 2. Hard-delete active authentication refresh tokens
+    // 2. Delete all refresh tokens for this user
     await tx.delete(refreshTokensTable).where(eq(refreshTokensTable.userId, id));
 
-    // 3. Anonymize User Account-Level PII
-    const anonymousName = user.role === "DRIVER" ? "سائق محذوف" : "مستخدم محذوف";
-    const anonymousEmail = `deleted_${shortId}@tracker.local`;
+    // 3. Delete all notification read tracking records for this user
+    await tx.delete(notificationReadsTable).where(eq(notificationReadsTable.userId, id));
 
-    const [anonymizedUser] = await tx
-      .update(usersTable)
-      .set({
-        name: anonymousName,
-        email: anonymousEmail,
-        phone: null,
-        passwordHash: "DELETED_ACCOUNT_CREDENTIAL_DISABLED",
-        active: false,
-        deletedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(usersTable.id, id))
-      .returning();
+    // 4. Delete user account record completely (freeing email and phone)
+    await tx.delete(usersTable).where(eq(usersTable.id, id));
 
     return {
       success: true,
-      anonymized: true,
-      telemetryRetained: true,
-      user: sanitizeUser(anonymizedUser),
+      deleted: true,
+      userId: id,
+      role: user.role,
     };
   });
 }
+
+// Backwards compatibility alias
+export const permanentDeleteAndAnonymizeUser = permanentDeleteUser;
+
 

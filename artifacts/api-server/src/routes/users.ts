@@ -9,7 +9,7 @@ import {
   getUserById,
   updateUser,
   deactivateUser,
-  permanentDeleteAndAnonymizeUser,
+  permanentDeleteUser,
 } from "../services/userService";
 
 const router = Router();
@@ -113,7 +113,7 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req: Authenticate
 router.delete("/:id/permanent", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const result = await permanentDeleteAndAnonymizeUser(id, req.user?.id);
+    const result = await permanentDeleteUser(id, req.user?.id);
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -124,7 +124,7 @@ router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req: Authenticat
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (req.query.permanent === "true") {
-      const result = await permanentDeleteAndAnonymizeUser(id, req.user?.id);
+      const result = await permanentDeleteUser(id, req.user?.id);
       res.status(200).json(result);
       return;
     }

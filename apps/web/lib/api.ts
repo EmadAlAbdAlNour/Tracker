@@ -540,8 +540,8 @@ export async function deactivateUser(id: string): Promise<{ success: boolean }> 
   });
 }
 
-export async function permanentDeleteUser(id: string): Promise<{ success: boolean; anonymized: boolean; telemetryRetained: boolean }> {
-  return apiRequest<{ success: boolean; anonymized: boolean; telemetryRetained: boolean }>(`/api/users/${id}/permanent`, {
+export async function permanentDeleteUser(id: string): Promise<{ success: boolean; deleted: boolean; userId: string; role?: Role }> {
+  return apiRequest<{ success: boolean; deleted: boolean; userId: string; role?: Role }>(`/api/users/${id}/permanent`, {
     method: 'DELETE',
   });
 }

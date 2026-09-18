@@ -50,6 +50,13 @@
       "when": 1789771000000,
       "tag": "0006_permanent_deletion_anonymization",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789772000000,
+      "tag": "0007_true_hard_deletion",
+      "breakpoints": true
     }
   ]
 }

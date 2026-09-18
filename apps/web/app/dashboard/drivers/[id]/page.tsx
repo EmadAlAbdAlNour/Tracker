@@ -514,15 +514,15 @@ export default function DriverDetailsPage() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  {rtl ? 'حذف السائق وتجهيل الهوية نهائياً' : 'Permanent Driver Deletion'}
+                  {rtl ? 'تأكيد الحذف النهائي لحساب السائق' : 'Confirm Permanent Driver Deletion'}
                 </h3>
                 <p className="text-xs text-rose-600 font-medium">
-                  {rtl ? 'إجراء غير قابل للتراجع (سياسة 1B)' : 'Irreversible Action (Policy 1B)'}
+                  {rtl ? 'إجراء نهائي غير قابل للتراجع' : 'Permanent & Irreversible Action'}
                 </p>
               </div>
             </div>
 
-            <div className="py-4 text-xs text-slate-600 space-y-2.5">
+            <div className="py-4 text-xs text-slate-600 space-y-3">
               <p>
                 {rtl ? (
                   <>
@@ -534,14 +534,21 @@ export default function DriverDetailsPage() {
                   </>
                 )}
               </p>
+
+              <div className="rounded-xl border border-rose-300 bg-rose-50/80 p-3 text-xs font-semibold text-rose-800 leading-relaxed">
+                {rtl
+                  ? 'سيتم حذف الحساب وجميع بياناته نهائياً ولا يمكن التراجع عن هذا الإجراء.'
+                  : 'This permanently deletes the account and all associated data. This action cannot be undone.'}
+              </div>
+
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-[11px]">
                 <div className="font-semibold text-slate-700">
-                  {rtl ? 'الآثار المترتبة على هذا الإجراء:' : 'Consequences of this action:'}
+                  {rtl ? 'تفاصيل الحذف الشامل:' : 'Deletion Breakdown:'}
                 </div>
                 <ul className="list-disc list-inside space-y-1 text-slate-500">
-                  <li>{rtl ? 'تجهيل ومسح الاسم والبريد الإلكتروني ورقم الهاتف بشكل دائم.' : 'Scrub personal data (name, email, phone) permanently.'}</li>
-                  <li>{rtl ? 'إلغاء جلسات الدخول وإلغاء اعتماد الجهاز وإنهاء أي وردية نشطة.' : 'Revoke login sessions, unbind device, and complete active shifts.'}</li>
-                  <li>{rtl ? 'الاحتفاظ بمسارات وبيانات الموقع الجغرافي للتدقيق التشغيلي والتقارير.' : 'Retain historical location points and shifts for fleet audit reports.'}</li>
+                  <li>{rtl ? 'حذف حساب المستخدم والسائق وبيانات الاعتماد وجلسات الدخول نهائياً.' : 'Completely remove driver and user account credentials, sessions, and data.'}</li>
+                  <li>{rtl ? 'تحرير البريد الإلكتروني ورقم الهاتف والرقم الوظيفي لإعادة الاستخدام.' : 'Free email, phone number, and employee ID for future re-registration.'}</li>
+                  <li>{rtl ? 'حذف كافة مسارات الموقع الجغرافي والورديات وسجلات الأجهزة والتنبيهات بالكامل.' : 'Permanently delete all GPS tracks, shifts, devices, and notification records.'}</li>
                 </ul>
               </div>
               {deleteError && (

@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import request from "supertest";
-import app from "./app";
 
-// Mock DB module for unit testing permanent deletion logic
+// Mock DB module for unit testing permanent hard deletion logic
 vi.mock("@workspace/db", () => {
-  const users = [
+  let users = [
     {
       id: "admin-uuid-1",
       name: "Super Admin",
@@ -13,7 +11,6 @@ vi.mock("@workspace/db", () => {
       role: "ADMIN",
       passwordHash: "hash1",
       active: true,
-      deletedAt: null as Date | null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -25,25 +22,23 @@ vi.mock("@workspace/db", () => {
       role: "DRIVER",
       passwordHash: "hash2",
       active: true,
-      deletedAt: null as Date | null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
   ];
 
-  const drivers = [
+  let drivers = [
     {
       id: "driver-uuid-2",
       userId: "driver-user-uuid-2",
       employeeId: "DRV-102",
       active: true,
-      deletedAt: null as Date | null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
   ];
 
-  const shifts = [
+  let shifts = [
     {
       id: "shift-uuid-active",
       driverId: "driver-uuid-2",
@@ -60,7 +55,7 @@ vi.mock("@workspace/db", () => {
     },
   ];
 
-  const devices = [
+  let devices = [
     {
       id: "device-uuid-1",
       driverId: "driver-uuid-2",
@@ -70,7 +65,7 @@ vi.mock("@workspace/db", () => {
     },
   ];
 
-  const refreshTokens = [
+  let refreshTokens = [
     {
       id: "token-1",
       userId: "driver-user-uuid-2",
@@ -78,7 +73,7 @@ vi.mock("@workspace/db", () => {
     },
   ];
 
-  const locationPoints = [
+  let locationPoints = [
     {
       id: "loc-1",
       driverId: "driver-uuid-2",
@@ -93,70 +88,192 @@ vi.mock("@workspace/db", () => {
     },
   ];
 
+  let notifications = [
+    {
+      id: "notif-1",
+      driverId: "driver-uuid-2",
+      shiftId: "shift-uuid-active",
+      titleAr: "تنبيه",
+      titleEn: "Alert",
+    },
+  ];
+
+  let notificationReads = [
+    {
+      id: "read-1",
+      userId: "driver-user-uuid-2",
+      notificationId: "notif-1",
+    },
+  ];
+
+  let alertState = [
+    {
+      id: "alert-1",
+      driverId: "driver-uuid-2",
+      alertType: "SPEEDING",
+    },
+  ];
+
+  const resetState = () => {
+    users = [
+      {
+        id: "admin-uuid-1",
+        name: "Super Admin",
+        email: "admin@tracker.com",
+        phone: "+966500000001",
+        role: "ADMIN",
+        passwordHash: "hash1",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: "driver-user-uuid-2",
+        name: "Driver Ahmed",
+        email: "ahmed@tracker.com",
+        phone: "+966500000002",
+        role: "DRIVER",
+        passwordHash: "hash2",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+    drivers = [
+      {
+        id: "driver-uuid-2",
+        userId: "driver-user-uuid-2",
+        employeeId: "DRV-102",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+    shifts = [
+      {
+        id: "shift-uuid-active",
+        driverId: "driver-uuid-2",
+        status: "ACTIVE",
+        startedAt: new Date(),
+        endedAt: null,
+      },
+    ];
+    devices = [
+      {
+        id: "device-uuid-1",
+        driverId: "driver-uuid-2",
+        platform: "Android",
+        deviceIdentifier: "hw-1",
+        authorized: true,
+      },
+    ];
+    refreshTokens = [
+      {
+        id: "token-1",
+        userId: "driver-user-uuid-2",
+        tokenHash: "hash-1",
+      },
+    ];
+    locationPoints = [
+      {
+        id: "loc-1",
+        driverId: "driver-uuid-2",
+        latitude: 24.7136,
+        longitude: 46.6753,
+      },
+    ];
+    notifications = [
+      {
+        id: "notif-1",
+        driverId: "driver-uuid-2",
+        shiftId: "shift-uuid-active",
+        titleAr: "تنبيه",
+        titleEn: "Alert",
+      },
+    ];
+    notificationReads = [
+      {
+        id: "read-1",
+        userId: "driver-user-uuid-2",
+        notificationId: "notif-1",
+      },
+    ];
+    alertState = [
+      {
+        id: "alert-1",
+        driverId: "driver-uuid-2",
+        alertType: "SPEEDING",
+      },
+    ];
+  };
+
   const mockDb = {
-    select: () => ({
+    select: (fields?: any) => ({
       from: (table: any) => ({
         where: (condition: any) => ({
           limit: () => {
             if (table === mockDbModule.usersTable) {
-              return [users[1]];
+              return [users.find((u) => u.id === "driver-user-uuid-2") || users[0]].filter(Boolean);
             }
             if (table === mockDbModule.driversTable) {
               return drivers;
             }
             return [];
           },
-          orderBy: () => ({
-            limit: () => ({
-              offset: () => users,
-            }),
-          }),
+          then: (resolve: any) => {
+            if (fields && fields.count) {
+              // Admin count query
+              const activeAdmins = users.filter((u) => u.role === "ADMIN" && u.active);
+              return resolve([{ count: activeAdmins.length }]);
+            }
+            return resolve([]);
+          },
         }),
       }),
     }),
     transaction: async (cb: any) => {
       const tx = {
-        select: (table: any) => ({
+        select: (fields?: any) => ({
           from: (tbl: any) => ({
             where: () => ({
               limit: () => (tbl === mockDbModule.driversTable ? drivers : users),
+              then: (resolve: any) => {
+                if (tbl === mockDbModule.shiftsTable) {
+                  return resolve(shifts.map((s) => ({ id: s.id })));
+                }
+                return resolve([]);
+              },
             }),
-          }),
-        }),
-        update: (tbl: any) => ({
-          set: (data: any) => ({
-            where: () => {
-              if (tbl === mockDbModule.shiftsTable) {
-                // close shift
-                shifts[0].status = "COMPLETED";
-              }
-              if (tbl === mockDbModule.devicesTable) {
-                devices[0].authorized = false;
-                devices[0].deviceIdentifier = null;
-              }
-              if (tbl === mockDbModule.driversTable) {
-                drivers[0].employeeId = data.employeeId;
-                drivers[0].active = false;
-                drivers[0].deletedAt = data.deletedAt;
-              }
-              if (tbl === mockDbModule.usersTable) {
-                users[1].name = data.name;
-                users[1].email = data.email;
-                users[1].phone = null;
-                users[1].passwordHash = data.passwordHash;
-                users[1].active = false;
-                users[1].deletedAt = data.deletedAt;
-              }
-              return {
-                returning: () => [users[1]],
-              };
-            },
           }),
         }),
         delete: (tbl: any) => ({
           where: () => {
+            if (tbl === mockDbModule.notificationsTable) {
+              notifications.length = 0;
+            }
+            if (tbl === mockDbModule.locationPointsTable) {
+              locationPoints.length = 0;
+            }
+            if (tbl === mockDbModule.shiftsTable) {
+              shifts.length = 0;
+            }
+            if (tbl === mockDbModule.devicesTable) {
+              devices.length = 0;
+            }
+            if (tbl === mockDbModule.alertStateTable) {
+              alertState.length = 0;
+            }
+            if (tbl === mockDbModule.driversTable) {
+              drivers.length = 0;
+            }
             if (tbl === mockDbModule.refreshTokensTable) {
               refreshTokens.length = 0;
+            }
+            if (tbl === mockDbModule.notificationReadsTable) {
+              notificationReads.length = 0;
+            }
+            if (tbl === mockDbModule.usersTable) {
+              users = users.filter((u) => u.id !== "driver-user-uuid-2");
             }
           },
         }),
@@ -167,68 +284,83 @@ vi.mock("@workspace/db", () => {
 
   const mockDbModule = {
     db: mockDb,
-    usersTable: { id: "id", email: "email", role: "role", name: "name", phone: "phone" },
+    usersTable: { id: "id", email: "email", role: "role", name: "name", phone: "phone", active: "active" },
     driversTable: { id: "id", userId: "user_id", employeeId: "employee_id", active: "active" },
     devicesTable: { id: "id", driverId: "driver_id" },
     shiftsTable: { id: "id", driverId: "driver_id", status: "status" },
     refreshTokensTable: { id: "id", userId: "user_id" },
+    notificationReadsTable: { id: "id", userId: "user_id", notificationId: "notification_id" },
+    notificationsTable: { id: "id", driverId: "driver_id", shiftId: "shift_id" },
     locationPointsTable: { id: "id", driverId: "driver_id" },
-    _testState: {
+    alertStateTable: { id: "id", driverId: "driver_id" },
+    _getState: () => ({
       users,
       drivers,
       shifts,
       devices,
       refreshTokens,
       locationPoints,
-    },
+      notifications,
+      notificationReads,
+      alertState,
+    }),
+    _resetState: resetState,
   };
 
   return mockDbModule;
 });
 
-describe("Permanent User / Driver Deletion (Policy 1B)", () => {
-  it("permanentDeleteAndAnonymizeUser scrubs PII, closes shifts, revokes tokens, and retains telemetry", async () => {
-    const { permanentDeleteAndAnonymizeUser } = await import("./services/userService");
+describe("True Permanent Hard Deletion Policy", () => {
+  beforeEach(async () => {
     const dbModule = await import("@workspace/db");
-    const state = (dbModule as any)._testState;
+    (dbModule as any)._resetState();
+  });
 
-    const result = await permanentDeleteAndAnonymizeUser("driver-user-uuid-2", "admin-uuid-1");
+  it("permanentDeleteUser completely removes user, driver, telemetry, shifts, devices, tokens, and notifications", async () => {
+    const { permanentDeleteUser } = await import("./services/userService");
+    const dbModule = await import("@workspace/db");
+
+    const result = await permanentDeleteUser("driver-user-uuid-2", "admin-uuid-1");
 
     expect(result.success).toBe(true);
-    expect(result.anonymized).toBe(true);
-    expect(result.telemetryRetained).toBe(true);
+    expect(result.deleted).toBe(true);
+    expect(result.userId).toBe("driver-user-uuid-2");
+    expect(result.role).toBe("DRIVER");
 
-    // 1. User PII is anonymized
-    expect(state.users[1].name).toBe("سائق محذوف");
-    expect(state.users[1].email).toMatch(/^deleted_[a-z0-9]+@tracker\.local$/);
-    expect(state.users[1].phone).toBeNull();
-    expect(state.users[1].passwordHash).toBe("DELETED_ACCOUNT_CREDENTIAL_DISABLED");
-    expect(state.users[1].active).toBe(false);
-    expect(state.users[1].deletedAt).toBeInstanceOf(Date);
+    const state = (dbModule as any)._getState();
 
-    // 2. Driver profile is anonymized
-    expect(state.drivers[0].employeeId).toMatch(/^DEL-[a-z0-9]+$/);
-    expect(state.drivers[0].active).toBe(false);
+    // 1. User is completely purged (NO tombstone, NO anonymized account)
+    expect(state.users.find((u: any) => u.id === "driver-user-uuid-2")).toBeUndefined();
+    expect(state.users).toHaveLength(1); // Only admin remains
 
-    // 3. Active shifts ended
-    expect(state.shifts[0].status).toBe("COMPLETED");
+    // 2. Driver record completely purged
+    expect(state.drivers).toHaveLength(0);
 
-    // 4. Devices unauthorized and scrubbed
-    expect(state.devices[0].authorized).toBe(false);
-    expect(state.devices[0].deviceIdentifier).toBeNull();
+    // 3. Historical telemetry/location points completely purged (NO retained telemetry)
+    expect(state.locationPoints).toHaveLength(0);
 
-    // 5. Sessions deleted
+    // 4. Shifts completely purged
+    expect(state.shifts).toHaveLength(0);
+
+    // 5. Devices completely purged
+    expect(state.devices).toHaveLength(0);
+
+    // 6. Refresh tokens completely purged
     expect(state.refreshTokens).toHaveLength(0);
 
-    // 6. Historical telemetry points are strictly PRESERVED
-    expect(state.locationPoints).toHaveLength(2);
+    // 7. Notifications and reads completely purged
+    expect(state.notifications).toHaveLength(0);
+    expect(state.notificationReads).toHaveLength(0);
+
+    // 8. Alert state completely purged
+    expect(state.alertState).toHaveLength(0);
   });
 
   it("prevents administrators from permanently deleting their own account", async () => {
-    const { permanentDeleteAndAnonymizeUser } = await import("./services/userService");
+    const { permanentDeleteUser } = await import("./services/userService");
 
     await expect(
-      permanentDeleteAndAnonymizeUser("admin-uuid-1", "admin-uuid-1")
+      permanentDeleteUser("admin-uuid-1", "admin-uuid-1")
     ).rejects.toThrow("Administrators cannot permanently delete their own account");
   });
 });
