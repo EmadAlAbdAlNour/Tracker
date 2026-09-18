@@ -36,6 +36,20 @@
       "when": 1756200000000,
       "tag": "0004_production_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1756300000000,
+      "tag": "0005_user_scoped_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789771000000,
+      "tag": "0006_permanent_deletion_anonymization",
+      "breakpoints": true
     }
   ]
 }
