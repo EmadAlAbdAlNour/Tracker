@@ -57,6 +57,13 @@
       "when": 1789772000000,
       "tag": "0007_true_hard_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789773000000,
+      "tag": "0008_notification_reads_table",
+      "breakpoints": true
     }
   ]
 }

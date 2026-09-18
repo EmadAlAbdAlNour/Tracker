@@ -10,7 +10,7 @@ import {
   locationPointsTable,
   alertStateTable,
 } from "@workspace/db";
-import { eq, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, or, ilike, desc, sql, inArray, ne } from "drizzle-orm";
 import { hashPassword, sanitizeUser, revokeUserRefreshTokens } from "../lib/auth";
 import { createError } from "../lib/errors";
 
@@ -188,10 +188,6 @@ export async function deactivateUser(id: string) {
 }
 
 export async function permanentDeleteUser(id: string, requestingAdminId?: string) {
-  if (requestingAdminId && id === requestingAdminId) {
-    throw createError(400, "CANNOT_DELETE_SELF", "Administrators cannot permanently delete their own account");
-  }
-
   const existing = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
   if (!existing[0]) {
     throw createError(404, "USER_NOT_FOUND", "User not found");
@@ -199,74 +195,101 @@ export async function permanentDeleteUser(id: string, requestingAdminId?: string
 
   const user = existing[0];
 
-  // Prevent deleting the last active admin
+  // 1. Prevent deleting the protected primary system administrator
+  const PRIMARY_ADMIN_EMAIL = "admin@tracker.local";
+  if (user.email.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase()) {
+    throw createError(400, "CANNOT_DELETE_PRIMARY_ADMIN", "The primary system administrator account cannot be permanently deleted");
+  }
+
+  // 2. Prevent self-deletion
+  if (requestingAdminId && id === requestingAdminId) {
+    throw createError(400, "CANNOT_DELETE_SELF", "Administrators cannot permanently delete their own account");
+  }
+
+  // 3. Prevent deleting the last active admin
   if (user.role === "ADMIN") {
     const remainingAdmins = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(usersTable)
-      .where(and(eq(usersTable.role, "ADMIN"), sql`${usersTable.id} != ${id}`, eq(usersTable.active, true)));
+      .where(and(eq(usersTable.role, "ADMIN"), ne(usersTable.id, id), eq(usersTable.active, true)));
     const remainingCount = Number(remainingAdmins[0]?.count ?? 0);
     if (remainingCount <= 0) {
       throw createError(400, "CANNOT_DELETE_LAST_ADMIN", "Cannot delete the only remaining active administrator");
     }
   }
 
-  return db.transaction(async (tx) => {
-    // 1. Check if user is associated with a driver profile
-    const driverRows = await tx.select().from(driversTable).where(eq(driversTable.userId, id)).limit(1);
-    const driver = driverRows[0];
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Check if user is associated with a driver profile
+      const driverRows = await tx.select().from(driversTable).where(eq(driversTable.userId, id)).limit(1);
+      const driver = driverRows[0];
 
-    if (driver) {
-      // Find all shifts belonging to this driver
-      const driverShifts = await tx
-        .select({ id: shiftsTable.id })
-        .from(shiftsTable)
-        .where(eq(shiftsTable.driverId, driver.id));
-      const shiftIds = driverShifts.map((s) => s.id);
+      if (driver) {
+        // Find all shifts belonging to this driver
+        const driverShifts = await tx
+          .select({ id: shiftsTable.id })
+          .from(shiftsTable)
+          .where(eq(shiftsTable.driverId, driver.id));
+        const shiftIds = driverShifts.map((s) => s.id);
 
-      // 1a. Delete all notifications associated with this driver or driver shifts
-      if (shiftIds.length > 0) {
-        await tx
-          .delete(notificationsTable)
-          .where(or(eq(notificationsTable.driverId, driver.id), inArray(notificationsTable.shiftId, shiftIds)));
-      } else {
-        await tx
-          .delete(notificationsTable)
-          .where(eq(notificationsTable.driverId, driver.id));
+        // 1a. Delete all notifications associated with this driver or driver shifts
+        if (shiftIds.length > 0) {
+          await tx
+            .delete(notificationsTable)
+            .where(or(eq(notificationsTable.driverId, driver.id), inArray(notificationsTable.shiftId, shiftIds)));
+        } else {
+          await tx
+            .delete(notificationsTable)
+            .where(eq(notificationsTable.driverId, driver.id));
+        }
+
+        // 1b. Delete all location points for this driver
+        await tx.delete(locationPointsTable).where(eq(locationPointsTable.driverId, driver.id));
+
+        // 1c. Delete all shifts for this driver
+        await tx.delete(shiftsTable).where(eq(shiftsTable.driverId, driver.id));
+
+        // 1d. Delete all devices for this driver
+        await tx.delete(devicesTable).where(eq(devicesTable.driverId, driver.id));
+
+        // 1e. Delete alert state for this driver
+        await tx.delete(alertStateTable).where(eq(alertStateTable.driverId, driver.id));
+
+        // 1f. Delete driver profile
+        await tx.delete(driversTable).where(eq(driversTable.id, driver.id));
       }
 
-      // 1b. Delete all location points for this driver
-      await tx.delete(locationPointsTable).where(eq(locationPointsTable.driverId, driver.id));
+      // 2. Delete all refresh tokens for this user
+      await tx.delete(refreshTokensTable).where(eq(refreshTokensTable.userId, id));
 
-      // 1c. Delete all shifts for this driver
-      await tx.delete(shiftsTable).where(eq(shiftsTable.driverId, driver.id));
+      // 3. Delete all notification read tracking records for this user
+      await tx.delete(notificationReadsTable).where(eq(notificationReadsTable.userId, id));
 
-      // 1d. Delete all devices for this driver
-      await tx.delete(devicesTable).where(eq(devicesTable.driverId, driver.id));
+      // 4. Delete user account record completely (freeing email and phone)
+      await tx.delete(usersTable).where(eq(usersTable.id, id));
 
-      // 1e. Delete alert state for this driver
-      await tx.delete(alertStateTable).where(eq(alertStateTable.driverId, driver.id));
-
-      // 1f. Delete driver profile
-      await tx.delete(driversTable).where(eq(driversTable.id, driver.id));
-    }
-
-    // 2. Delete all refresh tokens for this user
-    await tx.delete(refreshTokensTable).where(eq(refreshTokensTable.userId, id));
-
-    // 3. Delete all notification read tracking records for this user
-    await tx.delete(notificationReadsTable).where(eq(notificationReadsTable.userId, id));
-
-    // 4. Delete user account record completely (freeing email and phone)
-    await tx.delete(usersTable).where(eq(usersTable.id, id));
-
-    return {
-      success: true,
-      deleted: true,
-      userId: id,
-      role: user.role,
-    };
-  });
+      return {
+        success: true,
+        deleted: true,
+        userId: id,
+        role: user.role,
+      };
+    });
+  } catch (error: any) {
+    console.error("[permanentDeleteUser] Deletion transaction failed:", {
+      targetUserId: id,
+      targetEmail: user.email,
+      targetRole: user.role,
+      requestingAdminId,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      pgCode: error?.cause?.code || error?.code,
+      pgTable: error?.cause?.table || error?.table,
+      pgConstraint: error?.cause?.constraint || error?.constraint,
+      stack: error?.stack,
+    });
+    throw error;
+  }
 }
 
 // Backwards compatibility alias

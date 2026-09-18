@@ -2,127 +2,36 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock DB module for unit testing permanent hard deletion logic
 vi.mock("@workspace/db", () => {
-  let users = [
-    {
-      id: "admin-uuid-1",
-      name: "Super Admin",
-      email: "admin@tracker.com",
-      phone: "+966500000001" as string | null,
-      role: "ADMIN",
-      passwordHash: "hash1",
-      active: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: "driver-user-uuid-2",
-      name: "Driver Ahmed",
-      email: "ahmed@tracker.com",
-      phone: "+966500000002" as string | null,
-      role: "DRIVER",
-      passwordHash: "hash2",
-      active: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ];
-
-  let drivers = [
-    {
-      id: "driver-uuid-2",
-      userId: "driver-user-uuid-2",
-      employeeId: "DRV-102",
-      active: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ];
-
-  let shifts = [
-    {
-      id: "shift-uuid-active",
-      driverId: "driver-uuid-2",
-      status: "ACTIVE",
-      startedAt: new Date(),
-      endedAt: null as Date | null,
-    },
-    {
-      id: "shift-uuid-past",
-      driverId: "driver-uuid-2",
-      status: "COMPLETED",
-      startedAt: new Date(Date.now() - 3600000),
-      endedAt: new Date(),
-    },
-  ];
-
-  let devices = [
-    {
-      id: "device-uuid-1",
-      driverId: "driver-uuid-2",
-      platform: "Android (Samsung S25)",
-      deviceIdentifier: "hw-uuid-1234" as string | null,
-      authorized: true,
-    },
-  ];
-
-  let refreshTokens = [
-    {
-      id: "token-1",
-      userId: "driver-user-uuid-2",
-      tokenHash: "token-hash-1",
-    },
-  ];
-
-  let locationPoints = [
-    {
-      id: "loc-1",
-      driverId: "driver-uuid-2",
-      latitude: 24.7136,
-      longitude: 46.6753,
-    },
-    {
-      id: "loc-2",
-      driverId: "driver-uuid-2",
-      latitude: 24.7140,
-      longitude: 46.6760,
-    },
-  ];
-
-  let notifications = [
-    {
-      id: "notif-1",
-      driverId: "driver-uuid-2",
-      shiftId: "shift-uuid-active",
-      titleAr: "تنبيه",
-      titleEn: "Alert",
-    },
-  ];
-
-  let notificationReads = [
-    {
-      id: "read-1",
-      userId: "driver-user-uuid-2",
-      notificationId: "notif-1",
-    },
-  ];
-
-  let alertState = [
-    {
-      id: "alert-1",
-      driverId: "driver-uuid-2",
-      alertType: "SPEEDING",
-    },
-  ];
+  let users: any[] = [];
+  let drivers: any[] = [];
+  let shifts: any[] = [];
+  let devices: any[] = [];
+  let refreshTokens: any[] = [];
+  let locationPoints: any[] = [];
+  let notifications: any[] = [];
+  let notificationReads: any[] = [];
+  let alertState: any[] = [];
 
   const resetState = () => {
     users = [
       {
-        id: "admin-uuid-1",
-        name: "Super Admin",
-        email: "admin@tracker.com",
+        id: "primary-admin-uuid",
+        name: "Primary Administrator",
+        email: "admin@tracker.local",
         phone: "+966500000001",
         role: "ADMIN",
         passwordHash: "hash1",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: "secondary-admin-uuid",
+        name: "Secondary Admin",
+        email: "secondary.admin@tracker.com",
+        phone: "+966500000099",
+        role: "ADMIN",
+        passwordHash: "hash_sec",
         active: true,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -169,9 +78,14 @@ vi.mock("@workspace/db", () => {
     ];
     refreshTokens = [
       {
-        id: "token-1",
+        id: "token-driver",
         userId: "driver-user-uuid-2",
-        tokenHash: "hash-1",
+        tokenHash: "hash-driver",
+      },
+      {
+        id: "token-sec-admin",
+        userId: "secondary-admin-uuid",
+        tokenHash: "hash-sec-admin",
       },
     ];
     locationPoints = [
@@ -197,6 +111,11 @@ vi.mock("@workspace/db", () => {
         userId: "driver-user-uuid-2",
         notificationId: "notif-1",
       },
+      {
+        id: "read-2",
+        userId: "secondary-admin-uuid",
+        notificationId: "notif-1",
+      },
     ];
     alertState = [
       {
@@ -207,24 +126,32 @@ vi.mock("@workspace/db", () => {
     ];
   };
 
+  resetState();
+
+  let targetLookupId: string | null = null;
+
   const mockDb = {
     select: (fields?: any) => ({
       from: (table: any) => ({
         where: (condition: any) => ({
           limit: () => {
             if (table === mockDbModule.usersTable) {
-              return [users.find((u) => u.id === "driver-user-uuid-2") || users[0]].filter(Boolean);
+              const found = users.find((u) => u.id === targetLookupId);
+              return found ? [found] : [users[0]];
             }
             if (table === mockDbModule.driversTable) {
-              return drivers;
+              const d = drivers.find((d) => d.userId === targetLookupId);
+              return d ? [d] : [];
             }
             return [];
           },
           then: (resolve: any) => {
             if (fields && fields.count) {
-              // Admin count query
-              const activeAdmins = users.filter((u) => u.role === "ADMIN" && u.active);
-              return resolve([{ count: activeAdmins.length }]);
+              // Count remaining active admins
+              const otherActiveAdmins = users.filter(
+                (u) => u.role === "ADMIN" && u.active && u.id !== targetLookupId
+              );
+              return resolve([{ count: otherActiveAdmins.length }]);
             }
             return resolve([]);
           },
@@ -236,7 +163,13 @@ vi.mock("@workspace/db", () => {
         select: (fields?: any) => ({
           from: (tbl: any) => ({
             where: () => ({
-              limit: () => (tbl === mockDbModule.driversTable ? drivers : users),
+              limit: () => {
+                if (tbl === mockDbModule.driversTable) {
+                  const d = drivers.find((d) => d.userId === targetLookupId);
+                  return d ? [d] : [];
+                }
+                return [];
+              },
               then: (resolve: any) => {
                 if (tbl === mockDbModule.shiftsTable) {
                   return resolve(shifts.map((s) => ({ id: s.id })));
@@ -264,16 +197,16 @@ vi.mock("@workspace/db", () => {
               alertState.length = 0;
             }
             if (tbl === mockDbModule.driversTable) {
-              drivers.length = 0;
+              drivers = drivers.filter((d) => d.userId !== targetLookupId);
             }
             if (tbl === mockDbModule.refreshTokensTable) {
-              refreshTokens.length = 0;
+              refreshTokens = refreshTokens.filter((t) => t.userId !== targetLookupId);
             }
             if (tbl === mockDbModule.notificationReadsTable) {
-              notificationReads.length = 0;
+              notificationReads = notificationReads.filter((nr) => nr.userId !== targetLookupId);
             }
             if (tbl === mockDbModule.usersTable) {
-              users = users.filter((u) => u.id !== "driver-user-uuid-2");
+              users = users.filter((u) => u.id !== targetLookupId);
             }
           },
         }),
@@ -293,6 +226,9 @@ vi.mock("@workspace/db", () => {
     notificationsTable: { id: "id", driverId: "driver_id", shiftId: "shift_id" },
     locationPointsTable: { id: "id", driverId: "driver_id" },
     alertStateTable: { id: "id", driverId: "driver_id" },
+    _setTargetLookupId: (id: string | null) => {
+      targetLookupId = id;
+    },
     _getState: () => ({
       users,
       drivers,
@@ -316,11 +252,12 @@ describe("True Permanent Hard Deletion Policy", () => {
     (dbModule as any)._resetState();
   });
 
-  it("permanentDeleteUser completely removes user, driver, telemetry, shifts, devices, tokens, and notifications", async () => {
+  it("ADMIN permanently deletes DRIVER, eradicating all telemetry, shifts, devices, and tokens", async () => {
     const { permanentDeleteUser } = await import("./services/userService");
     const dbModule = await import("@workspace/db");
+    (dbModule as any)._setTargetLookupId("driver-user-uuid-2");
 
-    const result = await permanentDeleteUser("driver-user-uuid-2", "admin-uuid-1");
+    const result = await permanentDeleteUser("driver-user-uuid-2", "primary-admin-uuid");
 
     expect(result.success).toBe(true);
     expect(result.deleted).toBe(true);
@@ -331,12 +268,12 @@ describe("True Permanent Hard Deletion Policy", () => {
 
     // 1. User is completely purged (NO tombstone, NO anonymized account)
     expect(state.users.find((u: any) => u.id === "driver-user-uuid-2")).toBeUndefined();
-    expect(state.users).toHaveLength(1); // Only admin remains
+    expect(state.users).toHaveLength(2); // Only primary and secondary admins remain
 
     // 2. Driver record completely purged
     expect(state.drivers).toHaveLength(0);
 
-    // 3. Historical telemetry/location points completely purged (NO retained telemetry)
+    // 3. Historical telemetry/location points completely purged
     expect(state.locationPoints).toHaveLength(0);
 
     // 4. Shifts completely purged
@@ -345,22 +282,74 @@ describe("True Permanent Hard Deletion Policy", () => {
     // 5. Devices completely purged
     expect(state.devices).toHaveLength(0);
 
-    // 6. Refresh tokens completely purged
-    expect(state.refreshTokens).toHaveLength(0);
+    // 6. Refresh tokens for driver completely purged
+    expect(state.refreshTokens.find((t: any) => t.userId === "driver-user-uuid-2")).toBeUndefined();
 
-    // 7. Notifications and reads completely purged
+    // 7. Notifications and driver read states completely purged
     expect(state.notifications).toHaveLength(0);
-    expect(state.notificationReads).toHaveLength(0);
+    expect(state.notificationReads.find((nr: any) => nr.userId === "driver-user-uuid-2")).toBeUndefined();
 
     // 8. Alert state completely purged
     expect(state.alertState).toHaveLength(0);
   });
 
-  it("prevents administrators from permanently deleting their own account", async () => {
+  it("ADMIN permanently deletes another ADMIN successfully", async () => {
     const { permanentDeleteUser } = await import("./services/userService");
+    const dbModule = await import("@workspace/db");
+    (dbModule as any)._setTargetLookupId("secondary-admin-uuid");
+
+    const result = await permanentDeleteUser("secondary-admin-uuid", "primary-admin-uuid");
+
+    expect(result.success).toBe(true);
+    expect(result.deleted).toBe(true);
+    expect(result.userId).toBe("secondary-admin-uuid");
+    expect(result.role).toBe("ADMIN");
+
+    const state = (dbModule as any)._getState();
+
+    // Secondary admin is purged
+    expect(state.users.find((u: any) => u.id === "secondary-admin-uuid")).toBeUndefined();
+    // Primary admin remains intact
+    expect(state.users.find((u: any) => u.id === "primary-admin-uuid")).toBeDefined();
+    // Secondary admin's refresh tokens are purged
+    expect(state.refreshTokens.find((t: any) => t.userId === "secondary-admin-uuid")).toBeUndefined();
+    // Secondary admin's notification reads are purged
+    expect(state.notificationReads.find((nr: any) => nr.userId === "secondary-admin-uuid")).toBeUndefined();
+  });
+
+  it("prevents deletion of the protected primary admin account (admin@tracker.local)", async () => {
+    const { permanentDeleteUser } = await import("./services/userService");
+    const dbModule = await import("@workspace/db");
+    (dbModule as any)._setTargetLookupId("primary-admin-uuid");
 
     await expect(
-      permanentDeleteUser("admin-uuid-1", "admin-uuid-1")
+      permanentDeleteUser("primary-admin-uuid", "secondary-admin-uuid")
+    ).rejects.toThrow("The primary system administrator account cannot be permanently deleted");
+  });
+
+  it("prevents administrators from permanently deleting their own account", async () => {
+    const { permanentDeleteUser } = await import("./services/userService");
+    const dbModule = await import("@workspace/db");
+    (dbModule as any)._setTargetLookupId("secondary-admin-uuid");
+
+    await expect(
+      permanentDeleteUser("secondary-admin-uuid", "secondary-admin-uuid")
     ).rejects.toThrow("Administrators cannot permanently delete their own account");
+  });
+
+  it("prevents deleting the last remaining active administrator", async () => {
+    const { permanentDeleteUser } = await import("./services/userService");
+    const dbModule = await import("@workspace/db");
+
+    // Deactivate secondary admin so only primary admin remains active
+    const state = (dbModule as any)._getState();
+    state.users[1].active = false;
+    // Set a non-primary email on the last remaining admin to test the count guard specifically
+    state.users[0].email = "sole.admin@tracker.com";
+    (dbModule as any)._setTargetLookupId("primary-admin-uuid");
+
+    await expect(
+      permanentDeleteUser("primary-admin-uuid", "other-caller-uuid")
+    ).rejects.toThrow("Cannot delete the only remaining active administrator");
   });
 });
