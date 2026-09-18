@@ -7,6 +7,7 @@ import driversRouter from "./drivers";
 import fleetRouter from "./fleet";
 import settingsRouter from "./settings";
 import notificationsRouter from "./notifications";
+import releasesRouter from "./releases";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,7 @@ router.use("/drivers", driversRouter);
 router.use("/fleet", fleetRouter);
 router.use("/settings", settingsRouter);
 router.use("/notifications", notificationsRouter);
+router.use("/releases", releasesRouter);
+router.use(releasesRouter);
 
 export default router;

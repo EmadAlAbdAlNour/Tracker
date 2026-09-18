@@ -8,7 +8,8 @@
     "settings": "Settings"
   },
   "app": {
-    "title": "Fleet Tracker",
+    "title": "Tracker",
+    "developerAttribution": "Developed by Emad Abd Alnour ❤️",
     "subtitle": "Live Tracking & Administration Dashboard",
     "administration": "Administration",
     "logout": "Logout",

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   SafeAreaView,
   StatusBar,
@@ -20,6 +21,7 @@ import { getLocale, initLocale, isRtl, setStoredLocale, t, type Locale } from '.
 import { AdminHomeScreen } from './screens/AdminHomeScreen';
 import { CallCenterHomeScreen } from './screens/CallCenterHomeScreen';
 import { DriverHomeScreen } from './screens/DriverHomeScreen';
+import { TrackerLogo } from './components/TrackerLogo';
 
 const DEVICE_ID_KEY = 'tracker_device_id';
 const SESSION_KEY = 'tracker_driver_session';
@@ -201,8 +203,19 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
     setLoading(true);
     try {
       const deviceIdentifier = await getOrCreateDeviceId();
+      const rawModel = (Platform.constants as any)?.Model;
+      const rawBrand = (Platform.constants as any)?.Brand;
+      const rawRelease = (Platform.constants as any)?.Release;
+      const modelName = [rawBrand, rawModel]
+        .filter(Boolean)
+        .map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(' ');
+      const platformDescription = modelName
+        ? `${Platform.OS === 'android' ? 'Android' : 'iOS'} (${modelName}${rawRelease ? ` - OS ${rawRelease}` : ''})`
+        : Platform.OS;
+
       const device = {
-        platform: Platform.OS,
+        platform: platformDescription,
         deviceIdentifier,
         appVersion: process.env.EXPO_PUBLIC_APP_VERSION ?? '1.0.0',
       };
@@ -254,8 +267,8 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
         </TouchableOpacity>
 
         {/* Logo and header */}
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>T</Text>
+        <View style={{ marginBottom: 16, alignItems: 'center' }}>
+          <TrackerLogo size={64} />
         </View>
 
         <Text style={styles.appTitle}>{t('app.title')}</Text>
@@ -301,6 +314,13 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
               <Text style={styles.primaryButtonText}>{t('login.signIn')}</Text>
             )}
           </TouchableOpacity>
+        </View>
+
+        {/* Subtle Developer Attribution Footer */}
+        <View style={styles.attributionFooter}>
+          <Text style={styles.attributionText}>
+            {locale === 'ar' ? 'تم التطوير بواسطة عماد عبد النور ❤️' : 'Developed by Emad Abd Alnour ❤️'}
+          </Text>
         </View>
       </View>
     </SafeAreaView>
@@ -442,18 +462,120 @@ function DriverHomeWrapper({ navigation }: any): React.JSX.Element {
   );
 }
 
-export default function App(): React.JSX.Element {
+interface UpdateInfo {
+  version: string;
+  downloadUrl: string;
+  releaseNotes?: { ar: string; en: string };
+}
+
+function isVersionNewer(latest: string, current: string): boolean {
+  const parse = (v: string) =>
+    v
+      .replace(/^v/, '')
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const l = parse(latest);
+  const c = parse(current);
+  for (let i = 0; i < Math.max(l.length, c.length); i++) {
+    const lPart = l[i] ?? 0;
+    const cPart = c[i] ?? 0;
+    if (lPart > cPart) return true;
+    if (lPart < cPart) return false;
+  }
+  return false;
+}
+
+function UpdateAdvisoryBanner({
+  update,
+  onDismiss,
+}: {
+  update: UpdateInfo;
+  onDismiss: () => void;
+}): React.JSX.Element {
+  const rtl = isRtl();
+
+  const handleOpenDownload = () => {
+    const url = update.downloadUrl.startsWith('http')
+      ? update.downloadUrl
+      : `${API_URL}${update.downloadUrl.startsWith('/') ? '' : '/'}${update.downloadUrl}`;
+    Linking.openURL(url).catch(() => {
+      Linking.openURL(`${API_URL}/download`).catch(() => undefined);
+    });
+  };
+
   return (
-    <NavigationContainer>
-      <STACK.Navigator screenOptions={{ headerShown: false }}>
-        <STACK.Screen name="Login" component={LoginScreen} />
-        <STACK.Screen name="DriverHome" component={DriverHomeWrapper} />
-        <STACK.Screen name="AdminHome" component={AdminHomeWrapper} />
-        <STACK.Screen name="CallCenterHome" component={CallCenterHomeWrapper} />
-        {/* Backward compatibility alias */}
-        <STACK.Screen name="OperatorHome" component={AdminHomeWrapper} />
-      </STACK.Navigator>
-    </NavigationContainer>
+    <SafeAreaView style={styles.bannerSafeArea}>
+      <View style={[styles.updateBanner, rtl ? styles.updateBannerRtl : null]}>
+        <View style={[styles.updateContent, rtl ? styles.updateContentRtl : null]}>
+          <Text style={styles.updateBadge}>NEW</Text>
+          <Text style={styles.updateText} numberOfLines={1}>
+            {rtl
+              ? `تحديث جديد متوفر (v${update.version})`
+              : `New update available (v${update.version})`}
+          </Text>
+        </View>
+        <View style={styles.updateActions}>
+          <TouchableOpacity style={styles.updateButton} onPress={handleOpenDownload}>
+            <Text style={styles.updateButtonText}>{rtl ? 'تحديث' : 'Update'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
+            <Text style={styles.dismissButtonText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+export default function App(): React.JSX.Element {
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkVersion = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/app-version`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const currentVersion = process.env.EXPO_PUBLIC_APP_VERSION ?? '1.0.0';
+        if (data?.version && isVersionNewer(data.version, currentVersion) && isMounted) {
+          setAvailableUpdate({
+            version: data.version,
+            downloadUrl: data.downloadUrl || '/download',
+            releaseNotes: data.releaseNotes,
+          });
+        }
+      } catch {
+        // Soft advisory check fails silently without blocking user
+      }
+    };
+    checkVersion();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      {availableUpdate && !updateDismissed && (
+        <UpdateAdvisoryBanner
+          update={availableUpdate}
+          onDismiss={() => setUpdateDismissed(true)}
+        />
+      )}
+      <NavigationContainer>
+        <STACK.Navigator screenOptions={{ headerShown: false }}>
+          <STACK.Screen name="Login" component={LoginScreen} />
+          <STACK.Screen name="DriverHome" component={DriverHomeWrapper} />
+          <STACK.Screen name="AdminHome" component={AdminHomeWrapper} />
+          <STACK.Screen name="CallCenterHome" component={CallCenterHomeWrapper} />
+          {/* Backward compatibility alias */}
+          <STACK.Screen name="OperatorHome" component={AdminHomeWrapper} />
+        </STACK.Navigator>
+      </NavigationContainer>
+    </View>
   );
 }
 
@@ -564,5 +686,83 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  attributionFooter: {
+    marginTop: 24,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  attributionText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#94a3b8',
+  },
+  bannerSafeArea: {
+    backgroundColor: '#0284c7',
+  },
+  updateBanner: {
+    backgroundColor: '#0284c7',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 9999,
+  },
+  updateBannerRtl: {
+    flexDirection: 'row-reverse',
+  },
+  updateContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginRight: 8,
+  },
+  updateContentRtl: {
+    flexDirection: 'row-reverse',
+    marginRight: 0,
+    marginLeft: 8,
+  },
+  updateBadge: {
+    backgroundColor: '#ffffff',
+    color: '#0284c7',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  updateText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  updateActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  updateButton: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  updateButtonText: {
+    color: '#0284c7',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  dismissButton: {
+    padding: 4,
+  },
+  dismissButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });

@@ -222,8 +222,8 @@ export async function startBackgroundTracking(): Promise<boolean> {
       distanceInterval: DEFAULT_LOCATION_DISTANCE_METERS,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: 'Tracker Driver',
-        notificationBody: 'تتبع الموقع نشط',
+        notificationTitle: 'Tracker',
+        notificationBody: 'خدمة تتبع الموقع قيد التشغيل',
       },
     });
     return true;

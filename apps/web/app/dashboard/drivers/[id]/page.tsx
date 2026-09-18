@@ -17,6 +17,7 @@ import {
   RotateCcw,
   ShieldAlert,
   Smartphone,
+  Trash2,
   User,
 } from 'lucide-react';
 import {
@@ -25,6 +26,7 @@ import {
   getDriverLocations,
   resetDriverDevice,
   updateDriver,
+  permanentDeleteUser,
   type DriverDetailResponse,
   type ShiftRecord,
   type LocationPoint,
@@ -38,6 +40,7 @@ export default function DriverDetailsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const driverId = params.id;
+  const rtl = isRtl();
 
   const [driver, setDriver] = useState<DriverDetailResponse['driver'] | null>(null);
   const [shifts, setShifts] = useState<ShiftRecord[]>([]);
@@ -49,6 +52,24 @@ export default function DriverDetailsPage() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+  // Permanent Delete Modal State
+  const [permanentDeleteDialogOpen, setPermanentDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handlePermanentDeleteDriver = async () => {
+    if (!driver) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await permanentDeleteUser(driver.userId);
+      router.push('/dashboard/drivers');
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to permanently delete driver');
+      setDeleteLoading(false);
+    }
+  };
 
   async function loadAll(isMounted = true) {
     setLoading(true);
@@ -169,6 +190,16 @@ export default function DriverDetailsPage() {
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 <span>{t('drivers.resetDevice')}</span>
+              </button>
+            )}
+            {session?.user?.role === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={() => setPermanentDeleteDialogOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{rtl ? 'حذف السائق نهائياً' : 'Permanent Delete'}</span>
               </button>
             )}
           </div>
@@ -467,6 +498,83 @@ export default function DriverDetailsPage() {
                 className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
               >
                 {resetLoading ? t('common.loading') : t('drivers.resetDevice')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Confirmation Dialog */}
+      {permanentDeleteDialogOpen && driver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4 text-rose-600">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {rtl ? 'حذف السائق وتجهيل الهوية نهائياً' : 'Permanent Driver Deletion'}
+                </h3>
+                <p className="text-xs text-rose-600 font-medium">
+                  {rtl ? 'إجراء غير قابل للتراجع (سياسة 1B)' : 'Irreversible Action (Policy 1B)'}
+                </p>
+              </div>
+            </div>
+
+            <div className="py-4 text-xs text-slate-600 space-y-2.5">
+              <p>
+                {rtl ? (
+                  <>
+                    أنت على وشك حذف السائق <strong className="text-slate-900">{driver.name}</strong> (الرقم الوظيفي: {formatWesternNumber(driver.employeeId)}).
+                  </>
+                ) : (
+                  <>
+                    You are about to permanently delete driver <strong className="text-slate-900">{driver.name}</strong> (Employee ID: {formatWesternNumber(driver.employeeId)}).
+                  </>
+                )}
+              </p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-[11px]">
+                <div className="font-semibold text-slate-700">
+                  {rtl ? 'الآثار المترتبة على هذا الإجراء:' : 'Consequences of this action:'}
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-slate-500">
+                  <li>{rtl ? 'تجهيل ومسح الاسم والبريد الإلكتروني ورقم الهاتف بشكل دائم.' : 'Scrub personal data (name, email, phone) permanently.'}</li>
+                  <li>{rtl ? 'إلغاء جلسات الدخول وإلغاء اعتماد الجهاز وإنهاء أي وردية نشطة.' : 'Revoke login sessions, unbind device, and complete active shifts.'}</li>
+                  <li>{rtl ? 'الاحتفاظ بمسارات وبيانات الموقع الجغرافي للتدقيق التشغيلي والتقارير.' : 'Retain historical location points and shifts for fleet audit reports.'}</li>
+                </ul>
+              </div>
+              {deleteError && (
+                <p className="rounded-lg bg-rose-50 p-2 text-rose-700 text-xs font-semibold">{deleteError}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setPermanentDeleteDialogOpen(false);
+                  setDeleteError(null);
+                }}
+                disabled={deleteLoading}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handlePermanentDeleteDriver}
+                disabled={deleteLoading}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {deleteLoading ? (
+                  <span>{t('common.loading')}</span>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{rtl ? 'تأكيد الحذف النهائي' : 'Permanently Delete'}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

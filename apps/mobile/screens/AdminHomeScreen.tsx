@@ -738,7 +738,7 @@ export function AdminHomeScreen({
                     onPress={toggleLanguage}
                   >
                     <View style={styles.moreRowLeft}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>🌐</Text>
+                      <AppIcon name="sync" size={16} color={colors.primary} />
                       <Text style={styles.moreRowText}>
                         {rtl ? 'تغيير اللغة (English)' : 'Change Language (العربية)'}
                       </Text>

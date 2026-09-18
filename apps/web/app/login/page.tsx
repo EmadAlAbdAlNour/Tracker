@@ -79,17 +79,19 @@ export default function LoginPage() {
         </div>
 
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-xl font-bold text-white shadow-md">
-            T
-          </div>
+          <img
+            src="/logo.svg"
+            alt="Tracker"
+            className="mx-auto mb-3 h-14 w-14 rounded-2xl shadow-md"
+          />
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
-            {isAr ? 'نظام تتبع الأسطول' : 'Fleet Tracker'}
+            Tracker
           </p>
           <h1 className="mt-2 text-2xl font-bold text-slate-900">
-            {isAr ? 'تسجيل الدخول إلى الإدارة' : 'Administration Login'}
+            {isAr ? 'تسجيل الدخول' : 'Sign In'}
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            {isAr ? 'أدخل بيانات الاعتماد للمتابعة' : 'Enter your credentials to continue'}
+            {isAr ? 'منظومة المراقبة والعمليات الميدانية' : 'Fleet Operations & Monitoring'}
           </p>
         </div>
 
@@ -144,6 +146,11 @@ export default function LoginPage() {
               : 'Sign In'}
           </button>
         </form>
+
+        {/* Subtle Developer Attribution Footer */}
+        <div className="mt-6 pt-4 border-t border-slate-100 text-center text-xs text-slate-400 font-medium">
+          {isAr ? 'تم التطوير بواسطة عماد عبد النور ❤️' : 'Developed by Emad Abd Alnour ❤️'}
+        </div>
       </div>
     </main>
   );

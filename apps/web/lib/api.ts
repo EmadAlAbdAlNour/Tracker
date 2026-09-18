@@ -540,6 +540,12 @@ export async function deactivateUser(id: string): Promise<{ success: boolean }> 
   });
 }
 
+export async function permanentDeleteUser(id: string): Promise<{ success: boolean; anonymized: boolean; telemetryRetained: boolean }> {
+  return apiRequest<{ success: boolean; anonymized: boolean; telemetryRetained: boolean }>(`/api/users/${id}/permanent`, {
+    method: 'DELETE',
+  });
+}
+
 export async function listDevices(page = 1, limit = 50): Promise<ApiListResponse<DeviceRecord>> {
   return apiRequest<ApiListResponse<DeviceRecord>>(`/api/devices?page=${page}&limit=${limit}`);
 }
@@ -569,5 +575,6 @@ export const apiClient = {
   createUser,
   updateUser,
   deactivateUser,
+  permanentDeleteUser,
   listDevices,
 };

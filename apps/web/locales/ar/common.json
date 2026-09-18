@@ -8,7 +8,8 @@
     "settings": "الإعدادات"
   },
   "app": {
-    "title": "نظام تتبع الأسطول",
+    "title": "Tracker",
+    "developerAttribution": "تم التطوير بواسطة عماد عبد النور ❤️",
     "subtitle": "لوحة الإدارة والمراقبة المباشرة",
     "administration": "الإدارة العامة",
     "logout": "تسجيل الخروج",

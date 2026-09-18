@@ -7,6 +7,9 @@ const config: Config = {
       boxShadow: {
         soft: '0 8px 30px rgba(15, 23, 42, 0.08)',
       },
+      fontFamily: {
+        sans: ['var(--font-cairo)', 'Cairo', 'system-ui', '-apple-system', 'sans-serif'],
+      },
       colors: {
         brand: {
           50: '#eef8ff',

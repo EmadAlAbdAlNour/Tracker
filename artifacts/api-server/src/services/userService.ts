@@ -1,4 +1,4 @@
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, driversTable, devicesTable, shiftsTable, refreshTokensTable } from "@workspace/db";
 import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
 import { hashPassword, sanitizeUser, revokeUserRefreshTokens } from "../lib/auth";
 import { createError } from "../lib/errors";
@@ -174,5 +174,88 @@ export async function updateUser(id: string, input: UpdateUserInput) {
 
 export async function deactivateUser(id: string) {
   return updateUser(id, { active: false });
+}
+
+export async function permanentDeleteAndAnonymizeUser(id: string, requestingAdminId?: string) {
+  if (requestingAdminId && id === requestingAdminId) {
+    throw createError(400, "CANNOT_DELETE_SELF", "Administrators cannot permanently delete their own account");
+  }
+
+  const existing = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!existing[0]) {
+    throw createError(404, "USER_NOT_FOUND", "User not found");
+  }
+
+  const user = existing[0];
+  const shortId = id.replace(/-/g, "").slice(0, 8);
+
+  return db.transaction(async (tx) => {
+    // 1. Check if user is associated with a driver profile
+    const driverRows = await tx.select().from(driversTable).where(eq(driversTable.userId, id)).limit(1);
+    const driver = driverRows[0];
+
+    if (driver) {
+      // 1a. Close any active shifts
+      await tx
+        .update(shiftsTable)
+        .set({
+          status: "COMPLETED",
+          endedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(shiftsTable.driverId, driver.id), eq(shiftsTable.status, "ACTIVE")));
+
+      // 1b. Unauthorize devices and scrub identifier
+      await tx
+        .update(devicesTable)
+        .set({
+          authorized: false,
+          deviceIdentifier: null,
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(devicesTable.driverId, driver.id));
+
+      // 1c. Anonymize driver employeeId to free up original employeeId while preserving uniqueness
+      await tx
+        .update(driversTable)
+        .set({
+          employeeId: `DEL-${shortId}`,
+          active: false,
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(driversTable.id, driver.id));
+
+      // Historical location_points, shifts, and alert_state are STRICTLY PRESERVED for audit!
+    }
+
+    // 2. Hard-delete active authentication refresh tokens
+    await tx.delete(refreshTokensTable).where(eq(refreshTokensTable.userId, id));
+
+    // 3. Anonymize User Account-Level PII
+    const anonymousName = user.role === "DRIVER" ? "سائق محذوف" : "مستخدم محذوف";
+    const anonymousEmail = `deleted_${shortId}@tracker.local`;
+
+    const [anonymizedUser] = await tx
+      .update(usersTable)
+      .set({
+        name: anonymousName,
+        email: anonymousEmail,
+        phone: null,
+        passwordHash: "DELETED_ACCOUNT_CREDENTIAL_DISABLED",
+        active: false,
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+
+    return {
+      success: true,
+      anonymized: true,
+      telemetryRetained: true,
+      user: sanitizeUser(anonymizedUser),
+    };
+  });
 }
 

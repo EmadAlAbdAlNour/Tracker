@@ -1,7 +1,7 @@
 export default {
   expo: {
-    name: 'Tracker Driver',
-    slug: 'tracker-driver-mobile',
+    name: 'Tracker',
+    slug: 'tracker-mobile',
     version: '1.0.0',
     orientation: 'portrait',
     userInterfaceStyle: 'light',

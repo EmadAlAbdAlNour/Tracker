@@ -15,13 +15,14 @@ import {
   UserX,
   X,
 } from 'lucide-react';
-import { listUsers, createUser, updateUser, deactivateUser, type SessionUser, type Role } from '@/lib/api';
+import { listUsers, createUser, updateUser, deactivateUser, permanentDeleteUser, type SessionUser, type Role } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
 import { useAuth } from '@/components/auth-provider';
 import { t, formatWesternNumber, isRtl } from '@/lib/i18n';
 
 export default function UsersPage() {
   const { isAuthenticated, session } = useAuth();
+  const rtl = isRtl();
   const [users, setUsers] = useState<SessionUser[]>([]);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
@@ -47,6 +48,26 @@ export default function UsersPage() {
     password: '',
     active: true,
   });
+
+  // Permanent Delete Modal State
+  const [deleteTargetUser, setDeleteTargetUser] = useState<SessionUser | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleConfirmPermanentDelete = async () => {
+    if (!deleteTargetUser) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await permanentDeleteUser(deleteTargetUser.id);
+      setDeleteTargetUser(null);
+      await loadData();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to permanently delete user');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   async function loadData(isMounted = true) {
     setLoading(true);
@@ -275,27 +296,41 @@ export default function UsersPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         {session?.user?.role === 'ADMIN' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleActive(user)}
-                            className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                              user.active
-                                ? 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                : 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                            }`}
-                          >
-                            {user.active ? (
-                              <>
-                                <UserX className="h-3.5 w-3.5" />
-                                <span>{t('users.deactivate')}</span>
-                              </>
-                            ) : (
-                              <>
-                                <UserCheck className="h-3.5 w-3.5" />
-                                <span>{t('users.activate')}</span>
-                              </>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActive(user)}
+                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                user.active
+                                  ? 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                  : 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              }`}
+                            >
+                              {user.active ? (
+                                <>
+                                  <UserX className="h-3.5 w-3.5" />
+                                  <span>{t('users.deactivate')}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="h-3.5 w-3.5" />
+                                  <span>{t('users.activate')}</span>
+                                </>
+                              )}
+                            </button>
+
+                            {user.id !== session?.user?.id && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTargetUser(user)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 transition"
+                                title={rtl ? 'حذف نهائي وتجهيل البيانات' : 'Permanently Delete & Anonymize'}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span>{rtl ? 'حذف نهائي' : 'Delete'}</span>
+                              </button>
                             )}
-                          </button>
+                          </div>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
@@ -427,6 +462,83 @@ export default function UsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Confirmation Modal */}
+      {deleteTargetUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4 text-rose-600">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {rtl ? 'تأكيد الحذف النهائي وتجهيل البيانات' : 'Confirm Permanent Deletion'}
+                </h3>
+                <p className="text-xs text-rose-600 font-medium">
+                  {rtl ? 'إجراء غير قابل للتراجع (سياسة 1B)' : 'Irreversible Action (Policy 1B)'}
+                </p>
+              </div>
+            </div>
+
+            <div className="py-4 text-xs text-slate-600 space-y-2.5">
+              <p>
+                {rtl ? (
+                  <>
+                    أنت على وشك حذف الحساب الخاص بـ <strong className="text-slate-900">{deleteTargetUser.name}</strong> ({deleteTargetUser.email}).
+                  </>
+                ) : (
+                  <>
+                    You are about to permanently delete the account for <strong className="text-slate-900">{deleteTargetUser.name}</strong> ({deleteTargetUser.email}).
+                  </>
+                )}
+              </p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-[11px]">
+                <div className="font-semibold text-slate-700">
+                  {rtl ? 'الآثار المترتبة على هذا الإجراء:' : 'Consequences of this action:'}
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-slate-500">
+                  <li>{rtl ? 'تجهيل ومسح البيانات الشخصية (الاسم، البريد، الهاتف) بالكامل.' : 'Permanently scrub personally identifiable data (name, email, phone).'}</li>
+                  <li>{rtl ? 'إلغاء صلاحية تسجيل الدخول والجلسات واعتماد الأجهزة فوراً.' : 'Revoke credentials, refresh sessions, and unbind devices immediately.'}</li>
+                  <li>{rtl ? 'الاحتفاظ بمسارات وبيانات الموقع الجغرافي والورديات السابقة للتدقيق التشغيلي.' : 'Retain historical location points and shifts for fleet audit reports.'}</li>
+                </ul>
+              </div>
+              {deleteError && (
+                <p className="rounded-lg bg-rose-50 p-2 text-rose-700 text-xs font-semibold">{deleteError}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteTargetUser(null);
+                  setDeleteError(null);
+                }}
+                disabled={deleteLoading}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPermanentDelete}
+                disabled={deleteLoading}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {deleteLoading ? (
+                  <span>{t('common.loading')}</span>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>{rtl ? 'تأكيد الحذف النهائي' : 'Permanently Delete'}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

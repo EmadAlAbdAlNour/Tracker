@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "bcryptjs": "^3.0.3",
@@ -38,5 +39,9 @@
     "thread-stream": "3.1.0",
     "vitest": "^4.1.11"
   },
-  "vitest": { "setupFiles": ["src/test.setup.ts"] }
+  "vitest": {
+    "setupFiles": [
+      "src/test.setup.ts"
+    ]
+  }
 }

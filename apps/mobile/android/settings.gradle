@@ -32,7 +32,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
 }
 expoAutolinking.useExpoModules()
 
-rootProject.name = 'Tracker Driver'
+rootProject.name = 'Tracker'
 
 expoAutolinking.useExpoVersionCatalog()
 

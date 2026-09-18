@@ -149,10 +149,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           {/* App Header */}
           <div className="flex h-16 items-center justify-between border-b border-slate-800 px-6">
             <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-emerald-600 flex items-center justify-center font-bold text-white shadow">
-                T
-              </div>
-              <span className="font-semibold text-lg text-white">{t('app.title')}</span>
+              <img src="/logo.svg" alt="Tracker Logo" className="h-8 w-8 rounded-lg shadow shrink-0" />
+              <span className="font-semibold text-lg text-white tracking-tight">{t('app.title')}</span>
             </div>
           </div>
 
@@ -335,6 +333,20 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <main className="flex-1 p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>
+
+        {/* Professional Web Footer */}
+        <footer className="border-t border-slate-200 bg-white/80 py-4 px-6 text-center text-xs text-slate-500">
+          <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-medium text-slate-700">
+              <span>Tracker</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-slate-400">© 2026</span>
+            </div>
+            <div className="text-slate-500 font-medium">
+              {t('app.developerAttribution')}
+            </div>
+          </div>
+        </footer>
       </div>
     </div>
   );

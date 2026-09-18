@@ -9,8 +9,9 @@ let currentLocale: Locale = 'ar';
 export const translations = {
   ar: {
     app: {
-      title: 'تطبيق السائق',
+      title: 'Tracker',
       subtitle: 'سجل الدخول لبدء وردية العمل',
+      developerAttribution: 'تم التطوير بواسطة عماد عبد النور ❤️',
       adminTitle: 'لوحة التحكم الإدارية',
       adminSubtitle: 'الإشراف الشامل على الأسطول والأجهزة والإعدادات',
       callCenterTitle: 'مركز مراقبة العمليات',
@@ -176,8 +177,9 @@ export const translations = {
   },
   en: {
     app: {
-      title: 'Driver Tracker',
+      title: 'Tracker',
       subtitle: 'Sign in to start your shift',
+      developerAttribution: 'Developed by Emad Abd Alnour ❤️',
       adminTitle: 'Admin Operations Console',
       adminSubtitle: 'Full fleet oversight, device control, and settings',
       callCenterTitle: 'Operations Dispatch Center',

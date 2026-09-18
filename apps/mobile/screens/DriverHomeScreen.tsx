@@ -302,7 +302,7 @@ export function DriverHomeScreen({
 
       {/* Sleek Compact Header */}
       <CompactHeader
-        title={rtl ? 'تطبيق السائق الميداني' : 'Driver Console'}
+        title={rtl ? 'لوحة قيادة السائق' : 'Driver Cockpit'}
         role="DRIVER"
         userName={profile?.driverName || session.user.name}
         locale={locale}

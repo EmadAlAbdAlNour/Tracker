@@ -5,6 +5,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, radius, spacing, typography } from '../designSystem';
 import { AppIcon } from './AppIcon';
+import { TrackerLogo } from './TrackerLogo';
 import { isRtl, type Locale } from '../i18n';
 
 interface CompactHeaderProps {
@@ -46,9 +47,7 @@ export function CompactHeader({
     <View style={styles.header}>
       {/* Title & Identity on the dominant reading side */}
       <View style={[styles.identityGroup, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-        <View style={styles.logoMark}>
-          <Text style={styles.logoText}>T</Text>
-        </View>
+        <TrackerLogo size={30} />
 
         <View style={[styles.titleGroup, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
           <View style={[styles.titleRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
