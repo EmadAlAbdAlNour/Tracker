@@ -36,7 +36,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools'
+          packages: 'platform-tools build-tools;35.0.0'
 
       - name: Update Version Code (Monotonic)
         id: versioning
