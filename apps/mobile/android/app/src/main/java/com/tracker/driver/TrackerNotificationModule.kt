@@ -137,5 +137,73 @@ class TrackerNotificationModule(private val reactContext: ReactApplicationContex
                 .emit(eventName, params)
         }
     }
+
+    @ReactMethod
+    fun installApk(filePath: String, promise: Promise) {
+        try {
+            val context = currentActivity ?: reactApplicationContext
+            val cleanPath = filePath.removePrefix("file://")
+            val file = java.io.File(cleanPath)
+            if (!file.exists()) {
+                promise.reject("FILE_NOT_FOUND", "APK file does not exist at path: $filePath")
+                return
+            }
+
+            val apkUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+            } else {
+                android.net.Uri.fromFile(file)
+            }
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    val settingsIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = android.net.Uri.parse("package:${context.packageName}")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(settingsIntent)
+                }
+            }
+
+            context.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("INSTALL_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
+    fun getFileSha256(filePath: String, promise: Promise) {
+        try {
+            val cleanPath = filePath.removePrefix("file://")
+            val file = java.io.File(cleanPath)
+            if (!file.exists()) {
+                promise.reject("FILE_NOT_FOUND", "File does not exist: $filePath")
+                return
+            }
+
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { stream ->
+                val buffer = ByteArray(16384)
+                var bytesRead: Int
+                while (stream.read(buffer).also { bytesRead = it } != -1) {
+                    digest.update(buffer, 0, bytesRead)
+                }
+            }
+            val hash = digest.digest().joinToString("") { "%02x".format(it) }
+            promise.resolve(hash)
+        } catch (e: Exception) {
+            promise.reject("HASH_ERROR", e.message, e)
+        }
+    }
 }
 

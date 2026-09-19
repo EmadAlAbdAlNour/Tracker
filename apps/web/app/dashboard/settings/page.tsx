@@ -274,8 +274,8 @@ export default function SettingsPage() {
                 </label>
                 <input
                   type="number"
-                  min="20"
-                  max="10000"
+                  min="10"
+                  max="50000"
                   value={restaurant.radiusMeters}
                   onChange={(e) => setRestaurant({ ...restaurant, radiusMeters: Number(e.target.value) })}
                   className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 outline-none focus:border-emerald-500"

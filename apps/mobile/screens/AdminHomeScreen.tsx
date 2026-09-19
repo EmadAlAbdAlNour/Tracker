@@ -271,8 +271,8 @@ export function AdminHomeScreen({
       Alert.alert(t('app.error'), rtl ? 'خط الطول غير صالح (-180 إلى 180)' : 'Invalid longitude (-180 to 180)');
       return;
     }
-    if (Number.isNaN(radiusM) || radiusM < 50 || radiusM > 50000) {
-      Alert.alert(t('app.error'), rtl ? 'نصف القطر يجب أن يكون بين 50 و 50000 متر' : 'Radius must be 50-50,000m');
+    if (Number.isNaN(radiusM) || radiusM < 10 || radiusM > 50000) {
+      Alert.alert(t('app.error'), rtl ? 'نصف القطر يجب أن يكون بين 10 و 50000 متر' : 'Radius must be 10-50,000m');
       return;
     }
 

@@ -153,5 +153,32 @@
     "close": "Close",
     "actions": "Actions",
     "details": "Details"
+  },
+  "errors": {
+    "AUTH_DEVICE_MISMATCH": "This account is linked to another device. An administrator must reset the device authorization.",
+    "DEVICE_UNAUTHORIZED": "This device is unauthorized or its authorization has been revoked. Please sign in again or contact an administrator.",
+    "DRIVER_INACTIVE": "Driver account is currently inactive. Please contact an administrator to activate your account.",
+    "SHIFT_ALREADY_ACTIVE": "An active shift is already in progress. Please end your current shift before starting a new one.",
+    "SHIFT_NOT_ACTIVE": "No active shift in progress. Please start your shift first to begin tracking.",
+    "NO_ACTIVE_SHIFT": "No active shift found to end.",
+    "PHONE_EXISTS": "A user with this phone number already exists.",
+    "EMAIL_EXISTS": "A user with this email address already exists.",
+    "DRIVER_EMPLOYEE_ID_EXISTS": "A driver with this employee ID already exists.",
+    "VALIDATION_ERROR": "Invalid input data. Please verify fields and try again.",
+    "CANNOT_DELETE_LAST_ADMIN": "Cannot delete or deactivate the only remaining active administrator.",
+    "CANNOT_DELETE_PRIMARY_ADMIN": "The primary system administrator account cannot be deleted.",
+    "CANNOT_DELETE_SELF": "Administrators cannot delete their own account.",
+    "CANNOT_DEMOTE_PRIMARY_ADMIN": "The primary system administrator role cannot be changed.",
+    "CANNOT_DEACTIVATE_PRIMARY_ADMIN": "The primary system administrator account cannot be deactivated.",
+    "LAST_ADMIN_PROTECTED": "Cannot deactivate or demote the last remaining active administrator.",
+    "AUTH_INVALID_CREDENTIALS": "Invalid credentials. Please verify your email or phone and password.",
+    "PASSWORD_REQUIRED": "A password is required to create a user account.",
+    "DRIVER_NOT_FOUND": "Requested driver profile was not found.",
+    "USER_NOT_FOUND": "Requested user was not found.",
+    "DEVICE_NOT_FOUND": "No authorized device found for this driver.",
+    "NETWORK_ERROR": "Could not connect to the system server. Please check your internet connection and try again.",
+    "STORAGE_NOT_CONFIGURED": "Cloud storage service is not configured on this environment.",
+    "CHECKSUM_FAILED": "Update package verification failed (checksum mismatch).",
+    "UNKNOWN_ERROR": "An unexpected error occurred. Please try again later or contact an administrator."
   }
 }

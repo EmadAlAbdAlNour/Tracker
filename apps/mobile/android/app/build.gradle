@@ -93,12 +93,27 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace 'com.tracker.driver'
+    def versionJsonFile = new File(monorepoRoot, "version.json")
+    def defaultVersionName = "1.0.0"
+    def defaultVersionCode = 1
+    if (versionJsonFile.exists()) {
+        try {
+            def parsed = new groovy.json.JsonSlurper().parseText(versionJsonFile.text)
+            if (parsed.version) defaultVersionName = parsed.version.toString()
+            if (parsed.versionCode) defaultVersionCode = (parsed.versionCode as Integer)
+        } catch (Exception e) {
+            println "Warning: Could not parse version.json: ${e.message}"
+        }
+    }
+    def vCode = (findProperty('versionCode') ?: System.getenv('VERSION_CODE') ?: defaultVersionCode) as Integer
+    def vName = (findProperty('versionName') ?: System.getenv('VERSION_NAME') ?: defaultVersionName).toString()
+
     defaultConfig {
         applicationId 'com.tracker.driver'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode vCode
+        versionName vName
     }
     signingConfigs {
         debug {
@@ -106,6 +121,50 @@ android {
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+        }
+        release {
+            def keystorePropertiesFile = rootProject.file("keystore.properties")
+            def keystoreProperties = new Properties()
+            println "Checking for keystore properties at: ${keystorePropertiesFile.absolutePath}, exists: ${keystorePropertiesFile.exists()}"
+            if (keystorePropertiesFile.exists()) {
+                keystorePropertiesFile.withInputStream { stream ->
+                    keystoreProperties.load(stream)
+                }
+            } else {
+                // Try relative to project dir just in case
+                def altFile = file("../keystore.properties")
+                println "Checking alt keystore properties at: ${altFile.absolutePath}, exists: ${altFile.exists()}"
+                if (altFile.exists()) {
+                    altFile.withInputStream { stream ->
+                        keystoreProperties.load(stream)
+                    }
+                }
+            }
+
+            def storeFileValue = System.getenv("KEYSTORE_FILE") ?: keystoreProperties.getProperty("KEYSTORE_FILE")
+            def storePasswordValue = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProperties.getProperty("KEYSTORE_PASSWORD")
+            def keyAliasValue = System.getenv("KEY_ALIAS") ?: keystoreProperties.getProperty("KEY_ALIAS")
+            def keyPasswordValue = System.getenv("KEY_PASSWORD") ?: keystoreProperties.getProperty("KEY_PASSWORD")
+
+            println "KEYSTORE_FILE resolved: ${storeFileValue}"
+
+            if (storeFileValue != null && storePasswordValue != null && keyAliasValue != null && keyPasswordValue != null) {
+                def fileObj = rootProject.file(storeFileValue)
+                if (!fileObj.exists()) {
+                    fileObj = file(storeFileValue)
+                }
+                println "Keystore path resolved to: ${fileObj.absolutePath}, exists: ${fileObj.exists()}"
+                storeFile fileObj
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            } else {
+                println "WARNING: Production keystore properties not fully specified. Falling back to debug signing for release build."
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
         }
     }
     buildTypes {
@@ -115,7 +174,7 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

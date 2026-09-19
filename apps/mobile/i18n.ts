@@ -174,6 +174,34 @@ export const translations = {
       noNotifications: 'لا توجد إشعارات جديدة حالياً',
       unread: 'جديد',
     },
+    errors: {
+      AUTH_DEVICE_MISMATCH: 'هذا الحساب مرتبط بجهاز آخر. يجب على المشرف إعادة تعيين الجهاز أولاً.',
+      DEVICE_UNAUTHORIZED: 'هذا الجهاز غير مصرح أو تم إلغاء اعتماده من قِبل الإدارة. يرجى تسجيل الدخول مجدداً أو مراجعة المشرف.',
+      DRIVER_INACTIVE: 'حساب السائق غير نشط حالياً. يرجى التواصل مع المشرف لتفعيل الحساب.',
+      SHIFT_ALREADY_ACTIVE: 'توجد وردية نشطة بالفعل لهذا السائق. يرجى إنهاء الوردية الحالية قبل بدء وردية جديدة.',
+      SHIFT_NOT_ACTIVE: 'لا توجد وردية نشطة حالياً. يرجى بدء وردية العمل أولاً لتفعيل التتبع.',
+      NO_ACTIVE_SHIFT: 'لا توجد وردية نشطة لإنهائها.',
+      PHONE_EXISTS: 'رقم الهاتف مسجل مسبقاً لمستخدم آخر في النظام.',
+      EMAIL_EXISTS: 'البريد الإلكتروني مسجل مسبقاً لمستخدم آخر في النظام.',
+      DRIVER_EMPLOYEE_ID_EXISTS: 'الرقم الوظيفي مسجل مسبقاً لسائق آخر.',
+      VALIDATION_ERROR: 'البيانات المدخلة غير صالحة. يرجى التحقق من الحقول والمحاولة مجدداً.',
+      CANNOT_DELETE_LAST_ADMIN: 'لا يمكن حذف أو تعطيل حساب المشرف الأخير المتبقي في النظام.',
+      CANNOT_DELETE_PRIMARY_ADMIN: 'لا يمكن حذف حساب المشرف الرئيسي للنظام.',
+      CANNOT_DELETE_SELF: 'لا يمكن للمشرف حذف حسابه الشخصي.',
+      CANNOT_DEMOTE_PRIMARY_ADMIN: 'لا يمكن تعديل دور المشرف الرئيسي للنظام.',
+      CANNOT_DEACTIVATE_PRIMARY_ADMIN: 'لا يمكن تعطيل حساب المشرف الرئيسي للنظام.',
+      LAST_ADMIN_PROTECTED: 'لا يمكن تعطيل أو تغيير دور المشرف الأخير المتبقي.',
+      AUTH_INVALID_CREDENTIALS: 'بيانات الاعتماد غير صحيحة. يرجى التأكد من البريد الإلكتروني أو الهاتف وكلمة المرور.',
+      PASSWORD_REQUIRED: 'كلمة المرور مطلوبة لإنشاء الحساب.',
+      DRIVER_NOT_FOUND: 'لم يتم العثور على ملف السائق المطلوب.',
+      USER_NOT_FOUND: 'لم يتم العثور على المستخدم المطلوب.',
+      DEVICE_NOT_FOUND: 'لم يتم العثور على جهاز معتمد لهذا السائق.',
+      NETWORK_ERROR: 'تعذر الاتصال بخادم النظام. يرجى التحقق من اتصال الإنترنت والمحاولة لاحقاً.',
+      STORAGE_NOT_CONFIGURED: 'خدمة التخزين السحابي غير مهيأة على هذا الخادم.',
+      CHECKSUM_FAILED: 'فشل التحقق من صحة حزمة التحديث (عدم تطابق الرمز الرقمي).',
+      INSTALL_ERROR: 'تعذر تشغيل مثبت التطبيقات في النظام. يرجى تفعيل إذن تثبيت التطبيقات.',
+      UNKNOWN_ERROR: 'حدث خطأ غير متوقع. يرجى المحاولة لاحقاً أو مراجعة المشرف.',
+    },
   },
   en: {
     app: {
@@ -342,6 +370,34 @@ export const translations = {
       noNotifications: 'No new notifications currently',
       unread: 'New',
     },
+    errors: {
+      AUTH_DEVICE_MISMATCH: 'This account is linked to another device. An administrator must reset the device authorization.',
+      DEVICE_UNAUTHORIZED: 'This device is unauthorized or its authorization has been revoked. Please sign in again or contact an administrator.',
+      DRIVER_INACTIVE: 'Driver account is currently inactive. Please contact an administrator to activate your account.',
+      SHIFT_ALREADY_ACTIVE: 'An active shift is already in progress. Please end your current shift before starting a new one.',
+      SHIFT_NOT_ACTIVE: 'No active shift in progress. Please start your shift first to begin tracking.',
+      NO_ACTIVE_SHIFT: 'No active shift found to end.',
+      PHONE_EXISTS: 'A user with this phone number already exists.',
+      EMAIL_EXISTS: 'A user with this email address already exists.',
+      DRIVER_EMPLOYEE_ID_EXISTS: 'A driver with this employee ID already exists.',
+      VALIDATION_ERROR: 'Invalid input data. Please verify fields and try again.',
+      CANNOT_DELETE_LAST_ADMIN: 'Cannot delete or deactivate the only remaining active administrator.',
+      CANNOT_DELETE_PRIMARY_ADMIN: 'The primary system administrator account cannot be deleted.',
+      CANNOT_DELETE_SELF: 'Administrators cannot delete their own account.',
+      CANNOT_DEMOTE_PRIMARY_ADMIN: 'The primary system administrator role cannot be changed.',
+      CANNOT_DEACTIVATE_PRIMARY_ADMIN: 'The primary system administrator account cannot be deactivated.',
+      LAST_ADMIN_PROTECTED: 'Cannot deactivate or demote the last remaining active administrator.',
+      AUTH_INVALID_CREDENTIALS: 'Invalid credentials. Please verify your email or phone and password.',
+      PASSWORD_REQUIRED: 'A password is required to create a user account.',
+      DRIVER_NOT_FOUND: 'Requested driver profile was not found.',
+      USER_NOT_FOUND: 'Requested user was not found.',
+      DEVICE_NOT_FOUND: 'No authorized device found for this driver.',
+      NETWORK_ERROR: 'Could not connect to the system server. Please check your internet connection and try again.',
+      STORAGE_NOT_CONFIGURED: 'Cloud storage service is not configured on this environment.',
+      CHECKSUM_FAILED: 'Update package verification failed (checksum mismatch).',
+      INSTALL_ERROR: 'Unable to launch system package installer. Please grant install permission.',
+      UNKNOWN_ERROR: 'An unexpected error occurred. Please try again later or contact an administrator.',
+    },
   },
 };
 
@@ -411,3 +467,56 @@ export function formatWesternNumber(value: number | string | null | undefined): 
   }
   return str;
 }
+
+/**
+ * Resolves an error code or Error object into a user-friendly localized message.
+ * Strictly prevents leaking raw database/internal exceptions to Arabic/English UI.
+ */
+export function getLocalizedErrorMessage(
+  errorOrCode: unknown,
+  fallbackMessage?: string
+): string {
+  const currentLang = currentLocale === 'en' ? 'en' : 'ar';
+  const errorMap = translations[currentLang].errors as Record<string, string>;
+
+  let code: string | null = null;
+  let rawMessage: string | null = null;
+
+  if (typeof errorOrCode === 'string') {
+    code = errorOrCode.trim();
+  } else if (errorOrCode && typeof errorOrCode === 'object') {
+    const obj = errorOrCode as Record<string, any>;
+    if (typeof obj.code === 'string') {
+      code = obj.code;
+    }
+    if (typeof obj.message === 'string') {
+      rawMessage = obj.message;
+      if (!code && /^[A-Z0-9_]+$/.test(obj.message)) {
+        code = obj.message;
+      }
+    }
+  }
+
+  // 1. Direct code translation
+  if (code && errorMap[code]) {
+    return errorMap[code];
+  }
+
+  // 2. Check if rawMessage contains known code
+  if (rawMessage) {
+    for (const key of Object.keys(errorMap)) {
+      if (rawMessage.includes(key)) {
+        return errorMap[key];
+      }
+    }
+  }
+
+  // 3. Fallback message provided by caller
+  if (fallbackMessage && fallbackMessage.trim().length > 0) {
+    return fallbackMessage;
+  }
+
+  // 4. Default localized fallback
+  return errorMap.UNKNOWN_ERROR;
+}
+

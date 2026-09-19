@@ -28,8 +28,9 @@ import {
   type DriverTelemetryState,
 } from '../location';
 import { flushQueuedLocationsGuarded } from '../flushManager';
-import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
+import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from '../i18n';
 import { type Session } from '../session';
+import { TrackerDialog } from '../components/TrackerDialog';
 
 interface DriverHomeScreenProps {
   session: Session;

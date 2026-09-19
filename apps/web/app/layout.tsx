@@ -16,7 +16,12 @@ export const metadata: Metadata = {
   title: 'Tracker',
   description: 'منصة تتبع وإدارة الأسطول الميداني — Tracker Fleet Management',
   icons: {
-    icon: '/favicon.ico',
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '32x32' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: '/icon.svg',
   },
 };
 

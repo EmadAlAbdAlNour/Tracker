@@ -82,13 +82,12 @@ router.get("/latest/download", async (req, res: Response, next) => {
 router.post("/upload", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     if (!isBlobStorageConfigured()) {
-      res.status(503).json({
+      return res.status(503).json({
         error: {
           code: "STORAGE_NOT_CONFIGURED",
-          message: "BLOB_READ_WRITE_TOKEN is not configured on this environment",
-        },
+          message: "Vercel Blob storage is not configured on this environment",
+        }
       });
-      return;
     }
 
     const jsonResponse = await handleDirectBlobUpload(

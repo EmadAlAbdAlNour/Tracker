@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  AppState,
+  type AppStateStatus,
   Linking,
   Platform,
   SafeAreaView,
@@ -17,12 +18,22 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
 import { resolveHomeRoute } from './roleRouting';
 import { isAllowedRole, isValidSession, type Session } from './session';
-import { getLocale, initLocale, isRtl, setStoredLocale, t, type Locale } from './i18n';
+import { getLocale, initLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from './i18n';
 import { AdminHomeScreen } from './screens/AdminHomeScreen';
 import { CallCenterHomeScreen } from './screens/CallCenterHomeScreen';
 import { DriverHomeScreen } from './screens/DriverHomeScreen';
 import { TrackerLogo } from './components/TrackerLogo';
 import { AppIcon } from './components/AppIcon';
+import { TrackerDialog } from './components/TrackerDialog';
+import { TrackerUpdateModal } from './components/TrackerUpdateModal';
+import {
+  CURRENT_VERSION_NAME,
+  CURRENT_VERSION_CODE,
+  fetchLatestRelease,
+  isUpdateAvailable,
+  downloadAndInstallUpdate,
+  type RemoteReleaseInfo,
+} from './updateManager';
 
 const DEVICE_ID_KEY = 'tracker_device_id';
 const SESSION_KEY = 'tracker_driver_session';
@@ -164,8 +175,12 @@ async function apiRequest<T>(
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
+    const code = payload?.error?.code ?? payload?.code;
     const message = payload?.error?.message ?? payload?.message ?? 'Request failed';
-    throw new Error(message as string);
+    const localized = getLocalizedErrorMessage(code || message, message as string);
+    const err = new Error(localized);
+    (err as any).code = code;
+    throw err;
   }
 
   return (await response.json()) as T;
@@ -178,6 +193,16 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [locale, setLocaleState] = useState<Locale>(getLocale());
+  const [dialog, setDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'error' | 'warning' | 'notice' | 'success';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
   useEffect(() => {
     initLocale().then(setLocaleState);
@@ -198,7 +223,12 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
 
   const handleLogin = async () => {
     if (!emailOrPhone.trim() || !password) {
-      Alert.alert(t('app.notice'), t('login.enterCredentials'));
+      setDialog({
+        visible: true,
+        title: t('app.notice'),
+        message: t('login.enterCredentials'),
+        type: 'notice',
+      });
       return;
     }
 
@@ -219,7 +249,7 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
       const device = {
         platform: platformDescription,
         deviceIdentifier,
-        appVersion: process.env.EXPO_PUBLIC_APP_VERSION ?? '1.0.0',
+        appVersion: CURRENT_VERSION_NAME,
       };
 
       const response = await fetch(`${API_URL}/api/auth/login`, {
@@ -230,28 +260,43 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
 
       const payload = await response.json();
       if (!response.ok) {
-        const message = payload?.error?.message ?? payload?.message ?? t('login.failed');
-        throw new Error(message);
+        const code = payload?.error?.code ?? payload?.code;
+        const message = payload?.error?.message ?? payload?.message;
+        const localized = getLocalizedErrorMessage(code || message, message || t('login.failed'));
+        throw new Error(localized);
       }
 
       const sessionCandidate = payload as Partial<Session>;
       if (!isValidSession(sessionCandidate)) {
-        Alert.alert(t('app.error'), t('login.invalidSession'));
+        setDialog({
+          visible: true,
+          title: t('app.error'),
+          message: t('login.invalidSession'),
+          type: 'error',
+        });
         return;
       }
 
       if (!isAllowedRole(sessionCandidate.user.role)) {
-        Alert.alert(t('app.error'), t('login.roleNotAllowed'));
+        setDialog({
+          visible: true,
+          title: t('app.error'),
+          message: t('login.roleNotAllowed'),
+          type: 'error',
+        });
         return;
       }
 
       await saveSession(sessionCandidate);
       navigation.replace(resolveHomeRoute(sessionCandidate.user.role));
     } catch (error) {
-      Alert.alert(
-        t('login.failed'),
-        error instanceof Error ? error.message : 'Unexpected error'
-      );
+      const errorMsg = getLocalizedErrorMessage(error, error instanceof Error ? error.message : undefined);
+      setDialog({
+        visible: true,
+        title: t('login.failed'),
+        message: errorMsg,
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -262,6 +307,13 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+      <TrackerDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        type={dialog.type}
+        onClose={() => setDialog((prev) => ({ ...prev, visible: false }))}
+      />
       <View style={styles.loginCard}>
         {/* Language switch */}
         <TouchableOpacity style={styles.langButton} onPress={toggleLanguage}>
@@ -477,107 +529,86 @@ function DriverHomeWrapper({ navigation }: any): React.JSX.Element {
   );
 }
 
-interface UpdateInfo {
-  version: string;
-  downloadUrl: string;
-  releaseNotes?: { ar: string; en: string };
-}
+export default function App(): React.JSX.Element {
+  const [updateInfo, setUpdateInfo] = useState<RemoteReleaseInfo | null>(null);
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const lastCheckRef = useRef<number>(0);
 
-function isVersionNewer(latest: string, current: string): boolean {
-  const parse = (v: string) =>
-    v
-      .replace(/^v/, '')
-      .split('.')
-      .map((n) => parseInt(n, 10) || 0);
-  const l = parse(latest);
-  const c = parse(current);
-  for (let i = 0; i < Math.max(l.length, c.length); i++) {
-    const lPart = l[i] ?? 0;
-    const cPart = c[i] ?? 0;
-    if (lPart > cPart) return true;
-    if (lPart < cPart) return false;
-  }
-  return false;
-}
-
-function UpdateAdvisoryBanner({
-  update,
-  onDismiss,
-}: {
-  update: UpdateInfo;
-  onDismiss: () => void;
-}): React.JSX.Element {
-  const rtl = isRtl();
-
-  const handleOpenDownload = () => {
-    const url = update.downloadUrl.startsWith('http')
-      ? update.downloadUrl
-      : `${API_URL}${update.downloadUrl.startsWith('/') ? '' : '/'}${update.downloadUrl}`;
-    Linking.openURL(url).catch(() => {
-      Linking.openURL(`${API_URL}/download`).catch(() => undefined);
-    });
+  const checkVersion = async () => {
+    try {
+      const release = await fetchLatestRelease(API_URL);
+      if (
+        release &&
+        isUpdateAvailable(
+          CURRENT_VERSION_NAME,
+          CURRENT_VERSION_CODE,
+          release.version,
+          release.versionCode
+        )
+      ) {
+        setUpdateInfo(release);
+        setUpdateModalVisible(true);
+      }
+    } catch (err) {
+      console.warn('[App] Soft update check warning:', err);
+    }
   };
 
-  return (
-    <SafeAreaView style={styles.bannerSafeArea}>
-      <View style={[styles.updateBanner, rtl ? styles.updateBannerRtl : null]}>
-        <View style={[styles.updateContent, rtl ? styles.updateContentRtl : null]}>
-          <Text style={styles.updateBadge}>NEW</Text>
-          <Text style={styles.updateText} numberOfLines={1}>
-            {rtl
-              ? `تحديث جديد متوفر (v${update.version})`
-              : `New update available (v${update.version})`}
-          </Text>
-        </View>
-        <View style={styles.updateActions}>
-          <TouchableOpacity style={styles.updateButton} onPress={handleOpenDownload}>
-            <Text style={styles.updateButtonText}>{rtl ? 'تحديث' : 'Update'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
-            <Text style={styles.dismissButtonText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-export default function App(): React.JSX.Element {
-  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
-  const [updateDismissed, setUpdateDismissed] = useState(false);
-
   useEffect(() => {
-    let isMounted = true;
-    const checkVersion = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/app-version`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const currentVersion = process.env.EXPO_PUBLIC_APP_VERSION ?? '1.0.0';
-        if (data?.version && isVersionNewer(data.version, currentVersion) && isMounted) {
-          setAvailableUpdate({
-            version: data.version,
-            downloadUrl: data.downloadUrl || '/download',
-            releaseNotes: data.releaseNotes,
-          });
-        }
-      } catch {
-        // Soft advisory check fails silently without blocking user
-      }
-    };
+    // 1. Cold launch check
     checkVersion();
-    return () => {
-      isMounted = false;
-    };
+    lastCheckRef.current = Date.now();
+
+    // 2. Foreground return check (throttled to 15 minutes)
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        const now = Date.now();
+        if (now - lastCheckRef.current > 15 * 60 * 1000) {
+          lastCheckRef.current = now;
+          checkVersion();
+        }
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
+
+  const handleUpdateNow = async () => {
+    if (!updateInfo) return;
+    setDownloading(true);
+    setUpdateError(null);
+    setDownloadProgress(0);
+
+    try {
+      await downloadAndInstallUpdate(updateInfo, (progress) => {
+        setDownloadProgress(progress);
+      });
+      // Android package installer will prompt the user to confirm installation
+    } catch (err: any) {
+      setUpdateError(getLocalizedErrorMessage(err));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1 }}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      {availableUpdate && !updateDismissed && (
-        <UpdateAdvisoryBanner
-          update={availableUpdate}
-          onDismiss={() => setUpdateDismissed(true)}
+      {updateInfo && (
+        <TrackerUpdateModal
+          visible={updateModalVisible}
+          currentVersion={CURRENT_VERSION_NAME}
+          newVersion={updateInfo.version}
+          releaseNotes={updateInfo.releaseNotes}
+          onUpdatePress={handleUpdateNow}
+          onLaterPress={() => setUpdateModalVisible(false)}
+          downloadProgress={downloadProgress}
+          downloading={downloading}
+          errorMessage={updateError}
+          onRetry={handleUpdateNow}
         />
       )}
       <NavigationContainer>

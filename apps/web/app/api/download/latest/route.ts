@@ -1,12 +1,37 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-
+import { Readable } from 'stream';
 import { list } from '@vercel/blob';
 
 export const dynamic = 'force-dynamic';
 
+function getCanonicalVersion(): { version: string; versionCode: number } {
+  try {
+    const candidates = [
+      path.resolve(process.cwd(), 'version.json'),
+      path.resolve(process.cwd(), '../../version.json'),
+      path.resolve(process.cwd(), '../version.json'),
+    ];
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) {
+        const content = JSON.parse(fs.readFileSync(cand, 'utf-8'));
+        return {
+          version: content.version || '1.0.0',
+          versionCode: Number(content.versionCode || 1),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return { version: '1.0.0', versionCode: 1 };
+}
+
 export async function GET() {
+  const { version } = getCanonicalVersion();
+  const filename = `Tracker-${version}.apk`;
+
   // 1. If explicit CDN / Blob URL is configured in environment
   const cdnUrl = process.env.TRACKER_APK_DOWNLOAD_URL || process.env.TRACKER_BLOB_APK_URL;
   if (cdnUrl) {
@@ -14,12 +39,31 @@ export async function GET() {
   }
 
   // 2. If Vercel Blob integration is active, find latest release in Blob store
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) {
     try {
       const { blobs } = await list({
         prefix: 'releases/android/',
-        limit: 10,
+        limit: 20,
       });
+
+      // 2a. Check latest.json first for exact canonical download URL
+      const latestMetadata = blobs.find((b) => b.pathname.endsWith('latest.json'));
+      if (latestMetadata) {
+        try {
+          const fetchUrl = latestMetadata.downloadUrl || latestMetadata.url;
+          const res = await fetch(fetchUrl, { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.downloadUrl) {
+              return NextResponse.redirect(data.downloadUrl, 302);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('Vercel Blob latest.json fetch warning:', fetchErr);
+        }
+      }
+
+      // 2b. Fallback to newest .apk blob
       const apkBlobs = blobs.filter((b) => b.pathname.endsWith('.apk'));
       if (apkBlobs.length > 0) {
         apkBlobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
@@ -31,44 +75,12 @@ export async function GET() {
     }
   }
 
-  // Attempt to locate local release APK if running on self-hosted or local environment
-  const possiblePaths = [
-    path.resolve(process.cwd(), '../mobile/android/app/build/outputs/apk/release/app-release.apk'),
-    path.resolve(process.cwd(), 'apps/mobile/android/app/build/outputs/apk/release/app-release.apk'),
-    path.resolve(process.cwd(), 'public/Tracker-1.0.0.apk'),
-  ];
-
-  for (const apkPath of possiblePaths) {
-    if (fs.existsSync(apkPath)) {
-      try {
-        const fileBuffer = fs.readFileSync(apkPath);
-        return new NextResponse(fileBuffer, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/vnd.android.package-archive',
-            'Content-Disposition': 'attachment; filename="Tracker-1.0.0.apk"',
-            'Content-Length': fileBuffer.length.toString(),
-            'Cache-Control': 'public, max-age=3600',
-          },
-        });
-      } catch (err) {
-        console.error('Error reading APK file:', err);
-      }
-    }
-  }
-
-  // Fallback response with metadata
   return NextResponse.json(
     {
-      name: 'Tracker Android App',
-      version: '1.0.0',
-      status: 'AVAILABLE',
-      package: 'com.tracker.driver',
-      fileSize: '65.5 MB',
-      sha256: 'd1e4410b0c65a517a75723240419a23579a581ba2f363b3e8b91c275266252af',
-      message: 'Direct APK streaming requires persistent cloud storage or local disk build artifact.',
+      error: 'Release not found',
+      message: 'Direct APK streaming requires persistent cloud storage.',
     },
-    { status: 200 }
+    { status: 404 }
   );
 }
 

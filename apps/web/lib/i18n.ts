@@ -93,3 +93,44 @@ export function formatTimeAgo(dateString: string | null | undefined): string {
   const days = Math.floor(hours / 24);
   return isRtl() ? `منذ ${formatWesternNumber(days)} يوم` : `${formatWesternNumber(days)}d ago`;
 }
+
+export function getLocalizedErrorMessage(errorOrCode: unknown, fallbackMessage?: string): string {
+  const locale = getLocale();
+  const dict = resources[locale]?.errors ?? resources['ar']?.errors ?? {};
+
+  let code: string | null = null;
+  let rawMessage: string | null = null;
+
+  if (typeof errorOrCode === 'string') {
+    code = errorOrCode.trim();
+  } else if (errorOrCode && typeof errorOrCode === 'object') {
+    const obj = errorOrCode as Record<string, any>;
+    if (typeof obj.code === 'string') {
+      code = obj.code;
+    }
+    if (typeof obj.message === 'string') {
+      rawMessage = obj.message;
+      if (!code && /^[A-Z0-9_]+$/.test(obj.message)) {
+        code = obj.message;
+      }
+    }
+  }
+
+  if (code && dict[code]) {
+    return dict[code];
+  }
+
+  if (rawMessage) {
+    for (const key of Object.keys(dict)) {
+      if (rawMessage.includes(key)) {
+        return dict[key];
+      }
+    }
+  }
+
+  if (fallbackMessage && fallbackMessage.trim().length > 0) {
+    return fallbackMessage;
+  }
+
+  return dict['UNKNOWN_ERROR'] || (locale === 'en' ? 'An unexpected error occurred.' : 'حدث خطأ غير متوقع.');
+}

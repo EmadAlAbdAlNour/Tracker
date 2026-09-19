@@ -43,33 +43,87 @@ export default function DownloadPage() {
 
   const isAr = locale === 'ar';
 
-  const [releaseData, setReleaseData] = useState({
-    version: '1.0.0',
-    releaseDate: '2026-09-18',
-    fileSize: '65.5 MB',
-    packageName: 'com.tracker.driver',
-    minAndroid: 'Android 8.0+ (API 26)',
-    verifiedOn: 'Samsung Galaxy S25 Ultra (Android 16)',
-    sha256: 'd1e4410b0c65a517a75723240419a23579a581ba2f363b3e8b91c275266252af',
-    downloadUrl: '/api/download/latest',
-  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [releaseData, setReleaseData] = useState<{
+    version: string;
+    versionCode?: number;
+    releaseDate: string;
+    fileSize: string;
+    packageName: string;
+    minAndroid: string;
+    verifiedOn: string;
+    sha256: string;
+    downloadUrl: string;
+    releaseNotes?: { ar?: string; en?: string };
+  } | null>(null);
 
   useEffect(() => {
+    setIsLoading(true);
     fetch('/api/app-version')
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Failed to fetch release metadata');
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data && data.version) {
-          setReleaseData((prev) => ({
-            ...prev,
+          const publishedDate = data.publishedAt ? new Date(data.publishedAt).toISOString().split('T')[0] : 'Unknown date';
+          setReleaseData({
             version: data.version,
-            fileSize: data.fileSize || prev.fileSize,
-            sha256: data.sha256 || prev.sha256,
-            downloadUrl: data.downloadUrl || prev.downloadUrl,
-          }));
+            versionCode: data.versionCode,
+            releaseDate: publishedDate,
+            fileSize: data.fileSize || 'Unknown size',
+            packageName: data.packageName || 'com.tracker.driver',
+            minAndroid: 'Android 8.0+ (API 26)',
+            verifiedOn: 'Samsung Galaxy S25 Ultra (Android 16)',
+            sha256: data.sha256 || 'Unknown SHA-256',
+            downloadUrl: data.downloadUrl || '/api/download/latest',
+            releaseNotes: data.releaseNotes,
+          });
+        } else {
+          throw new Error('Invalid release metadata');
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch((err) => {
+        console.error(err);
+        setError(isAr ? 'لم نتمكن من جلب بيانات التحديث.' : 'Failed to fetch release metadata.');
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [isAr]);
+
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center ${isAr ? 'rtl' : 'ltr'}`} dir={isAr ? 'rtl' : 'ltr'}>
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="h-10 w-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500 font-medium">{isAr ? 'جاري تحميل بيانات التحديث...' : 'Loading release metadata...'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !releaseData) {
+    return (
+      <div className={`min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center ${isAr ? 'rtl' : 'ltr'}`} dir={isAr ? 'rtl' : 'ltr'}>
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center max-w-sm w-full mx-4">
+          <Shield className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-lg font-bold text-slate-900 mb-2">{isAr ? 'خطأ في التحديث' : 'Update Error'}</h2>
+          <p className="text-sm text-slate-600 mb-6">{error || (isAr ? 'بيانات التحديث غير متوفرة.' : 'Release metadata unavailable.')}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition"
+          >
+            {isAr ? 'إعادة المحاولة' : 'Try Again'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen bg-slate-50 text-slate-900 flex flex-col ${isAr ? 'rtl' : 'ltr'}`} dir={isAr ? 'rtl' : 'ltr'}>
@@ -149,7 +203,7 @@ export default function DownloadPage() {
 
               <a
                 href={releaseData.downloadUrl}
-                download="Tracker-release.apk"
+                download={`Tracker-${releaseData.version}.apk`}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-emerald-600/25 hover:bg-emerald-700 transition"
               >
                 <Download className="h-5 w-5" />
@@ -199,7 +253,7 @@ export default function DownloadPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                <span>{isAr ? 'أبرز مميزات الإصدار 1.0.0' : 'Release 1.0.0 Highlights'}</span>
+                <span>{isAr ? `أبرز مميزات الإصدار ${releaseData.version}` : `Release ${releaseData.version} Highlights`}</span>
               </h3>
               <ul className="space-y-2.5 text-xs text-slate-600">
                 <li className="flex items-start gap-2">

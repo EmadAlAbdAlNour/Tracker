@@ -15,7 +15,7 @@ const restaurantUpdateSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
-  radiusMeters: z.number().min(10).max(10000).optional(),
+  radiusMeters: z.number().min(10).max(50000).optional(),
   enabled: z.boolean().optional(),
 });
 

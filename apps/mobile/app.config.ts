@@ -1,12 +1,16 @@
+import versionConfig from '../../version.json';
+
 export default {
   expo: {
     name: 'Tracker',
     slug: 'tracker-mobile',
-    version: '1.0.0',
+    version: versionConfig.version,
     orientation: 'portrait',
     userInterfaceStyle: 'light',
     icon: './assets/icon.png',
     extra: {
+      version: versionConfig.version,
+      versionCode: versionConfig.versionCode,
       apiUrl:
         process.env.EXPO_PUBLIC_API_URL ||
         (process.env.NODE_ENV === 'development'
@@ -17,6 +21,7 @@ export default {
     },
     android: {
       package: 'com.tracker.driver',
+      versionCode: versionConfig.versionCode,
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#0f766e',
@@ -28,6 +33,7 @@ export default {
         'FOREGROUND_SERVICE',
         'FOREGROUND_SERVICE_LOCATION',
         'POST_NOTIFICATIONS',
+        'REQUEST_INSTALL_PACKAGES',
       ],
       usesCleartextTraffic: process.env.NODE_ENV !== 'production',
     },
