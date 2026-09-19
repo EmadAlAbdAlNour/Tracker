@@ -129,6 +129,7 @@ vi.mock("@workspace/db", () => {
   resetState();
 
   let targetLookupId: string | null = null;
+  let simulatedFailureTable: any = null;
 
   const mockDb = {
     select: (fields?: any) => ({
@@ -159,6 +160,19 @@ vi.mock("@workspace/db", () => {
       }),
     }),
     transaction: async (cb: any) => {
+      // Snapshot state prior to transaction execution for atomic rollback
+      const snapshot = {
+        users: JSON.parse(JSON.stringify(users)),
+        drivers: JSON.parse(JSON.stringify(drivers)),
+        shifts: JSON.parse(JSON.stringify(shifts)),
+        devices: JSON.parse(JSON.stringify(devices)),
+        refreshTokens: JSON.parse(JSON.stringify(refreshTokens)),
+        locationPoints: JSON.parse(JSON.stringify(locationPoints)),
+        notifications: JSON.parse(JSON.stringify(notifications)),
+        notificationReads: JSON.parse(JSON.stringify(notificationReads)),
+        alertState: JSON.parse(JSON.stringify(alertState)),
+      };
+
       const tx = {
         select: (fields?: any) => ({
           from: (tbl: any) => ({
@@ -181,6 +195,9 @@ vi.mock("@workspace/db", () => {
         }),
         delete: (tbl: any) => ({
           where: () => {
+            if (simulatedFailureTable && tbl === simulatedFailureTable) {
+              throw new Error(`Simulated database failure during deletion on table: ${JSON.stringify(tbl)}`);
+            }
             if (tbl === mockDbModule.notificationsTable) {
               notifications.length = 0;
             }
@@ -211,7 +228,22 @@ vi.mock("@workspace/db", () => {
           },
         }),
       };
-      return cb(tx);
+
+      try {
+        return await cb(tx);
+      } catch (error) {
+        // Rollback snapshot on transaction failure
+        users = snapshot.users;
+        drivers = snapshot.drivers;
+        shifts = snapshot.shifts;
+        devices = snapshot.devices;
+        refreshTokens = snapshot.refreshTokens;
+        locationPoints = snapshot.locationPoints;
+        notifications = snapshot.notifications;
+        notificationReads = snapshot.notificationReads;
+        alertState = snapshot.alertState;
+        throw error;
+      }
     },
   };
 
@@ -229,6 +261,9 @@ vi.mock("@workspace/db", () => {
     _setTargetLookupId: (id: string | null) => {
       targetLookupId = id;
     },
+    _setSimulatedFailureTable: (table: any) => {
+      simulatedFailureTable = table;
+    },
     _getState: () => ({
       users,
       drivers,
@@ -240,11 +275,15 @@ vi.mock("@workspace/db", () => {
       notificationReads,
       alertState,
     }),
-    _resetState: resetState,
+    _resetState: () => {
+      simulatedFailureTable = null;
+      resetState();
+    },
   };
 
   return mockDbModule;
 });
+
 
 describe("True Permanent Hard Deletion Policy", () => {
   beforeEach(async () => {
@@ -352,4 +391,39 @@ describe("True Permanent Hard Deletion Policy", () => {
       permanentDeleteUser("primary-admin-uuid", "other-caller-uuid")
     ).rejects.toThrow("Cannot delete the only remaining active administrator");
   });
+
+  it("rolls back all deletions atomically and leaves no orphan records if a step fails mid-transaction", async () => {
+    const { permanentDeleteUser } = await import("./services/userService");
+    const dbModule = await import("@workspace/db");
+    (dbModule as any)._setTargetLookupId("driver-user-uuid-2");
+
+    // Configure mock DB to simulate an error when attempting to delete the final usersTable row
+    (dbModule as any)._setSimulatedFailureTable((dbModule as any).usersTable);
+
+    await expect(
+      permanentDeleteUser("driver-user-uuid-2", "primary-admin-uuid")
+    ).rejects.toThrow("Simulated database failure during deletion on table");
+
+    const state = (dbModule as any)._getState();
+
+    // Verify ALL data remained intact due to atomic transaction rollback:
+    // 1. User still exists
+    expect(state.users.find((u: any) => u.id === "driver-user-uuid-2")).toBeDefined();
+    // 2. Driver profile still exists
+    expect(state.drivers.find((d: any) => d.userId === "driver-user-uuid-2")).toBeDefined();
+    // 3. Shifts still exist (NO orphan records)
+    expect(state.shifts).toHaveLength(1);
+    // 4. Devices still exist
+    expect(state.devices).toHaveLength(1);
+    // 5. Telemetry / location points still exist
+    expect(state.locationPoints).toHaveLength(1);
+    // 6. Refresh tokens still exist
+    expect(state.refreshTokens.find((t: any) => t.userId === "driver-user-uuid-2")).toBeDefined();
+    // 7. Notifications and read states still exist
+    expect(state.notifications).toHaveLength(1);
+    expect(state.notificationReads.find((nr: any) => nr.userId === "driver-user-uuid-2")).toBeDefined();
+    // 8. Alert state still exists
+    expect(state.alertState).toHaveLength(1);
+  });
 });
+
