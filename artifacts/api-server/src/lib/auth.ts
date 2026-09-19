@@ -60,10 +60,12 @@ export function hashRefreshToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export function signAccessToken(userId: string, role: string): string {
-  return jwt.sign({ sub: userId, role, type: "access" }, JWT_SECRET, {
-    expiresIn: ACCESS_TOKEN_TTL,
-  });
+export function signAccessToken(userId: string, role: string, deviceId?: string | null): string {
+  return jwt.sign(
+    { sub: userId, role, type: "access", ...(deviceId ? { deviceId } : {}) },
+    JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_TTL }
+  );
 }
 
 export function signRefreshToken(userId: string, role: string, jti: string): string {

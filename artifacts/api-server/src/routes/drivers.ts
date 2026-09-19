@@ -20,6 +20,7 @@ import {
   submitDriverLocationBatch,
   updateDriverProfile,
   resetDriverDeviceByDriverId,
+  assignDriverDevice,
 } from "../services/authService";
 import { type AuthenticatedRequest, requireAuth, requireRole } from "../middleware/auth";
 import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, locationBatchSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
@@ -74,9 +75,34 @@ router.post("/:id/device/reset", requireAuth, requireRole("ADMIN"), async (req: 
   }
 });
 
+// ADMIN-only: atomically assign/replace a driver's authorized device.
+router.post("/:id/device/assign", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const body = z
+      .object({
+        deviceId: z.string().uuid().optional(),
+        platform: z.enum(["ANDROID", "IOS", "WEB"]).optional(),
+        deviceIdentifier: z.string().min(1).optional(),
+        appVersion: z.string().optional(),
+      })
+      .parse(req.body);
+
+    const device = await assignDriverDevice(driverId, body);
+    res.status(200).json({ success: true, device });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(createError(400, "VALIDATION_ERROR", "Invalid device assign payload", error.flatten()));
+      return;
+    }
+    next(error);
+  }
+});
+
 router.post("/me/shifts/start", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
-    const shift = await startDriverShift(req.user!.id);
+    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
+    const shift = await startDriverShift(req.user!.id, callerDeviceId);
     res.status(201).json({ shift });
   } catch (error) {
     next(error);
@@ -95,7 +121,8 @@ router.post("/me/shifts/end", requireAuth, requireRole("DRIVER"), async (req: Au
 router.post("/me/location", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = locationPointSchema.parse(req.body);
-    const point = await submitDriverLocation(req.user!.id, body);
+    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
+    const point = await submitDriverLocation(req.user!.id, body, callerDeviceId);
     res.status(201).json({ location: point });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -110,7 +137,8 @@ router.post("/me/location", requireAuth, requireRole("DRIVER"), async (req: Auth
 router.post("/me/location/batch", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = locationBatchSchema.parse(req.body);
-    const result = await submitDriverLocationBatch(req.user!.id, body);
+    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
+    const result = await submitDriverLocationBatch(req.user!.id, body, callerDeviceId);
     res.status(201).json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {

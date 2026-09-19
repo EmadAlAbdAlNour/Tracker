@@ -41,8 +41,8 @@ export async function loginUser(emailOrPhone: string, password: string, device?:
   }
 
   const jti = randomUUID();
-  const accessToken = signAccessToken(user.id, user.role);
   const refreshToken = signRefreshToken(user.id, user.role, jti);
+  let boundDeviceId: string | null = null;
 
   // Device binding enforcement for DRIVER role
   if (user.role === "DRIVER") {
@@ -71,9 +71,11 @@ export async function loginUser(emailOrPhone: string, password: string, device?:
       // Clean up superseded un-authorized device records for this driver so superseded devices don't linger
       await db.delete(devicesTable).where(and(eq(devicesTable.driverId, driver.id), ne(devicesTable.id, registeredDevice.id)));
       await storeRefreshToken(user.id, refreshToken, registeredDevice.id);
+      boundDeviceId = registeredDevice.id;
     } else if (authorized[0].id === registeredDevice.id) {
       // same authorized device re-logging in
       await storeRefreshToken(user.id, refreshToken, registeredDevice.id);
+      boundDeviceId = registeredDevice.id;
     } else {
       // another device is authorized -> reject
       throw createError(403, "AUTH_DEVICE_MISMATCH", "This account is linked to another device. An administrator must reset the device.");
@@ -82,6 +84,8 @@ export async function loginUser(emailOrPhone: string, password: string, device?:
     // non-driver: allow optional device info but do not bind tokens to devices
     await storeRefreshToken(user.id, refreshToken, null);
   }
+
+  const accessToken = signAccessToken(user.id, user.role, boundDeviceId);
 
   return {
     user: sanitizeUser(user),
@@ -578,6 +582,103 @@ export async function resetDriverDeviceByDriverId(driverId: string) {
   return true;
 }
 
+export async function assignDriverDevice(
+  driverId: string,
+  deviceInput: {
+    deviceId?: string;
+    platform?: "ANDROID" | "IOS" | "WEB";
+    deviceIdentifier?: string;
+    appVersion?: string;
+  },
+) {
+  const driver = await getDriverById(driverId);
+  if (!driver) {
+    throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+  }
+
+  const now = new Date();
+
+  return await db.transaction(async (tx) => {
+    // 1. Atomically revoke and unauthorize ALL old authorized devices for this driver
+    const oldAuthorized = await tx
+      .select()
+      .from(devicesTable)
+      .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)));
+
+    for (const oldDev of oldAuthorized) {
+      await tx
+        .update(devicesTable)
+        .set({ authorized: false, updatedAt: now } as any)
+        .where(eq(devicesTable.id, oldDev.id));
+
+      await tx
+        .update(refreshTokensTable)
+        .set({ revokedAt: now })
+        .where(eq(refreshTokensTable.deviceId, oldDev.id));
+    }
+
+    // 2. Locate or create target device
+    let targetDevice: any = null;
+    if (deviceInput.deviceId) {
+      const existing = await tx
+        .select()
+        .from(devicesTable)
+        .where(eq(devicesTable.id, deviceInput.deviceId))
+        .limit(1);
+      if (existing[0]) {
+        targetDevice = existing[0];
+      }
+    } else if (deviceInput.deviceIdentifier) {
+      const existing = await tx
+        .select()
+        .from(devicesTable)
+        .where(
+          and(
+            eq(devicesTable.driverId, driver.id),
+            eq(devicesTable.deviceIdentifier, deviceInput.deviceIdentifier),
+          ),
+        )
+        .limit(1);
+      if (existing[0]) {
+        targetDevice = existing[0];
+      }
+    }
+
+    if (targetDevice) {
+      const [updated] = await tx
+        .update(devicesTable)
+        .set({
+          driverId: driver.id,
+          authorized: true,
+          platform: (deviceInput.platform as any) ?? targetDevice.platform,
+          deviceIdentifier: deviceInput.deviceIdentifier ?? targetDevice.deviceIdentifier,
+          appVersion: deviceInput.appVersion ?? targetDevice.appVersion,
+          updatedAt: now,
+        } as any)
+        .where(eq(devicesTable.id, targetDevice.id))
+        .returning();
+      targetDevice = updated ?? targetDevice;
+    } else {
+      const [created] = await tx
+        .insert(devicesTable)
+        .values({
+          driverId: driver.id,
+          platform: (deviceInput.platform as any) ?? "ANDROID",
+          deviceIdentifier: deviceInput.deviceIdentifier ?? `dev_${randomUUID().slice(0, 8)}`,
+          appVersion: deviceInput.appVersion ?? "1.0.0",
+          authorized: true,
+          lastSeen: now,
+          createdAt: now,
+          updatedAt: now,
+        } as any)
+        .returning();
+      targetDevice = created;
+    }
+
+    return targetDevice;
+  });
+}
+
 export async function submitDriverLocation(
   userId: string,
   input: {
@@ -595,6 +696,7 @@ export async function submitDriverLocation(
     locationServicesEnabled?: boolean | null;
     networkStatus?: string | null;
   },
+  requestDeviceId?: string | null,
 ) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
@@ -613,6 +715,10 @@ export async function submitDriverLocation(
 
   if (!authorizedDevice[0]) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
+  }
+
+  if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
   }
 
   const activeShift = await db
@@ -703,21 +809,25 @@ export async function submitDriverLocation(
   return point;
 }
 
-export async function submitDriverLocationBatch(userId: string, inputs: Array<{
-  clientLocationId?: string | null;
-  latitude: number;
-  longitude: number;
-  accuracy?: number | null;
-  altitude?: number | null;
-  speed?: number | null;
-  heading?: number | null;
-  recordedAt: string;
-  source?: string;
-  batteryPercentage?: number | null;
-  isCharging?: boolean | null;
-  locationServicesEnabled?: boolean | null;
-  networkStatus?: string | null;
-}>) {
+export async function submitDriverLocationBatch(
+  userId: string,
+  inputs: Array<{
+    clientLocationId?: string | null;
+    latitude: number;
+    longitude: number;
+    accuracy?: number | null;
+    altitude?: number | null;
+    speed?: number | null;
+    heading?: number | null;
+    recordedAt: string;
+    source?: string;
+    batteryPercentage?: number | null;
+    isCharging?: boolean | null;
+    locationServicesEnabled?: boolean | null;
+    networkStatus?: string | null;
+  }>,
+  requestDeviceId?: string | null,
+) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
     throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
@@ -735,6 +845,10 @@ export async function submitDriverLocationBatch(userId: string, inputs: Array<{
 
   if (!authorizedDevice[0]) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
+  }
+
+  if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
   }
 
   const activeShift = await db
@@ -883,7 +997,7 @@ export async function getDriverTrackingStatus(driverId: string) {
   };
 }
 
-export async function startDriverShift(userId: string) {
+export async function startDriverShift(userId: string, requestDeviceId?: string | null) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
     throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
@@ -906,6 +1020,10 @@ export async function startDriverShift(userId: string) {
 
   if (!authorizedDevice[0]) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
+  }
+
+  if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
   }
 
   const existingActive = await db

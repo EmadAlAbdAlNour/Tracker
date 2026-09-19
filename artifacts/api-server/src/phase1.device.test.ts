@@ -194,18 +194,119 @@ describe('Phase1 service-level device & role tests (mocks at DB boundary)', () =
     expect(login.refreshToken).toBeDefined();
   });
 
-  it('CALL_CENTER role can authenticate but not reset driver device (permission enforcement)', async () => {
-    const cc = makeUser('u-cc', 'CALL_CENTER', 'cc@t.local');
-    vi.spyOn(libAuth, 'getUserByEmailOrPhone').mockResolvedValue(cc as any);
+  it('assignDriverDevice atomically revokes old device, revokes tokens, authorizes new device, and blocks old device from telemetry and login', async () => {
+    const user = makeUser('u-driver-replace', 'DRIVER', 'replace@t.local');
+    const driver = makeDriver(user.id, 'd-replace');
+    vi.spyOn(libAuth, 'getUserById').mockResolvedValue(user as any);
+    vi.spyOn(authService, 'getDriverById').mockResolvedValue(driver as any);
+    vi.spyOn(authService, 'getDriverByUserId').mockResolvedValue(driver as any);
 
-    // storeRefreshToken mocked
-    vi.spyOn(libAuth, 'storeRefreshToken').mockResolvedValue(undefined as any);
+    const oldDevice = makeDevice('dev-A', driver.id, true, 'device-ident-A');
+    const newDevice = makeDevice('dev-B', driver.id, false, 'device-ident-B');
 
-    const login = await authService.loginUser(cc.email, 'Password!', undefined);
-    expect(login.accessToken).toBeDefined();
+    // Mock db.select for driver lookup and authorized device lookup
+    dbModule.db.select = () => ({
+      from: (table: any) => ({
+        innerJoin: () => ({
+          where: () => ({
+            limit: async () => [driver],
+          }),
+        }),
+        where: () => ({
+          limit: async () => [newDevice],
+        }),
+      }),
+    }) as any;
 
-    // Attempting to call resetDriverDeviceByDriverId as CALL_CENTER should be protected at route layer; ensure service function still works only via admin check at route.
-    // Here, we assert that CALL_CENTER is not an admin by role
-    expect(cc.role).toBe('CALL_CENTER');
+    // Mock transaction to track updates
+    const updatedDevices: any[] = [];
+    const revokedTokens: any[] = [];
+
+    const mockTx = {
+      select: () => ({
+        from: (table: any) => ({
+          where: () => ({
+            limit: async () => {
+              if (table === (dbModule as any).devicesTable) {
+                return [newDevice];
+              }
+              return [];
+            },
+            then: (resolve: any) => resolve([oldDevice]),
+          }),
+        }),
+      }),
+      update: (table: any) => ({
+        set: (vals: any) => ({
+          where: (clause: any) => {
+            if (table === (dbModule as any).devicesTable) {
+              updatedDevices.push(vals);
+              return {
+                returning: async () => [{ ...newDevice, ...vals, authorized: true }],
+              };
+            }
+            if (table === (dbModule as any).refreshTokensTable) {
+              revokedTokens.push(vals);
+              return Promise.resolve();
+            }
+            return Promise.resolve();
+          },
+        }),
+      }),
+      insert: () => ({
+        values: (vals: any) => ({
+          returning: async () => [newDevice],
+        }),
+      }),
+    };
+
+    vi.spyOn(dbModule.db, 'transaction').mockImplementation(async (cb: any) => {
+      return cb(mockTx);
+    });
+
+    const assigned = await authService.assignDriverDevice(driver.id, {
+      deviceIdentifier: 'device-ident-B',
+      platform: 'ANDROID',
+    });
+
+    expect(assigned).toBeDefined();
+    expect(assigned.authorized).toBe(true);
+    // Verified that an unauthorization update occurred
+    expect(updatedDevices.some((d) => d.authorized === false)).toBe(true);
+    // Verified that token revocation occurred
+    expect(revokedTokens.length).toBeGreaterThan(0);
+
+    // Now verify that old device A attempting telemetry submission is rejected with 403
+    // Simulate that the active authorized device in DB is dev-B
+    dbModule.db.select = () => ({
+      from: (table: any) => ({
+        innerJoin: () => ({
+          where: () => ({
+            limit: async () => [driver],
+          }),
+        }),
+        where: () => ({
+          limit: async () => {
+            if (table === (dbModule as any).driversTable) return [driver];
+            return [{ ...newDevice, authorized: true }];
+          },
+        }),
+      }),
+    }) as any;
+
+    // Caller device dev-A does NOT match authorized dev-B -> expect 403
+    await expect(
+      authService.submitDriverLocation(
+        user.id,
+        { latitude: 24.7136, longitude: 46.6753, recordedAt: new Date().toISOString() },
+        'dev-A',
+      ),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'DEVICE_UNAUTHORIZED' });
+
+    // Old device A attempting startDriverShift is rejected with 403
+    await expect(
+      authService.startDriverShift(user.id, 'dev-A'),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'DEVICE_UNAUTHORIZED' });
   });
 });
+

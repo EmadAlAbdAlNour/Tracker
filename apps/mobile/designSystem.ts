@@ -83,43 +83,59 @@ export const radius = {
   full: 9999,
 };
 
+export const fonts = {
+  regular: 'Cairo-Regular',
+  medium: 'Cairo-Medium',
+  semiBold: 'Cairo-SemiBold',
+  bold: 'Cairo-Bold',
+  base: 'Cairo',
+};
+
 export const typography = {
   screenTitle: {
+    fontFamily: fonts.bold,
     fontSize: 18,
     fontWeight: '700' as const,
     color: colors.text.primary,
   },
   sectionTitle: {
+    fontFamily: fonts.bold,
     fontSize: 14,
     fontWeight: '700' as const,
     color: colors.text.primary,
   },
   cardTitle: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
     fontWeight: '600' as const,
     color: colors.text.secondary,
   },
   body: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     fontWeight: '400' as const,
     color: colors.text.primary,
   },
   bodyStrong: {
+    fontFamily: fonts.semiBold,
     fontSize: 13,
     fontWeight: '600' as const,
     color: colors.text.primary,
   },
   meta: {
+    fontFamily: fonts.regular,
     fontSize: 11,
     fontWeight: '400' as const,
     color: colors.text.muted,
   },
   metaStrong: {
+    fontFamily: fonts.semiBold,
     fontSize: 11,
     fontWeight: '600' as const,
     color: colors.text.secondary,
   },
   kpiNumber: {
+    fontFamily: fonts.bold,
     fontSize: 22,
     fontWeight: '800' as const,
     color: colors.text.primary,
@@ -142,4 +158,5 @@ export const shadows = {
     elevation: 4,
   },
 };
+
 

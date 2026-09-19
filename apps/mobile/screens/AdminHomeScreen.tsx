@@ -1,7 +1,7 @@
 // Rebuilt Admin Experience for Tracker Mobile
 // Bottom Tab Navigation, Compact Header, Real Geographic Map, Operational Density
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import { RealGeographicMapView, type MapDriverPoint, type MapRestaurantPoint } f
 import { DriverDetailModal } from '../components/DriverDetailModal';
 import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
+import { NotificationService } from '../notificationService';
 
 interface AdminHomeScreenProps {
   session: Session;
@@ -142,15 +143,70 @@ export function AdminHomeScreen({
   }, [apiRequest]);
 
   // 5. Load Notifications
+  const postedNotificationIdsRef = useRef<Set<string>>(new Set());
+
   const loadNotifications = useCallback(async () => {
     try {
       const data = await apiRequest<any>('/api/notifications?limit=30');
-      setNotifications(data.items ?? []);
+      const items = data.items ?? [];
+      setNotifications(items);
       setUnreadCount(data.unreadCount ?? 0);
+
+      // Post unread notifications to Android system notification shade
+      if (settingsAlerts.inAppAlertsEnabled !== false) {
+        for (const notif of items) {
+          if (!notif.isRead && !postedNotificationIdsRef.current.has(notif.id)) {
+            postedNotificationIdsRef.current.add(notif.id);
+            const itemTitle = rtl
+              ? notif.titleAr || notif.title || notif.titleEn || 'تنبيه النظام'
+              : notif.titleEn || notif.title || notif.titleAr || 'System Alert';
+            const itemMessage = rtl
+              ? notif.messageAr || notif.message || notif.messageEn || ''
+              : notif.messageEn || notif.message || notif.messageAr || '';
+
+            NotificationService.showNotification({
+              channelId: settingsAlerts.soundEnabled ? 'tracker_alerts_channel' : 'tracker_system_channel',
+              title: itemTitle,
+              body: itemMessage,
+              data: { notificationId: notif.id },
+            });
+          }
+        }
+      }
     } catch {
       // ignore
     }
-  }, [apiRequest]);
+  }, [apiRequest, rtl, settingsAlerts]);
+
+  // Setup Notification permission check and tap routing on mount
+  useEffect(() => {
+    NotificationService.checkPermission().then((granted) => {
+      if (!granted) {
+        NotificationService.requestPermission();
+      }
+    });
+
+    NotificationService.getInitialNotification().then((initial) => {
+      if (initial && initial.action === 'OPEN_NOTIFICATIONS') {
+        setActiveTab('more');
+        setMoreSection('notifications');
+        if (initial.notificationId) {
+          handleMarkNotificationRead(initial.notificationId);
+        }
+      }
+    });
+
+    const unsubscribe = NotificationService.onNotificationTap((data) => {
+      if (data.action === 'OPEN_NOTIFICATIONS') {
+        setActiveTab('more');
+        setMoreSection('notifications');
+        if (data.notificationId) {
+          handleMarkNotificationRead(data.notificationId);
+        }
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     loadFleet();
@@ -272,6 +328,47 @@ export function AdminHomeScreen({
       Alert.alert(t('app.error'), err?.message || t('admin.saveSettingsFailed'));
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const handleMarkNotificationRead = async (notificationId: string) => {
+    try {
+      await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'PATCH' });
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item))
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSendTestNotification = async () => {
+    try {
+      await NotificationService.requestPermission();
+      const res = await apiRequest<any>('/api/notifications/test', { method: 'POST' });
+      const notif = res?.notification;
+      if (notif) {
+        postedNotificationIdsRef.current.add(notif.id);
+        const itemTitle = rtl
+          ? notif.titleAr || notif.title || 'إشعار اختباري للنظام'
+          : notif.titleEn || notif.title || 'System Test Notification';
+        const itemMessage = rtl
+          ? notif.messageAr || notif.message || 'تم إرسال إشعار تجريبي لاختبار شريط الإشعارات'
+          : notif.messageEn || notif.message || 'Test notification sent to shade';
+
+        await NotificationService.showNotification({
+          id: Math.floor(Math.random() * 90000) + 10000,
+          channelId: settingsAlerts.soundEnabled ? 'tracker_alerts_channel' : 'tracker_system_channel',
+          title: itemTitle,
+          body: itemMessage,
+          data: { notificationId: notif.id },
+        });
+      }
+      await loadNotifications();
+      Alert.alert(t('app.notice'), rtl ? 'تم إرسال الإشعار لشريط إشعارات أندرويد بنجاح' : 'Notification posted to Android shade');
+    } catch (err: any) {
+      Alert.alert(t('app.error'), err?.message || 'Failed to send test notification');
     }
   };
 
@@ -1110,9 +1207,16 @@ export function AdminHomeScreen({
                     <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
                   </TouchableOpacity>
                   <Text style={styles.subviewTitle}>{t('notifications.title')}</Text>
-                  <TouchableOpacity onPress={handleMarkAllNotificationsRead} style={styles.markAllReadButton}>
-                    <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 6, alignItems: 'center' }}>
+                    <TouchableOpacity onPress={handleSendTestNotification} style={[styles.markAllReadButton, { backgroundColor: '#e0f2fe' }]}>
+                      <Text style={[styles.markAllReadText, { color: colors.accent }]}>
+                        {rtl ? 'إرسال تجريبي' : 'Send Test'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleMarkAllNotificationsRead} style={styles.markAllReadButton}>
+                      <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <ScrollView contentContainerStyle={styles.subviewScroll}>
@@ -1130,7 +1234,12 @@ export function AdminHomeScreen({
                         ? n.messageAr || n.message || n.messageEn || ''
                         : n.messageEn || n.message || n.messageAr || '';
                       return (
-                        <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
+                        <TouchableOpacity
+                          key={n.id}
+                          activeOpacity={0.7}
+                          onPress={() => handleMarkNotificationRead(n.id)}
+                          style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}
+                        >
                           <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
                             <Text style={styles.notificationTitle}>{itemTitle}</Text>
                             {!n.isRead && (
@@ -1145,7 +1254,7 @@ export function AdminHomeScreen({
                           <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
                             {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </Text>
-                        </View>
+                        </TouchableOpacity>
                       );
                     })
                   )}

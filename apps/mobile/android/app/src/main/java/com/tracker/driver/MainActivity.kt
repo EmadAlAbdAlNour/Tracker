@@ -1,10 +1,12 @@
 package com.tracker.driver
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
@@ -17,6 +19,25 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    handleNotificationIntent(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleNotificationIntent(intent)
+  }
+
+  private fun handleNotificationIntent(intent: Intent?) {
+    if (intent != null && intent.getStringExtra("action") == "OPEN_NOTIFICATIONS") {
+      val notificationId = intent.getStringExtra("notificationId")
+      val params = Arguments.createMap().apply {
+        putString("action", "OPEN_NOTIFICATIONS")
+        putString("notificationId", notificationId)
+      }
+      TrackerNotificationModule.pendingNotificationAction = params
+      TrackerNotificationModule.instance?.sendEvent("onNotificationTap", params)
+    }
   }
 
   /**

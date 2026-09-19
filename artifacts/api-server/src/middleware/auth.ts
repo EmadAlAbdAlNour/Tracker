@@ -7,7 +7,7 @@ import { createError } from "../lib/errors";
 import { getUserById, hasRole, sanitizeUser } from "../lib/auth";
 
 export type AuthenticatedRequest = Request & {
-  user?: Awaited<ReturnType<typeof sanitizeUser>>;
+  user?: Awaited<ReturnType<typeof sanitizeUser>> & { deviceId?: string };
 };
 
 const env = getEnv();
@@ -20,17 +20,17 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     }
 
     const token = authHeader.slice("Bearer ".length).trim();
-        let payload: { sub?: string; role?: string } | undefined;
-        try {
-          payload = jwt.verify(token, env.jwtSecret) as { sub?: string; role?: string };
-        } catch (err) {
-          next(createError(401, "AUTH_INVALID_TOKEN", "Invalid token"));
-          return;
-        }
+    let payload: { sub?: string; role?: string; deviceId?: string } | undefined;
+    try {
+      payload = jwt.verify(token, env.jwtSecret) as { sub?: string; role?: string; deviceId?: string };
+    } catch (err) {
+      next(createError(401, "AUTH_INVALID_TOKEN", "Invalid token"));
+      return;
+    }
 
-        if (!payload?.sub) {
-          throw createError(401, "AUTH_INVALID_TOKEN", "Invalid token");
-        }
+    if (!payload?.sub) {
+      throw createError(401, "AUTH_INVALID_TOKEN", "Invalid token");
+    }
 
     const user = await getUserById(payload.sub);
     if (!user) {
@@ -40,7 +40,10 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       throw createError(403, "AUTH_INACTIVE", "Account is inactive");
     }
 
-    req.user = sanitizeUser(user);
+    req.user = {
+      ...sanitizeUser(user),
+      ...(payload.deviceId ? { deviceId: payload.deviceId } : {}),
+    };
     next();
   } catch (error) {
     next(error instanceof Error ? error : createError(401, "AUTH_REQUIRED", "Authentication required"));

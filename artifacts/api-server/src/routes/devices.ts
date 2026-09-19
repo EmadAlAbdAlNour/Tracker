@@ -79,4 +79,28 @@ router.post("/register", requireAuth, requireRole("DRIVER"), async (req: Authent
   }
 });
 
+router.post("/assign", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const body = z
+      .object({
+        driverId: z.string().uuid(),
+        deviceId: z.string().uuid().optional(),
+        platform: z.enum(["ANDROID", "IOS", "WEB"]).optional(),
+        deviceIdentifier: z.string().min(1).optional(),
+        appVersion: z.string().optional(),
+      })
+      .parse(req.body);
+
+    const { assignDriverDevice } = await import("../services/authService");
+    const device = await assignDriverDevice(body.driverId, body);
+    res.status(200).json({ success: true, device });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(createError(400, "VALIDATION_ERROR", "Invalid device assign payload", error.flatten()));
+      return;
+    }
+    next(error);
+  }
+});
+
 export default router;
