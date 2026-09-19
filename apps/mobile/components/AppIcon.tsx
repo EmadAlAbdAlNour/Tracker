@@ -32,7 +32,9 @@ export type IconName =
   | 'more'
   | 'restaurant'
   | 'pause'
-  | 'play';
+  | 'play'
+  | 'eye'
+  | 'eye-off';
 
 interface AppIconProps {
   name: IconName;
@@ -477,6 +479,67 @@ export function AppIcon({
           >
             <View style={{ width: size * 0.25, height: size * 0.25, backgroundColor: '#ffffff', borderTopLeftRadius: 2, borderTopRightRadius: 2 }} />
           </View>
+        </View>
+      );
+
+    case 'eye':
+      return (
+        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+          <View
+            style={{
+              width: size * 0.9,
+              height: size * 0.55,
+              borderWidth: stroke,
+              borderColor: iconColor,
+              borderRadius: (size * 0.55) / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: size * 0.28,
+                height: size * 0.28,
+                backgroundColor: iconColor,
+                borderRadius: (size * 0.28) / 2,
+              }}
+            />
+          </View>
+        </View>
+      );
+
+    case 'eye-off':
+      return (
+        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+          <View
+            style={{
+              width: size * 0.9,
+              height: size * 0.55,
+              borderWidth: stroke,
+              borderColor: iconColor,
+              borderRadius: (size * 0.55) / 2,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: size * 0.28,
+                height: size * 0.28,
+                backgroundColor: iconColor,
+                borderRadius: (size * 0.28) / 2,
+              }}
+            />
+          </View>
+          <View
+            style={{
+              position: 'absolute',
+              width: size * 0.95,
+              height: stroke,
+              backgroundColor: iconColor,
+              transform: [{ rotate: '-45deg' }],
+            }}
+          />
         </View>
       );
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { useAuth } from '@/components/auth-provider';
-import { Globe } from 'lucide-react';
+import { Eye, EyeOff, Globe } from 'lucide-react';
 import { t, getLocale, setStoredLocale } from '@/lib/i18n';
 
 export default function LoginPage() {
@@ -12,6 +12,7 @@ export default function LoginPage() {
   const { setTokens, isAuthenticated, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentLocale, setCurrentLocale] = useState(getLocale());
@@ -103,10 +104,11 @@ export default function LoginPage() {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white"
+              dir="ltr"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white text-left font-mono"
               type="text"
               autoComplete="username"
-              placeholder={isAr ? 'admin@example.com' : 'admin@example.com'}
+              placeholder="admin@example.com"
               required
             />
           </div>
@@ -115,15 +117,26 @@ export default function LoginPage() {
             <label className="mb-1 block text-xs font-semibold text-slate-700">
               {isAr ? 'كلمة المرور' : 'Password'}
             </label>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white"
-              type="password"
-              autoComplete="current-password"
-              placeholder="••••••••"
-              required
-            />
+            <div className="relative">
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                dir="ltr"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 ps-3.5 pe-11 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:bg-white text-left font-mono"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                placeholder="••••••••"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute end-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition"
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           {error ? (

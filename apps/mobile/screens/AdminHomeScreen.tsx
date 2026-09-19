@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { colors, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
-import { CompactHeader } from '../components/CompactHeader';
+import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import { RealGeographicMapView, type MapDriverPoint, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
@@ -255,6 +255,13 @@ export function AdminHomeScreen({
             maxStopDurationMinutes: maxStop,
             offlineGraceMinutes: offlineGrace,
             lowBatteryThreshold: lowBatt,
+            stopAlertEnabled: settingsAlerts.stopAlertEnabled ?? true,
+            gpsAlertEnabled: settingsAlerts.gpsAlertEnabled ?? true,
+            offlineAlertEnabled: settingsAlerts.offlineAlertEnabled ?? true,
+            batteryAlertEnabled: settingsAlerts.batteryAlertEnabled ?? true,
+            restaurantGeofenceAlertEnabled: settingsAlerts.restaurantGeofenceAlertEnabled ?? true,
+            soundEnabled: settingsAlerts.soundEnabled ?? true,
+            inAppAlertsEnabled: settingsAlerts.inAppAlertsEnabled ?? true,
           }),
         }),
       ]);
@@ -330,8 +337,8 @@ export function AdminHomeScreen({
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Sleek Compact Header (52dp) */}
-      <CompactHeader
+      {/* Sleek Unified AppHeader (52dp) */}
+      <AppHeader
         title={
           activeTab === 'dashboard'
             ? rtl ? 'لوحة القيادة والمراقبة' : 'Fleet Console'
@@ -339,11 +346,20 @@ export function AdminHomeScreen({
             ? rtl ? 'الخريطة الميدانية' : 'Live Fleet Map'
             : activeTab === 'drivers'
             ? rtl ? 'دليل السائقين' : 'Active Drivers'
+            : moreSection === 'devices'
+            ? t('admin.deviceManagement')
+            : moreSection === 'users'
+            ? t('admin.usersList')
+            : moreSection === 'settings'
+            ? t('admin.settings')
+            : moreSection === 'notifications'
+            ? t('notifications.title')
             : rtl ? 'إدارة النظام والمزيد' : 'System & More'
         }
         role="ADMIN"
         userName={session.user.name}
         locale={locale}
+        onBack={activeTab === 'more' && moreSection !== 'menu' ? () => setMoreSection('menu') : undefined}
         onToggleLanguage={toggleLanguage}
         onLogout={onLogout}
       />
@@ -999,6 +1015,78 @@ export function AdminHomeScreen({
                     </View>
                   </View>
 
+                  {/* Alert Channels & Triggers Card */}
+                  <View style={styles.settingsCard}>
+                    <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <AppIcon name="bell" size={18} color={colors.primary} />
+                      <Text style={[styles.settingsCardTitle, { marginBottom: 0 }]}>
+                        {rtl ? 'تفعيل وتنبيهات الإشعارات' : 'Alert Triggers & Channels'}
+                      </Text>
+                    </View>
+
+                    {[
+                      { key: 'stopAlertEnabled', label: rtl ? 'تنبيه التوقف المفرط' : 'Excessive Stop Alert', desc: rtl ? 'إشعار عند تجاوز السائق مدة التوقف المسموحة' : 'Notify when driver stops beyond limit' },
+                      { key: 'gpsAlertEnabled', label: rtl ? 'تنبيه فقدان إشارة GPS' : 'GPS Loss Alert', desc: rtl ? 'إشعار عند تعطل أو إيقاف خدمات الموقع' : 'Notify when location services are disabled' },
+                      { key: 'offlineAlertEnabled', label: rtl ? 'تنبيه انقطاع الاتصال' : 'Device Offline Alert', desc: rtl ? 'إشعار عند انقطاع جهاز السائق عن الشبكة' : 'Notify when driver device goes offline' },
+                      { key: 'batteryAlertEnabled', label: rtl ? 'تنبيه انخفاض البطارية' : 'Low Battery Alert', desc: rtl ? 'إشعار عند وصول بطارية السائق للحد الحرج' : 'Notify when device battery drops below threshold' },
+                      { key: 'restaurantGeofenceAlertEnabled', label: rtl ? 'تنبيه السياج الجغرافي للمطعم' : 'Geofence Alert', desc: rtl ? 'إشعار عند دخول أو مغادرة محيط المطعم' : 'Notify on entering/exiting restaurant zone' },
+                      { key: 'soundEnabled', label: rtl ? 'نغمات التنبيه الصوتية' : 'Sound Alerts', desc: rtl ? 'تشغيل صوت عند ورود تنبيه حرج' : 'Play sound upon critical incident alerts' },
+                      { key: 'inAppAlertsEnabled', label: rtl ? 'إشعارات داخل التطبيق' : 'In-App Alert Banners', desc: rtl ? 'إظهار شريط التنبيه في اللوحة المباشرة' : 'Display alert banners in operational console' },
+                    ].map((item) => {
+                      const enabled = settingsAlerts[item.key] ?? true;
+                      return (
+                        <TouchableOpacity
+                          key={item.key}
+                          style={[
+                            {
+                              flexDirection: rtl ? 'row-reverse' : 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              paddingVertical: 10,
+                              borderBottomWidth: 1,
+                              borderBottomColor: colors.border,
+                            },
+                          ]}
+                          onPress={() =>
+                            setSettingsAlerts((prev: any) => ({
+                              ...prev,
+                              [item.key]: !enabled,
+                            }))
+                          }
+                        >
+                          <View style={{ flex: 1, alignItems: rtl ? 'flex-end' : 'flex-start', marginHorizontal: 8 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text.primary }}>
+                              {item.label}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.text.muted, marginTop: 2 }}>
+                              {item.desc}
+                            </Text>
+                          </View>
+                          <View
+                            style={{
+                              width: 44,
+                              height: 24,
+                              borderRadius: 12,
+                              backgroundColor: enabled ? colors.primary : '#cbd5e1',
+                              justifyContent: 'center',
+                              paddingHorizontal: 2,
+                            }}
+                          >
+                            <View
+                              style={{
+                                width: 20,
+                                height: 20,
+                                borderRadius: 10,
+                                backgroundColor: '#ffffff',
+                                alignSelf: enabled ? 'flex-end' : 'flex-start',
+                              }}
+                            />
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
                   <TouchableOpacity
                     style={[styles.primarySaveButton, settingsSaving && styles.disabledButton]}
                     onPress={handleSaveSettings}
@@ -1034,24 +1122,32 @@ export function AdminHomeScreen({
                       <Text style={styles.emptyStateText}>{t('notifications.noNotifications')}</Text>
                     </View>
                   ) : (
-                    notifications.map((n: any) => (
-                      <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
-                        <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                          <Text style={styles.notificationTitle}>{n.title || 'System Alert'}</Text>
-                          {!n.isRead && (
-                            <View style={styles.unreadPill}>
-                              <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
-                            </View>
-                          )}
+                    notifications.map((n: any) => {
+                      const itemTitle = rtl
+                        ? n.titleAr || n.title || n.titleEn || 'تنبيه النظام'
+                        : n.titleEn || n.title || n.titleAr || 'System Alert';
+                      const itemMessage = rtl
+                        ? n.messageAr || n.message || n.messageEn || ''
+                        : n.messageEn || n.message || n.messageAr || '';
+                      return (
+                        <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
+                          <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                            <Text style={styles.notificationTitle}>{itemTitle}</Text>
+                            {!n.isRead && (
+                              <View style={styles.unreadPill}>
+                                <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
+                            {itemMessage}
+                          </Text>
+                          <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
+                            {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </Text>
                         </View>
-                        <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
-                          {n.message}
-                        </Text>
-                        <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
-                          {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </Text>
-                      </View>
-                    ))
+                      );
+                    })
                   )}
                 </ScrollView>
               </View>

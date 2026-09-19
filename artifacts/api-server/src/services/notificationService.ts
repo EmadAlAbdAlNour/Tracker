@@ -83,11 +83,16 @@ export async function listNotifications(params: ListNotificationsParams = {}, us
           .where(unreadWhere),
       ]);
 
-      const items = rows.map((r) => ({
-        ...r.notification,
-        read: Boolean(r.userReadAt),
-        readAt: r.userReadAt ?? null,
-      }));
+      const items = rows.map((r) => {
+        const notif = r.notification;
+        return {
+          ...notif,
+          title: notif.titleAr || notif.titleEn || "System Alert",
+          message: notif.messageAr || notif.messageEn || "",
+          read: Boolean(r.userReadAt),
+          readAt: r.userReadAt ?? null,
+        };
+      });
 
       return {
         items,
@@ -134,8 +139,14 @@ export async function listNotifications(params: ListNotificationsParams = {}, us
       .where(eq(notificationsTable.read, false)),
   ]);
 
+  const mappedItems = items.map((notif) => ({
+    ...notif,
+    title: notif.titleAr || notif.titleEn || "System Alert",
+    message: notif.messageAr || notif.messageEn || "",
+  }));
+
   return {
-    items,
+    items: mappedItems,
     total: Number(countResult[0]?.count ?? 0),
     unreadCount: Number(unreadCountResult[0]?.count ?? 0),
     page,

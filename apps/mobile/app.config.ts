@@ -5,6 +5,7 @@ export default {
     version: '1.0.0',
     orientation: 'portrait',
     userInterfaceStyle: 'light',
+    icon: './assets/icon.png',
     extra: {
       apiUrl:
         process.env.EXPO_PUBLIC_API_URL ||
@@ -16,6 +17,10 @@ export default {
     },
     android: {
       package: 'com.tracker.driver',
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#0f766e',
+      },
       permissions: [
         'ACCESS_COARSE_LOCATION',
         'ACCESS_FINE_LOCATION',

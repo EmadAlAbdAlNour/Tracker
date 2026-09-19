@@ -40,7 +40,7 @@ router.get("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequ
         .from(devicesTable)
         .innerJoin(driversTable, eq(devicesTable.driverId, driversTable.id))
         .innerJoin(usersTable, eq(driversTable.userId, usersTable.id))
-        .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.createdAt))
+        .orderBy(desc(devicesTable.authorized), desc(devicesTable.lastSeen), desc(devicesTable.createdAt))
         .limit(limit)
         .offset(offset),
       db

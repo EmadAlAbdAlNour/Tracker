@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { colors, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
-import { CompactHeader } from '../components/CompactHeader';
+import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import {
   collectDriverTelemetry,
@@ -300,8 +300,8 @@ export function DriverHomeScreen({
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Sleek Compact Header */}
-      <CompactHeader
+      {/* Sleek AppHeader */}
+      <AppHeader
         title={rtl ? 'لوحة قيادة السائق' : 'Driver Cockpit'}
         role="DRIVER"
         userName={profile?.driverName || session.user.name}

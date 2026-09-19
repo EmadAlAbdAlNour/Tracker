@@ -106,6 +106,7 @@ describe('Phase1 service-level device & role tests (mocks at DB boundary)', () =
 
     // spy on db.update for setting authorized true (called when binding)
     dbModule.db.update = () => ({ set: () => ({ where: () => ({ returning: async () => [{ ...createdDevice, authorized: true }] }) }) }) as any;
+    dbModule.db.delete = () => ({ where: async () => [] }) as any;
 
     // storeRefreshToken should be observed and receive device id
     const storeSpy = vi.spyOn(libAuth, 'storeRefreshToken').mockResolvedValue(undefined as any);
@@ -164,6 +165,7 @@ describe('Phase1 service-level device & role tests (mocks at DB boundary)', () =
 
     // spy on db.update marking authorized false
     dbModule.db.update = () => ({ set: () => ({ where: () => Promise.resolve([{ ...authDev, authorized: false }]) }) }) as any;
+    dbModule.db.delete = () => ({ where: async () => [] }) as any;
 
     // spy on revokeRefreshTokensByDevice
     const revokeSpy = vi.spyOn(libAuth, 'revokeRefreshTokensByDevice').mockResolvedValue(undefined as any);

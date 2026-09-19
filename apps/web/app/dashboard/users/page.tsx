@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   Edit2,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Lock,
   Plus,
   RefreshCw,
   Search,
@@ -33,6 +37,7 @@ export default function UsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [formData, setFormData] = useState<{
     name: string;
     email: string;
@@ -48,6 +53,67 @@ export default function UsersPage() {
     password: '',
     active: true,
   });
+
+  // Edit Modal State
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editTargetUser, setEditTargetUser] = useState<SessionUser | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [editFormData, setEditFormData] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+    role: Role;
+    password: string;
+    active: boolean;
+  }>({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'ADMIN',
+    password: '',
+    active: true,
+  });
+
+  const openEditModal = (user: SessionUser) => {
+    setEditTargetUser(user);
+    setEditFormData({
+      name: user.name,
+      email: user.email,
+      phone: user.phone || '',
+      role: user.role,
+      password: '',
+      active: user.active,
+    });
+    setEditError(null);
+    setShowEditPassword(false);
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTargetUser) return;
+    setEditLoading(true);
+    setEditError(null);
+    try {
+      await updateUser(editTargetUser.id, {
+        name: editFormData.name.trim(),
+        email: editFormData.email.trim(),
+        phone: editFormData.phone.trim() || undefined,
+        role: editFormData.role,
+        password: editFormData.password.trim() ? editFormData.password.trim() : undefined,
+        active: editFormData.active,
+      });
+      setEditModalOpen(false);
+      setEditTargetUser(null);
+      await loadData();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update user');
+    } finally {
+      setEditLoading(false);
+    }
+  };
 
   // Permanent Delete Modal State
   const [deleteTargetUser, setDeleteTargetUser] = useState<SessionUser | null>(null);
@@ -299,12 +365,30 @@ export default function UsersPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
+                              onClick={() => openEditModal(user)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                              title={rtl ? 'تعديل الحساب' : 'Edit Account'}
+                            >
+                              <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+                              <span>{rtl ? 'تعديل' : 'Edit'}</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => handleToggleActive(user)}
-                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                              disabled={user.email.toLowerCase() === 'admin@tracker.local'}
+                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed ${
                                 user.active
                                   ? 'border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                                   : 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                               }`}
+                              title={
+                                user.email.toLowerCase() === 'admin@tracker.local'
+                                  ? rtl
+                                    ? 'الحساب الرئيسي للنظام محمي من التعطيل'
+                                    : 'Primary system administrator account cannot be deactivated'
+                                  : undefined
+                              }
                             >
                               {user.active ? (
                                 <>
@@ -319,7 +403,7 @@ export default function UsersPage() {
                               )}
                             </button>
 
-                            {user.id !== session?.user?.id && (
+                            {user.id !== session?.user?.id && user.email.toLowerCase() !== 'admin@tracker.local' && (
                               <button
                                 type="button"
                                 onClick={() => setDeleteTargetUser(user)}
@@ -384,9 +468,10 @@ export default function UsersPage() {
                 </label>
                 <input
                   type="email"
+                  dir="ltr"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono text-left"
                   required
                 />
               </div>
@@ -398,9 +483,10 @@ export default function UsersPage() {
                   </label>
                   <input
                     type="tel"
+                    dir="ltr"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono text-left"
                   />
                 </div>
                 <div>
@@ -414,6 +500,7 @@ export default function UsersPage() {
                   >
                     <option value="ADMIN">ADMIN</option>
                     <option value="CALL_CENTER">CALL_CENTER</option>
+                    <option value="DRIVER">DRIVER</option>
                   </select>
                 </div>
               </div>
@@ -422,14 +509,25 @@ export default function UsersPage() {
                 <label className="mb-1 block text-xs font-semibold text-slate-700">
                   {t('drivers.password')} *
                 </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500"
-                  placeholder="Min 8 characters"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showCreatePassword ? 'text' : 'password'}
+                    dir="ltr"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono text-left pe-10"
+                    placeholder="Min 8 characters"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatePassword(!showCreatePassword)}
+                    className="absolute end-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+                    title={showCreatePassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showCreatePassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 pt-2">
@@ -459,6 +557,172 @@ export default function UsersPage() {
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {createLoading ? t('common.loading') : t('common.save')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editModalOpen && editTargetUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {rtl ? 'تعديل بيانات الحساب' : 'Edit User Account'}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">{editTargetUser.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditModalOpen(false);
+                  setEditTargetUser(null);
+                }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateUser} className="mt-4 space-y-4">
+              {editError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                  {editError}
+                </div>
+              )}
+
+              {editTargetUser.email.toLowerCase() === 'admin@tracker.local' && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 leading-relaxed">
+                  <strong>{rtl ? 'حساب النظام الرئيسي:' : 'Primary System Administrator:'}</strong>{' '}
+                  {rtl
+                    ? 'هذا الحساب محمي. لا يمكن تعديل دوره أو إلغاء تنشيطه لحماية الوصول إلى النظام.'
+                    : 'This account is protected. Role and active status cannot be modified to prevent system lockout.'}
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  {t('drivers.name')} *
+                </label>
+                <input
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  {t('drivers.email')} *
+                </label>
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono text-left"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    {t('drivers.phone')}
+                  </label>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={editFormData.phone}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono text-left"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    {t('users.role')} *
+                  </label>
+                  <select
+                    value={editFormData.role}
+                    disabled={editTargetUser.email.toLowerCase() === 'admin@tracker.local'}
+                    onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value as Role })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="ADMIN">ADMIN</option>
+                    <option value="CALL_CENTER">CALL_CENTER</option>
+                    <option value="DRIVER">DRIVER</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+                  <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+                  <span>{rtl ? 'إعادة تعيين كلمة المرور (اختياري)' : 'Reset Password (Optional)'}</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    dir="ltr"
+                    value={editFormData.password}
+                    onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 bg-white ps-3 pe-10 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono text-left"
+                    placeholder={rtl ? 'اتركه فارغاً للإبقاء على الحالية (8 أحرف كحد أدنى)' : 'Leave blank to keep current (min 8 characters)'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPassword(!showEditPassword)}
+                    className="absolute end-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+                    title={showEditPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showEditPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  {rtl
+                    ? 'ملاحظة: يؤدي تغيير كلمة المرور إلى إنهاء كافة الجلسات النشطة لهذا الحساب فوراً.'
+                    : 'Notice: Resetting password revokes all active sessions for this user immediately.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="editUserActiveCheck"
+                  checked={editFormData.active}
+                  disabled={editTargetUser.email.toLowerCase() === 'admin@tracker.local'}
+                  onChange={(e) => setEditFormData({ ...editFormData, active: e.target.checked })}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-50"
+                />
+                <label htmlFor="editUserActiveCheck" className="text-xs font-semibold text-slate-700">
+                  {t('drivers.active')}
+                </label>
+                {editTargetUser.email.toLowerCase() === 'admin@tracker.local' && (
+                  <span className="text-[10px] text-slate-400">({rtl ? 'محمي دائماً' : 'Always Active'})</span>
+                )}
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditModalOpen(false);
+                    setEditTargetUser(null);
+                  }}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {editLoading ? t('common.loading') : t('common.save')}
                 </button>
               </div>
             </form>

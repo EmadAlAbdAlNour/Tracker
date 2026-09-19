@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { colors, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
-import { CompactHeader } from '../components/CompactHeader';
+import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import { RealGeographicMapView, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
@@ -142,8 +142,8 @@ export function CallCenterHomeScreen({
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Sleek Compact Header */}
-      <CompactHeader
+      {/* Sleek AppHeader */}
+      <AppHeader
         title={
           activeTab === 'dashboard'
             ? rtl ? 'مركز مراقبة العمليات' : 'Dispatch Console'
@@ -430,24 +430,32 @@ export function CallCenterHomeScreen({
                 <Text style={styles.emptyStateText}>{t('notifications.noNotifications')}</Text>
               </View>
             ) : (
-              notifications.map((n: any) => (
-                <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
-                  <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                    <Text style={styles.notificationTitle}>{n.title || 'Incident Report'}</Text>
-                    {!n.isRead && (
-                      <View style={styles.unreadPill}>
-                        <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
-                      </View>
-                    )}
+              notifications.map((n: any) => {
+                const itemTitle = rtl
+                  ? n.titleAr || n.title || n.titleEn || 'تقرير بلاغ ميداني'
+                  : n.titleEn || n.title || n.titleAr || 'Incident Report';
+                const itemMessage = rtl
+                  ? n.messageAr || n.message || n.messageEn || ''
+                  : n.messageEn || n.message || n.messageAr || '';
+                return (
+                  <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
+                    <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <Text style={styles.notificationTitle}>{itemTitle}</Text>
+                      {!n.isRead && (
+                        <View style={styles.unreadPill}>
+                          <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
+                      {itemMessage}
+                    </Text>
+                    <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
+                      {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </Text>
                   </View>
-                  <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
-                    {n.message}
-                  </Text>
-                  <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
-                    {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                  </Text>
-                </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
         )}

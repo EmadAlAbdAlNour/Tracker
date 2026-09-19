@@ -22,6 +22,7 @@ import { AdminHomeScreen } from './screens/AdminHomeScreen';
 import { CallCenterHomeScreen } from './screens/CallCenterHomeScreen';
 import { DriverHomeScreen } from './screens/DriverHomeScreen';
 import { TrackerLogo } from './components/TrackerLogo';
+import { AppIcon } from './components/AppIcon';
 
 const DEVICE_ID_KEY = 'tracker_device_id';
 const SESSION_KEY = 'tracker_driver_session';
@@ -174,6 +175,7 @@ async function apiRequest<T>(
 function LoginScreen({ navigation }: any): React.JSX.Element {
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [locale, setLocaleState] = useState<Locale>(getLocale());
 
@@ -285,7 +287,9 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
               placeholder="user@example.com"
               placeholderTextColor="#94a3b8"
               autoCapitalize="none"
-              style={[styles.input, { textAlign: rtl ? 'right' : 'left' }]}
+              autoCorrect={false}
+              keyboardType="email-address"
+              style={[styles.input, { textAlign: 'left', writingDirection: 'ltr' }]}
             />
           </View>
 
@@ -293,14 +297,25 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
             <Text style={[styles.label, { textAlign: rtl ? 'right' : 'left' }]}>
               {t('login.password')}
             </Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor="#94a3b8"
-              secureTextEntry
-              style={[styles.input, { textAlign: rtl ? 'right' : 'left' }]}
-            />
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor="#94a3b8"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[styles.passwordInput, { textAlign: 'left', writingDirection: 'ltr' }]}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.passwordVisibilityToggle}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <AppIcon name={showPassword ? 'eye-off' : 'eye'} size={18} color="#64748b" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -666,6 +681,30 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 14,
     color: '#0f172a',
+  },
+  passwordInputContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    paddingStart: 14,
+    paddingEnd: 46,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#0f172a',
+  },
+  passwordVisibilityToggle: {
+    position: 'absolute',
+    right: 12,
+    height: 40,
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   primaryButton: {
     backgroundColor: '#059669',

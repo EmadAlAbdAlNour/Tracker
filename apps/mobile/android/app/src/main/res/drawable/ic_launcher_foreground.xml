@@ -1,0 +1,46 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.1"
+        android:scaleY="1.1"
+        android:pivotX="54"
+        android:pivotY="54">
+        <!-- Outer Radar Ring -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#ffffff"
+            android:strokeAlpha="0.3"
+            android:strokeWidth="1.2"
+            android:pathData="M 54,22.5 A 31.5,31.5 0 1 1 53.9,22.5" />
+
+        <!-- Inner Radar Ring -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#ffffff"
+            android:strokeAlpha="0.5"
+            android:strokeWidth="1.6"
+            android:pathData="M 54,32 A 22,22 0 1 1 53.9,32" />
+
+        <!-- Radar Pulse Sector -->
+        <path
+            android:fillColor="#34d399"
+            android:fillAlpha="0.35"
+            android:pathData="M 54,54 L 69.5,32.2 A 31.5,31.5 0 0 0 54,22.5 Z" />
+
+        <!-- Compass Arrow -->
+        <path
+            android:fillColor="#ffffff"
+            android:pathData="M 54,29.5 L 67.1,62.4 L 54,56.1 L 40.9,62.4 Z" />
+
+        <!-- Center Telemetry Core -->
+        <path
+            android:fillColor="#34d399"
+            android:strokeColor="#ffffff"
+            android:strokeWidth="1"
+            android:pathData="M 54,51 A 3,3 0 1 1 53.9,51" />
+    </group>
+</vector>
+

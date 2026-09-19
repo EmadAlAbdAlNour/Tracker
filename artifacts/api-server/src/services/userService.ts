@@ -135,6 +135,31 @@ export async function updateUser(id: string, input: UpdateUserInput) {
     throw createError(404, "USER_NOT_FOUND", "User not found");
   }
 
+  const targetUser = existing[0];
+  const PRIMARY_ADMIN_EMAIL = "admin@tracker.local";
+  const isPrimaryAdmin = targetUser.email.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
+
+  if (isPrimaryAdmin) {
+    if (input.active === false) {
+      throw createError(400, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", "The primary system administrator account cannot be deactivated");
+    }
+    if (input.role && input.role !== "ADMIN") {
+      throw createError(400, "CANNOT_DEMOTE_PRIMARY_ADMIN", "The primary system administrator role cannot be changed");
+    }
+  }
+
+  if (targetUser.role === "ADMIN" && (input.active === false || (input.role && input.role !== "ADMIN"))) {
+    const activeAdmins = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.role, "ADMIN"), eq(usersTable.active, true), ne(usersTable.id, id)))
+      .limit(1);
+
+    if (activeAdmins.length === 0) {
+      throw createError(400, "LAST_ADMIN_PROTECTED", "Cannot deactivate or demote the last active administrator");
+    }
+  }
+
   const updateData: Record<string, unknown> = {
     updatedAt: new Date(),
   };

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db, devicesTable, driversTable, locationPointsTable, refreshTokensTable, shiftsTable, usersTable } from "@workspace/db";
 import { getEnv } from "../config/env";
 import {
@@ -68,6 +68,8 @@ export async function loginUser(emailOrPhone: string, password: string, device?:
     if (!authorized[0]) {
       // no authorized device exists => bind this device
       await db.update(devicesTable).set({ authorized: true, updatedAt: new Date() } as any).where(eq(devicesTable.id, registeredDevice.id));
+      // Clean up superseded un-authorized device records for this driver so superseded devices don't linger
+      await db.delete(devicesTable).where(and(eq(devicesTable.driverId, driver.id), ne(devicesTable.id, registeredDevice.id)));
       await storeRefreshToken(user.id, refreshToken, registeredDevice.id);
     } else if (authorized[0].id === registeredDevice.id) {
       // same authorized device re-logging in
@@ -410,7 +412,7 @@ export async function getCurrentDriverProfile(userId: string) {
   const device = await db
     .select()
     .from(devicesTable)
-    .where(eq(devicesTable.driverId, driver.id))
+    .where(and(eq(devicesTable.driverId, driver.id), eq(devicesTable.authorized, true)))
     .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.updatedAt))
     .limit(1);
 
@@ -545,7 +547,7 @@ export async function getDriverDevice(userId: string) {
   const rows = await db
     .select()
     .from(devicesTable)
-    .where(eq(devicesTable.driverId, driver.id))
+    .where(and(eq(devicesTable.driverId, driver.id), eq(devicesTable.authorized, true)))
     .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.updatedAt))
     .limit(1);
 
@@ -867,7 +869,7 @@ export async function getDriverTrackingStatus(driverId: string) {
   const device = await db
     .select()
     .from(devicesTable)
-    .where(eq(devicesTable.driverId, driverId))
+    .where(and(eq(devicesTable.driverId, driverId), eq(devicesTable.authorized, true)))
     .orderBy(desc(devicesTable.lastSeen), desc(devicesTable.updatedAt))
     .limit(1);
 
