@@ -107,7 +107,7 @@ jobs:
         working-directory: artifacts/api-server
         env:
           CI_UPLOAD_SECRET: ${{ secrets.CI_UPLOAD_SECRET }}
-          PRODUCTION_URL: 'https://tracker-alpha-puce.vercel.app' # Modify if you use a different production domain
+          PRODUCTION_URL: 'https://tracker-web-psi.vercel.app' # Modify if you use a different production domain
           APK_PATH: ../../apps/mobile/android/app/build/outputs/apk/release/app-release.apk
         run: |
           node scripts/publish-release.mjs
