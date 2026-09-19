@@ -85,7 +85,7 @@ jobs:
             exit 1
           fi
           
-          CERT_FINGERPRINT=$(apksigner verify --print-certs "$APK_PATH" | grep "SHA-256 digest:" | awk '{print $NF}')
+          CERT_FINGERPRINT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK_PATH" | grep "SHA-256 digest:" | awk '{print $NF}')
           EXPECTED_FINGERPRINT="fa9d044e9c16e33b9d2e17243bd06def803407d85c79d87b739e24ec0db291d3"
           
           if [ "$CERT_FINGERPRINT" != "$EXPECTED_FINGERPRINT" ]; then
