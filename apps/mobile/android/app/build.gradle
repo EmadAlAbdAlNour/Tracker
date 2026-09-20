@@ -125,19 +125,9 @@ android {
         release {
             def keystorePropertiesFile = rootProject.file("keystore.properties")
             def keystoreProperties = new Properties()
-            println "Checking for keystore properties at: ${keystorePropertiesFile.absolutePath}, exists: ${keystorePropertiesFile.exists()}"
             if (keystorePropertiesFile.exists()) {
                 keystorePropertiesFile.withInputStream { stream ->
                     keystoreProperties.load(stream)
-                }
-            } else {
-                // Try relative to project dir just in case
-                def altFile = file("../keystore.properties")
-                println "Checking alt keystore properties at: ${altFile.absolutePath}, exists: ${altFile.exists()}"
-                if (altFile.exists()) {
-                    altFile.withInputStream { stream ->
-                        keystoreProperties.load(stream)
-                    }
                 }
             }
 

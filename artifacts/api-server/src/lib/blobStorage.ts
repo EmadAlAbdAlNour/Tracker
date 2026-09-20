@@ -213,9 +213,6 @@ export function getLocalReleaseApkPath(): string | null {
   const candidatePaths = [
     path.resolve(process.cwd(), "apps/mobile/android/app/build/outputs/apk/release/app-release.apk"),
     path.resolve(process.cwd(), "../apps/mobile/android/app/build/outputs/apk/release/app-release.apk"),
-    path.resolve(process.cwd(), "apps/web/public/Tracker-1.0.0.apk"),
-    path.resolve(process.cwd(), "../apps/web/public/Tracker-1.0.0.apk"),
-    path.resolve(process.cwd(), "public/Tracker-1.0.0.apk"),
   ];
 
   for (const p of candidatePaths) {

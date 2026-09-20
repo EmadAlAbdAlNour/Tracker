@@ -125,7 +125,7 @@ export async function downloadAndInstallUpdate(
     downloadUrl,
     localFileUri,
     {},
-    (downloadProgress) => {
+    (downloadProgress: FileSystem.DownloadProgressData) => {
       if (downloadProgress.totalBytesExpectedToWrite > 0 && onProgress) {
         const percent = Math.min(
           1,

@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 
-function Generate-TrackerIcon {
+function New-TrackerIcon {
     param(
         [int]$size,
         [string]$outputPath,
@@ -104,13 +104,13 @@ $resDir = "C:\Users\Emad\Desktop\Tracker\Tracker\apps\mobile\android\app\src\mai
 foreach ($k in $densities.Keys) {
     $dim = $densities[$k]
     # Standard square squircle icon
-    Generate-TrackerIcon -size $dim -outputPath "$resDir\mipmap-$k\ic_launcher.png" -isRound $false
+    New-TrackerIcon -size $dim -outputPath "$resDir\mipmap-$k\ic_launcher.png" -isRound $false
     # Round icon
-    Generate-TrackerIcon -size $dim -outputPath "$resDir\mipmap-$k\ic_launcher_round.png" -isRound $true
+    New-TrackerIcon -size $dim -outputPath "$resDir\mipmap-$k\ic_launcher_round.png" -isRound $true
 }
 
 # Assets folder for Expo / React Native
 $assetsDir = "C:\Users\Emad\Desktop\Tracker\Tracker\apps\mobile\assets"
-Generate-TrackerIcon -size 1024 -outputPath "$assetsDir\icon.png" -isRound $false
-Generate-TrackerIcon -size 1024 -outputPath "$assetsDir\adaptive-icon.png" -isRound $false -foregroundOnly $true
+New-TrackerIcon -size 1024 -outputPath "$assetsDir\icon.png" -isRound $false
+New-TrackerIcon -size 1024 -outputPath "$assetsDir\adaptive-icon.png" -isRound $false -foregroundOnly $true
 

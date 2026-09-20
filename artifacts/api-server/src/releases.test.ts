@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import app from "./app";
+import { getLatestRelease } from "./lib/blobStorage";
 
 describe("Releases & App-Version API", () => {
   it("GET /api/app-version returns valid version metadata without authentication", async () => {
@@ -16,8 +17,9 @@ describe("Releases & App-Version API", () => {
 
   it("GET /api/releases/latest is an alias returning the same release metadata", async () => {
     const res = await request(app).get("/api/releases/latest");
+    const expectedRelease = await getLatestRelease();
     expect(res.status).toBe(200);
-    expect(res.body.version).toBe("1.0.0");
+    expect(res.body.version).toBe(expectedRelease.version);
   });
 
   it("GET /api/releases/latest/download returns download stream or redirect", async () => {

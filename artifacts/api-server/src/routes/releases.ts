@@ -96,10 +96,10 @@ router.post("/upload", requireAuth, requireRole("ADMIN"), async (req: Authentica
       { id: req.user!.id, role: req.user!.role }
     );
 
-    res.status(200).json(jsonResponse);
+    return res.status(200).json(jsonResponse);
   } catch (error) {
     logger.error({ error }, "Error handling direct blob upload");
-    next(error);
+    return next(error);
   }
 });
 

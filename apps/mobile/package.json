@@ -20,6 +20,7 @@
     "@react-navigation/native-stack": "^7.0.0",
     "expo": "~53.0.0",
     "expo-battery": "^57.0.3",
+    "expo-file-system": "^18.1.11",
     "expo-location": "~18.1.6",
     "expo-secure-store": "~14.2.4",
     "expo-status-bar": "~2.2.3",
