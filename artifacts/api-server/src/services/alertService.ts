@@ -473,6 +473,12 @@ export function startAlertEvaluationScheduler(intervalMs = 30000): void {
     evaluateAllActiveDriverAlerts().catch((err) => {
       console.error("Scheduled alert evaluation failed:", err);
     });
+    // Automatic recurring 48h telemetry retention (throttled to at most once per hour)
+    import("./retentionService").then(({ maybeRunRetentionCleanup }) => {
+      maybeRunRetentionCleanup().catch((err) => {
+        console.error("Scheduled retention evaluation failed:", err);
+      });
+    }).catch(() => {});
   }, intervalMs);
 }
 

@@ -28,6 +28,7 @@ export default function DashboardOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTabVisible, setIsTabVisible] = useState(true);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -59,12 +60,40 @@ export default function DashboardOverviewPage() {
     }
   }, [isAuthenticated]);
 
+  // Tab visibility listener: immediately fetch authoritative state on returning to tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const visible = document.visibilityState === 'visible';
+      setIsTabVisible(visible);
+      if (visible && isAuthenticated) {
+        loadData(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, loadData]);
+
+  // Adaptive polling interval: 5s while tab is visible and active shifts exist,
+  // 15s if no active shifts, 30s when tab is hidden
   useEffect(() => {
     if (!isAuthenticated) return;
     loadData(true);
-    const interval = setInterval(() => loadData(false), 10000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated, loadData]);
+
+    const getPollingIntervalMs = () => {
+      if (!isTabVisible) return 30000;
+      if (fleet && fleet.summary.activeShifts === 0) return 15000;
+      return 5000;
+    };
+
+    const intervalId = setInterval(() => {
+      loadData(false);
+    }, getPollingIntervalMs());
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, isTabVisible, fleet?.summary?.activeShifts, loadData]);
 
   if (loading && !fleet) {
     return (

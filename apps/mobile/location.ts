@@ -6,8 +6,8 @@ import { normalizeNetworkStatus } from './telemetry';
 
 export const LOCATION_TASK_NAME = 'tracker-driver-location-task';
 export const LOCATION_QUEUE_KEY = 'tracker_driver_location_queue';
-export const DEFAULT_LOCATION_INTERVAL_MS = Number(process.env.EXPO_PUBLIC_LOCATION_INTERVAL_MS ?? '20000');
-export const DEFAULT_LOCATION_DISTANCE_METERS = Number(process.env.EXPO_PUBLIC_LOCATION_DISTANCE_METERS ?? '25');
+export const DEFAULT_LOCATION_INTERVAL_MS = Number(process.env.EXPO_PUBLIC_LOCATION_INTERVAL_MS ?? '5000');
+export const DEFAULT_LOCATION_DISTANCE_METERS = Number(process.env.EXPO_PUBLIC_LOCATION_DISTANCE_METERS ?? '10');
 
 export type DriverTelemetryState = {
   batteryPercentage: number | null;

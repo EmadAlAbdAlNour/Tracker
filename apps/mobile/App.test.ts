@@ -1,4 +1,34 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-native', () => ({
+  Platform: { OS: 'android', constants: {} },
+  StyleSheet: { create: (s: any) => s },
+  AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
+}));
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: vi.fn().mockResolvedValue(null),
+    setItem: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock('expo-battery', () => ({
+  getBatteryLevelAsync: vi.fn().mockResolvedValue(0.8),
+  getBatteryStateAsync: vi.fn().mockResolvedValue(1),
+  BatteryState: { CHARGING: 1, FULL: 2 },
+}));
+vi.mock('expo-location', () => ({
+  Accuracy: { High: 4 },
+  getProviderStatusAsync: vi.fn().mockResolvedValue({ locationServicesEnabled: true }),
+  requestForegroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
+  requestBackgroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
+  startLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
+  stopLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
+  hasStartedLocationUpdatesAsync: vi.fn().mockResolvedValue(false),
+}));
+vi.mock('expo-task-manager', () => ({
+  defineTask: vi.fn(),
+  isTaskDefined: vi.fn().mockReturnValue(false),
+}));
 import { resolveHomeRoute } from './roleRouting';
 import { normalizeNetworkStatus } from './telemetry';
 import { isAllowedRole, isValidSession } from './session';
@@ -75,6 +105,18 @@ describe('mobile i18n & Western ASCII digits', () => {
     expect(t('driverStates.TRACKING_ACTIVE')).toBeTruthy();
     expect(t('driverStates.OFF_DUTY')).toBeTruthy();
     expect(t('map.centerRestaurant')).toBeTruthy();
+  });
+});
+
+describe('mobile telemetry configuration', () => {
+  it('configures default location interval to approximately 5 seconds', async () => {
+    const { DEFAULT_LOCATION_INTERVAL_MS } = await import('./location');
+    expect(DEFAULT_LOCATION_INTERVAL_MS).toBe(5000);
+  });
+
+  it('configures default distance filter to approximately 10 meters', async () => {
+    const { DEFAULT_LOCATION_DISTANCE_METERS } = await import('./location');
+    expect(DEFAULT_LOCATION_DISTANCE_METERS).toBe(10);
   });
 });
 

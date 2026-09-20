@@ -2,6 +2,7 @@ import { db, driversTable, usersTable, shiftsTable, devicesTable, locationPoints
 import { eq, and, sql } from "drizzle-orm";
 import { getRestaurantSettings, getAlertSettings } from "./settingsService";
 import { calculateDistanceMeters, evaluateDriverOfflineAlert } from "./alertService";
+import { maybeRunRetentionCleanup } from "./retentionService";
 
 export interface FleetDriverLiveStatus {
   driverId: string;
@@ -75,6 +76,11 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
     getRestaurantSettings(),
     getAlertSettings(),
   ]);
+
+  // Non-blocking hourly retention cleanup for location points older than 48 hours
+  maybeRunRetentionCleanup().catch((err) => {
+    console.error("Retention cleanup error in fleetService:", err);
+  });
 
   // Fetch all drivers with their associated user
   const driverRows = await db

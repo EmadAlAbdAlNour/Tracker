@@ -125,12 +125,15 @@ export function DriverHomeScreen({
     const interval = setInterval(async () => {
       const telem = await collectDriverTelemetry();
       setTelemetry(telem);
+      if (trackingActive) {
+        await flushQueuedLocationsGuarded(apiUrl).catch(() => {});
+      }
       const count = await getQueuedLocationCount();
       setQueuedCount(count);
-    }, 10000);
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [apiUrl, refreshState]);
+  }, [apiUrl, refreshState, trackingActive]);
 
   const onRefresh = async () => {
     setRefreshing(true);

@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
 import {
   BatteryCharging,
   Car,
@@ -131,6 +131,106 @@ const LeafletMap = dynamic(
       return null;
     }
 
+    const DriverMarkerItem = memo(function DriverMarkerItem({
+      driver,
+      isSelected,
+      onSelectDriver,
+    }: {
+      driver: FleetDriverLiveStatus;
+      isSelected: boolean;
+      onSelectDriver: (driverId: string) => void;
+    }) {
+      const lat = driver.location!.latitude;
+      const lng = driver.location!.longitude;
+      const visuals = getDriverVisuals(driver);
+
+      return (
+        <CircleMarker
+          center={[lat, lng]}
+          radius={isSelected ? visuals.radius + 3 : visuals.radius}
+          eventHandlers={{
+            click: () => onSelectDriver(driver.driverId),
+          }}
+          pathOptions={{
+            color: isSelected ? '#1e293b' : '#ffffff',
+            fillColor: visuals.fillColor,
+            fillOpacity: visuals.opacity,
+            weight: isSelected ? 3.5 : visuals.weight,
+          }}
+        >
+          <Popup>
+            <div className="p-1.5 space-y-2 text-xs min-w-[200px]">
+              <div className="border-b border-slate-100 pb-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">{driver.driverName}</span>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{
+                      backgroundColor: `${visuals.fillColor}22`,
+                      color: visuals.color,
+                    }}
+                  >
+                    {visuals.statusLabel}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                  {t('drivers.employeeId')}: {formatWesternNumber(driver.employeeId)}
+                </div>
+              </div>
+
+              <div className="space-y-1 text-slate-600">
+                {driver.location?.speed != null && (
+                  <div className="flex justify-between">
+                    <span>{t('map.speed')}:</span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
+                    </span>
+                  </div>
+                )}
+
+                {driver.distanceToRestaurantMeters != null && (
+                  <div className="flex justify-between">
+                    <span>{t('map.distance')}:</span>
+                    <span className="font-mono text-slate-800">
+                      {formatWesternNumber(driver.distanceToRestaurantMeters)} {t('map.meters')}
+                    </span>
+                  </div>
+                )}
+
+                {driver.device?.batteryPercentage != null && (
+                  <div className="flex justify-between items-center">
+                    <span>{t('drivers.battery')}:</span>
+                    <span className="font-semibold text-slate-800 flex items-center gap-1">
+                      {driver.device.isCharging ? (
+                        <BatteryCharging className="h-3 w-3 text-emerald-600" />
+                      ) : null}
+                      {formatWesternNumber(driver.device.batteryPercentage)}%
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                  <span>{t('map.lastUpdate')}:</span>
+                  <span className="font-medium text-slate-600">
+                    {formatTimeAgo(driver.location?.recordedAt)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-1.5 border-t border-slate-100 text-center">
+                <Link
+                  href={`/dashboard/drivers/${driver.driverId}`}
+                  className="inline-block w-full rounded-lg bg-slate-900 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 text-center"
+                >
+                  {t('drivers.viewDetails')}
+                </Link>
+              </div>
+            </div>
+          </Popup>
+        </CircleMarker>
+      );
+    });
+
     return function MapInner({
       fleet,
       statusFilter,
@@ -233,99 +333,14 @@ const LeafletMap = dynamic(
           )}
 
           {/* Drivers Markers */}
-          {filteredDrivers.map((driver) => {
-            const lat = driver.location!.latitude;
-            const lng = driver.location!.longitude;
-            const visuals = getDriverVisuals(driver);
-            const isSelected = driver.driverId === selectedDriverId;
-
-            return (
-              <CircleMarker
-                key={driver.driverId}
-                center={[lat, lng]}
-                radius={isSelected ? visuals.radius + 3 : visuals.radius}
-                eventHandlers={{
-                  click: () => onSelectDriver(driver.driverId),
-                }}
-                pathOptions={{
-                  color: isSelected ? '#1e293b' : '#ffffff',
-                  fillColor: visuals.fillColor,
-                  fillOpacity: visuals.opacity,
-                  weight: isSelected ? 3.5 : visuals.weight,
-                }}
-              >
-                <Popup>
-                  <div className="p-1.5 space-y-2 text-xs min-w-[200px]">
-                    <div className="border-b border-slate-100 pb-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900 text-sm">{driver.driverName}</span>
-                        <span
-                          className="rounded-full px-2 py-0.5 text-[10px] font-bold"
-                          style={{
-                            backgroundColor: `${visuals.fillColor}22`,
-                            color: visuals.color,
-                          }}
-                        >
-                          {visuals.statusLabel}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                        {t('drivers.employeeId')}: {formatWesternNumber(driver.employeeId)}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1 text-slate-600">
-                      {driver.location?.speed != null && (
-                        <div className="flex justify-between">
-                          <span>{t('map.speed')}:</span>
-                          <span className="font-mono font-semibold text-slate-800">
-                            {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
-                          </span>
-                        </div>
-                      )}
-
-                      {driver.distanceToRestaurantMeters != null && (
-                        <div className="flex justify-between">
-                          <span>{t('map.distance')}:</span>
-                          <span className="font-mono text-slate-800">
-                            {formatWesternNumber(driver.distanceToRestaurantMeters)} {t('map.meters')}
-                          </span>
-                        </div>
-                      )}
-
-                      {driver.device?.batteryPercentage != null && (
-                        <div className="flex justify-between items-center">
-                          <span>{t('drivers.battery')}:</span>
-                          <span className="font-semibold text-slate-800 flex items-center gap-1">
-                            {driver.device.isCharging ? (
-                              <BatteryCharging className="h-3 w-3 text-emerald-600" />
-                            ) : null}
-                            {formatWesternNumber(driver.device.batteryPercentage)}%
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
-                        <span>{t('map.lastUpdate')}:</span>
-                        <span className="font-medium text-slate-600">
-                          {formatTimeAgo(driver.location?.recordedAt)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="pt-1.5 border-t border-slate-100 text-center">
-                      <Link
-                        href={`/dashboard/drivers/${driver.driverId}`}
-                        className="inline-block w-full rounded-lg bg-slate-900 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 text-center"
-                      >
-                        {t('drivers.viewDetails')}
-                      </Link>
-                    </div>
-                  </div>
-                </Popup>
-              </CircleMarker>
-            );
-          })}
+          {filteredDrivers.map((driver) => (
+            <DriverMarkerItem
+              key={driver.driverId}
+              driver={driver}
+              isSelected={driver.driverId === selectedDriverId}
+              onSelectDriver={onSelectDriver}
+            />
+          ))}
         </MapContainer>
       );
     };
@@ -344,7 +359,9 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTabVisible, setIsTabVisible] = useState(true);
   const mountedRef = useRef(true);
+  const latestRecordedAtRef = useRef<Map<string, number>>(new Map());
 
   const handleSelectDriver = useCallback((driverId: string) => {
     setSelectedDriverId(driverId);
@@ -365,7 +382,49 @@ export default function MapPage() {
     try {
       const data = await getLiveFleetStatus();
       if (mountedRef.current) {
-        setFleet(data);
+        setFleet((prevFleet) => {
+          if (!prevFleet) {
+            // Initialize tracking map on first load
+            data.drivers.forEach((d) => {
+              if (d.location?.recordedAt) {
+                latestRecordedAtRef.current.set(d.driverId, new Date(d.location.recordedAt).getTime());
+              }
+            });
+            return data;
+          }
+
+          // Out-of-order / stale location protection:
+          // Ignore incoming location if incoming.recordedAt <= current.recordedAt
+          const sanitizedDrivers = data.drivers.map((incoming) => {
+            const incomingRecordedAt = incoming.location?.recordedAt;
+            if (!incomingRecordedAt) return incoming;
+
+            const incomingTime = new Date(incomingRecordedAt).getTime();
+            const lastAccepted = latestRecordedAtRef.current.get(incoming.driverId) ?? 0;
+
+            if (incomingTime < lastAccepted) {
+              // Stale/out-of-order point (e.g. from offline queue replay): preserve current newer location
+              const existing = prevFleet.drivers.find((d) => d.driverId === incoming.driverId);
+              if (existing?.location) {
+                return {
+                  ...incoming,
+                  location: existing.location,
+                  operationalStatus: existing.operationalStatus,
+                  distanceToRestaurantMeters: existing.distanceToRestaurantMeters,
+                  isInsideGeofence: existing.isInsideGeofence,
+                };
+              }
+            } else {
+              latestRecordedAtRef.current.set(incoming.driverId, incomingTime);
+            }
+            return incoming;
+          });
+
+          return {
+            ...data,
+            drivers: sanitizedDrivers,
+          };
+        });
         setError(null);
       }
     } catch (err) {
@@ -380,12 +439,40 @@ export default function MapPage() {
     }
   }, [isAuthenticated]);
 
+  // Tab visibility listener: immediately fetch authoritative state on returning to tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const visible = document.visibilityState === 'visible';
+      setIsTabVisible(visible);
+      if (visible && isAuthenticated) {
+        loadData(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, loadData]);
+
+  // Adaptive polling interval: 5s while tab is visible and active shifts exist,
+  // 15s if no active shifts, 30s when tab is hidden
   useEffect(() => {
     if (!isAuthenticated) return;
     loadData(true);
-    const interval = setInterval(() => loadData(false), 10000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated, loadData]);
+
+    const getPollingIntervalMs = () => {
+      if (!isTabVisible) return 30000; // 30s when tab is backgrounded
+      if (fleet && fleet.summary.activeShifts === 0) return 15000; // 15s when fleet is inactive
+      return 5000; // 5s when actively viewed
+    };
+
+    const intervalId = setInterval(() => {
+      loadData(false);
+    }, getPollingIntervalMs());
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, isTabVisible, fleet?.summary?.activeShifts, loadData]);
 
   // Filter drivers for the drawer list
   const visibleDrivers = useMemo(() => {
