@@ -58,6 +58,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           allowedContentTypes,
           tokenPayload: JSON.stringify({ pathname }),
           addRandomSuffix: false,
+          allowOverwrite: true,
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB max
         };
       }
