@@ -48,6 +48,7 @@ export function CallCenterHomeScreen({
   const [fleetLoading, setFleetLoading] = useState(true);
   const [fleetError, setFleetError] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
+  const [driverFocusTrigger, setDriverFocusTrigger] = useState(0);
   const [driverModalVisible, setDriverModalVisible] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
   const [mapFilter, setMapFilter] = useState<string>('ALL');
@@ -147,7 +148,12 @@ export function CallCenterHomeScreen({
     latitude: fleet?.restaurant?.latitude ?? 30.0444,
     longitude: fleet?.restaurant?.longitude ?? 31.2357,
     radiusMeters: fleet?.restaurant?.radiusMeters ?? 1500,
-  }), [fleet]);
+  }), [
+    fleet?.restaurant?.name,
+    fleet?.restaurant?.latitude,
+    fleet?.restaurant?.longitude,
+    fleet?.restaurant?.radiusMeters,
+  ]);
 
   const filteredDrivers = useMemo(() => {
     return (fleet?.drivers ?? []).filter((d: any) => {
@@ -404,6 +410,7 @@ export function CallCenterHomeScreen({
                 restaurant={restaurantPoint}
                 drivers={filteredDrivers}
                 selectedDriverId={selectedDriver?.driverId}
+                driverFocusTrigger={driverFocusTrigger}
                 onSelectDriver={(d) => setSelectedDriver(d)}
                 onViewDriverDetail={(d) => {
                   setSelectedDriver(d);

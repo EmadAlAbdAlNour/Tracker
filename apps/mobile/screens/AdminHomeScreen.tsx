@@ -52,6 +52,7 @@ export function AdminHomeScreen({
   const [fleetLoading, setFleetLoading] = useState(true);
   const [fleetError, setFleetError] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
+  const [driverFocusTrigger, setDriverFocusTrigger] = useState(0);
   const [driverModalVisible, setDriverModalVisible] = useState(false);
   const [driverSearch, setDriverSearch] = useState('');
   const [mapFilter, setMapFilter] = useState<string>('ALL');
@@ -434,7 +435,16 @@ export function AdminHomeScreen({
     latitude: fleet?.restaurant?.latitude ?? settingsRestaurant.latitude ?? 30.0444,
     longitude: fleet?.restaurant?.longitude ?? settingsRestaurant.longitude ?? 31.2357,
     radiusMeters: fleet?.restaurant?.radiusMeters ?? settingsRestaurant.radiusMeters ?? 1500,
-  }), [fleet, settingsRestaurant]);
+  }), [
+    fleet?.restaurant?.name,
+    fleet?.restaurant?.latitude,
+    fleet?.restaurant?.longitude,
+    fleet?.restaurant?.radiusMeters,
+    settingsRestaurant.name,
+    settingsRestaurant.latitude,
+    settingsRestaurant.longitude,
+    settingsRestaurant.radiusMeters,
+  ]);
 
   // Filtered drivers
   const filteredDrivers = useMemo(() => {
@@ -734,6 +744,7 @@ export function AdminHomeScreen({
                 restaurant={restaurantPoint}
                 drivers={filteredDrivers}
                 selectedDriverId={selectedDriver?.driverId}
+                driverFocusTrigger={driverFocusTrigger}
                 onSelectDriver={(d) => setSelectedDriver(d)}
                 onViewDriverDetail={(d) => {
                   setSelectedDriver(d);

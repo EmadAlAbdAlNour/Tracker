@@ -124,5 +124,31 @@ describe('mobile telemetry configuration', () => {
     const { DEFAULT_LOCATION_DISTANCE_METERS } = await import('./location');
     expect(DEFAULT_LOCATION_DISTANCE_METERS).toBe(10);
   });
+
+  it('resumes background tracking when inactive on active shift', async () => {
+    const Location = await import('expo-location');
+    const { startBackgroundTracking, LOCATION_TASK_NAME } = await import('./location');
+
+    (Location.hasStartedLocationUpdatesAsync as any).mockResolvedValueOnce(false);
+    const started = await startBackgroundTracking();
+    expect(started).toBe(true);
+    expect(Location.startLocationUpdatesAsync).toHaveBeenCalledWith(
+      LOCATION_TASK_NAME,
+      expect.objectContaining({
+        timeInterval: 5000,
+        distanceInterval: 10,
+      })
+    );
+  });
+
+  it('no-ops startBackgroundTracking when background updates are already running', async () => {
+    const Location = await import('expo-location');
+    const { startBackgroundTracking } = await import('./location');
+
+    (Location.hasStartedLocationUpdatesAsync as any).mockResolvedValueOnce(true);
+    const started = await startBackgroundTracking();
+    expect(started).toBe(true);
+  });
 });
+
 

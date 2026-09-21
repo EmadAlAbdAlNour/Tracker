@@ -41,6 +41,7 @@ interface RealGeographicMapViewProps {
   restaurant: MapRestaurantPoint;
   drivers: MapDriverPoint[];
   selectedDriverId?: string | null;
+  driverFocusTrigger?: number;
   onSelectDriver?: (driver: MapDriverPoint) => void;
   onViewDriverDetail?: (driver: MapDriverPoint) => void;
   height?: number | string;
@@ -51,6 +52,7 @@ export function RealGeographicMapView({
   restaurant,
   drivers,
   selectedDriverId,
+  driverFocusTrigger,
   onSelectDriver,
   onViewDriverDetail,
   height = '100%',
@@ -309,6 +311,10 @@ export function RealGeographicMapView({
 </html>`;
   }, [restaurant.latitude, restaurant.longitude, restaurant.radiusMeters, restaurant.name, rtl]);
 
+  // Memoize WebView source object to prevent native Android reloads on fleet polling re-renders
+  const webViewSource = useMemo(() => ({ html: mapHtml }), [mapHtml]);
+  const lastHandledDriverFocusTriggerRef = useRef(0);
+
   const sendDriversUpdate = useCallback(() => {
     if (webViewRef.current && isWebViewReadyRef.current) {
       const payload = JSON.stringify(serializedDrivers);
@@ -352,14 +358,20 @@ export function RealGeographicMapView({
   const handleRecenter = () => runWebViewJs('window.mapRecenter()');
   const handleFitFleet = () => runWebViewJs('window.mapFitFleet()');
 
-  // Focus driver if selectedDriver changes
+  // Focus driver camera ONLY when driverFocusTrigger explicitly increments
   useEffect(() => {
-    if (selectedDriver?.location) {
+    if (
+      driverFocusTrigger != null &&
+      driverFocusTrigger > lastHandledDriverFocusTriggerRef.current &&
+      selectedDriver?.location?.latitude &&
+      selectedDriver?.location?.longitude
+    ) {
+      lastHandledDriverFocusTriggerRef.current = driverFocusTrigger;
       runWebViewJs(
         `window.mapFocusDriver(${selectedDriver.location.latitude}, ${selectedDriver.location.longitude})`
       );
     }
-  }, [selectedDriver]);
+  }, [driverFocusTrigger, selectedDriver]);
 
   const connectedDriverCount = drivers.filter(
     (d) => d.operationalStatus !== 'OFFLINE' && d.location?.latitude && d.location?.longitude
@@ -371,7 +383,7 @@ export function RealGeographicMapView({
       <WebView
         ref={webViewRef}
         originWhitelist={['*']}
-        source={{ html: mapHtml }}
+        source={webViewSource}
         style={styles.webView}
         onMessage={handleMessage}
         javaScriptEnabled

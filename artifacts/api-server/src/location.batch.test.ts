@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as authService from './services/authService';
 import * as dbModule from '@workspace/db';
 import { shiftsTable } from '@workspace/db';
+import { computeOperationalStatus } from './services/fleetService';
 
 function makeUser(id: string) {
   return { id, role: 'DRIVER', active: true } as any;
@@ -201,5 +202,167 @@ describe('Location batch service', () => {
     const inputs = [{ clientLocationId: 'c1', latitude: 10, longitude: 10, recordedAt: now }];
 
     await expect(authService.submitDriverLocationBatch(user.id, inputs as any)).rejects.toMatchObject({ statusCode: 409 });
+  });
+});
+
+describe('Operational status & delayed telemetry evaluation', () => {
+  it('evaluates speed >= 1.0 m/s as MOVING when online and fresh', () => {
+    const now = Date.now();
+    const status = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 1.5,
+      },
+      now,
+    });
+    expect(status).toBe('MOVING');
+
+    const statusExact = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 1.0,
+      },
+      now,
+    });
+    expect(statusExact).toBe('MOVING');
+  });
+
+  it('evaluates speed < 1.0 m/s as STOPPED when outside geofence', () => {
+    const now = Date.now();
+    const status = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 0.8,
+      },
+      now,
+    });
+    expect(status).toBe('STOPPED');
+
+    const statusZero = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 0,
+      },
+      now,
+    });
+    expect(statusZero).toBe('STOPPED');
+
+    const statusNullSpeed = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: null,
+      },
+      now,
+    });
+    expect(statusNullSpeed).toBe('STOPPED');
+  });
+
+  it('evaluates point recorded > 5 minutes ago as STOPPED even with high speed (stale fallback)', () => {
+    const now = Date.now();
+    // 6 minutes ago = 360,000 ms
+    const sixMinutesAgo = new Date(now - 6 * 60 * 1000).toISOString();
+    const status = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: sixMinutesAgo,
+        speed: 10.0, // 36 km/h, but stale!
+      },
+      now,
+    });
+    expect(status).toBe('STOPPED');
+  });
+
+  it('evaluates driver without active shift or offline as OFFLINE', () => {
+    const now = Date.now();
+    const statusNoShift = computeOperationalStatus({
+      hasActiveShift: false,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 5.0,
+      },
+      now,
+    });
+    expect(statusNoShift).toBe('OFFLINE');
+
+    const statusOffline = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: false,
+      isInsideGeofence: false,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 5.0,
+      },
+      now,
+    });
+    expect(statusOffline).toBe('OFFLINE');
+  });
+
+  it('evaluates driver inside geofence as AT_RESTAURANT', () => {
+    const now = Date.now();
+    const status = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: true,
+      location: {
+        recorded_at: new Date(now - 2000).toISOString(),
+        speed: 5.0,
+      },
+      now,
+    });
+    expect(status).toBe('AT_RESTAURANT');
+  });
+
+  it('ensures older recorded_at point does not displace newer point when chronological ordering is applied', () => {
+    const now = Date.now();
+    const newerPoint = {
+      clientLocationId: 'p-new',
+      recorded_at: new Date(now - 5000).toISOString(),
+      speed: 0.2, // STOPPED
+      latitude: 30.1,
+      longitude: 31.1,
+    };
+    const olderDelayedPoint = {
+      clientLocationId: 'p-old-delayed',
+      recorded_at: new Date(now - 60000).toISOString(),
+      speed: 8.5, // MOVING
+      latitude: 30.0,
+      longitude: 31.0,
+    };
+
+    // Even if out-of-order points arrive or are sorted, ORDER BY recorded_at DESC selects the newest point
+    const points = [olderDelayedPoint, newerPoint];
+    const sorted = [...points].sort(
+      (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+    );
+
+    expect(sorted[0].clientLocationId).toBe('p-new');
+
+    const status = computeOperationalStatus({
+      hasActiveShift: true,
+      isOnline: true,
+      isInsideGeofence: false,
+      location: sorted[0],
+      now,
+    });
+    expect(status).toBe('STOPPED');
   });
 });

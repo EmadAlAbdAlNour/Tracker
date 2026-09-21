@@ -43,7 +43,20 @@ function getRetryDelayMs(retryCount: number): number {
   return Math.min(30_000, 1_000 * 2 ** Math.max(0, retryCount));
 }
 
+let queueLock: Promise<any> = Promise.resolve();
+
+// Shared async mutex for serializing read-modify-write queue operations
+export function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = queueLock.then(fn, fn);
+  queueLock = next.then(() => {}, () => {});
+  return next;
+}
+
 let flushing = false;
+
+export function isFlushing(): boolean {
+  return flushing;
+}
 
 // guarded single-flight flush that reads auth session internally to ensure fresh token
 export async function flushQueuedLocationsGuarded(apiBaseUrl?: string): Promise<number> {
@@ -96,14 +109,17 @@ export async function flushQueuedLocationsGuarded(apiBaseUrl?: string): Promise<
   }
 }
 
-// primitive batch flush: sends up to 20 points in a single request
+// primitive batch flush: sends up to 20 points in a single request with AbortController timeout and queue serialization
 export async function flushQueuedLocations(apiBaseUrl: string, accessToken: string): Promise<number> {
-  const queue = await readQueue();
-  const eligible = queue.filter((p) => p.nextRetryAt <= Date.now());
-  if (!eligible.length) return 0;
+  // Step 1: Select batch under queue lock (do NOT hold lock during network request!)
+  const batch = await withQueueLock(async () => {
+    const queue = await readQueue();
+    const eligible = queue.filter((p) => p.nextRetryAt <= Date.now());
+    if (!eligible.length) return [];
+    return eligible.slice(0, 20);
+  });
 
-  // take up to 20 points
-  const batch = eligible.slice(0, 20);
+  if (!batch.length) return 0;
 
   const payload = batch.map((point) => ({
     clientLocationId: point.localId,
@@ -121,96 +137,142 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
     networkStatus: point.networkStatus ?? null,
   }));
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, 10_000);
+
+  let response: Response;
   try {
-    const response = await fetch(`${apiBaseUrl}/api/drivers/me/location/batch`, {
+    response = await fetch(`${apiBaseUrl}/api/drivers/me/location/batch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        return -1;
-      }
-      if (response.status === 409 || response.status === 403) {
-        // Shift not active or device unauthorized: discard stale points to prevent eternal queue jamming
-        const batchIds = new Set(batch.map((p) => p.localId));
-        const persisted = queue.filter((p) => !batchIds.has(p.localId));
-        await writeQueue(persisted);
-        return 0;
-      }
-      // preserve batch with increased retry, dropping if exceeded 8 retries
-      const failed = batch
-        .filter((point) => point.retryCount < 8)
-        .map((point) => ({
-          ...point,
-          retryCount: point.retryCount + 1,
-          nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
-        }));
+  } catch (err: any) {
+    // Network error or timeout (AbortError): acquire lock and update retry state on CURRENT queue
+    await withQueueLock(async () => {
+      const currentQueue = await readQueue();
       const batchIds = new Set(batch.map((p) => p.localId));
-      const persisted = queue.filter((p) => !batchIds.has(p.localId)).concat(failed);
-      await writeQueue(persisted);
-      return 0;
-    }
 
-    const body = await response.json();
-    const acceptedClientIds: string[] = Array.isArray(body.acceptedClientIds) ? body.acceptedClientIds : [];
-    const duplicateClientIds: string[] = Array.isArray(body.duplicateClientIds) ? body.duplicateClientIds : [];
-    // Both accepted and duplicate points represent points successfully in the DB
-    const successClientIds = new Set([...acceptedClientIds, ...duplicateClientIds]);
-
-    const failedPoints: QueuedLocationPoint[] = [];
-
-    for (const point of batch) {
-      if (!successClientIds.has(point.localId)) {
-        // point truly not accepted -> keep with retry inc if under 8 retries
-        if (point.retryCount < 8) {
-          failedPoints.push({
+      const updatedQueue = currentQueue
+        .map((point) => {
+          if (!batchIds.has(point.localId)) {
+            // Point added while fetch was in flight -> preserved!
+            return point;
+          }
+          if (point.retryCount >= 8) {
+            return null; // drop after 8 retries
+          }
+          return {
             ...point,
             retryCount: point.retryCount + 1,
             nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
-          });
-        }
-      }
+          };
+        })
+        .filter((p): p is QueuedLocationPoint => p !== null);
+
+      await writeQueue(updatedQueue);
+    });
+    return 0;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      return -1;
     }
 
-    const batchIds = new Set(batch.map((p) => p.localId));
-    const persisted = queue.filter((p) => !batchIds.has(p.localId)).concat(failedPoints);
-    await writeQueue(persisted);
+    await withQueueLock(async () => {
+      const currentQueue = await readQueue();
+      const batchIds = new Set(batch.map((p) => p.localId));
 
-    return successClientIds.size;
-  } catch (err) {
-    // network error: keep batch with increased retry
-    const failed = batch
-      .filter((point) => point.retryCount < 8)
-      .map((point) => ({
-        ...point,
-        retryCount: point.retryCount + 1,
-        nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
-      }));
-    const batchIds = new Set(batch.map((p) => p.localId));
-    const q = await readQueue();
-    const persisted = q.filter((p) => !batchIds.has(p.localId)).concat(failed);
-    await writeQueue(persisted);
+      if (response.status === 409 || response.status === 403) {
+        // Shift not active or device unauthorized: discard stale points to prevent eternal queue jamming
+        const updatedQueue = currentQueue.filter((p) => !batchIds.has(p.localId));
+        await writeQueue(updatedQueue);
+        return;
+      }
+
+      // 500 or other HTTP errors: increment retry count on batch points only
+      const updatedQueue = currentQueue
+        .map((point) => {
+          if (!batchIds.has(point.localId)) {
+            return point; // points added while fetch was in flight are preserved!
+          }
+          if (point.retryCount >= 8) {
+            return null;
+          }
+          return {
+            ...point,
+            retryCount: point.retryCount + 1,
+            nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
+          };
+        })
+        .filter((p): p is QueuedLocationPoint => p !== null);
+
+      await writeQueue(updatedQueue);
+    });
     return 0;
   }
+
+  const body = await response.json().catch(() => ({}));
+  const acceptedClientIds: string[] = Array.isArray(body.acceptedClientIds) ? body.acceptedClientIds : [];
+  const duplicateClientIds: string[] = Array.isArray(body.duplicateClientIds) ? body.duplicateClientIds : [];
+  const successClientIds = new Set([...acceptedClientIds, ...duplicateClientIds]);
+
+  await withQueueLock(async () => {
+    const currentQueue = await readQueue();
+    const batchIds = new Set(batch.map((p) => p.localId));
+
+    const updatedQueue = currentQueue
+      .map((point) => {
+        if (!batchIds.has(point.localId)) {
+          // Point was added while request was in flight -> PRESERVE!
+          return point;
+        }
+        if (successClientIds.has(point.localId)) {
+          // Successfully accepted or duplicate in DB -> REMOVE!
+          return null;
+        }
+        // In batch but not acknowledged by server -> keep with retry inc if under 8 retries
+        if (point.retryCount < 8) {
+          return {
+            ...point,
+            retryCount: point.retryCount + 1,
+            nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
+          };
+        }
+        return null;
+      })
+      .filter((p): p is QueuedLocationPoint => p !== null);
+
+    await writeQueue(updatedQueue);
+  });
+
+  return successClientIds.size;
 }
 
 export async function readQueuedPoints(): Promise<QueuedLocationPoint[]> {
-  return readQueue();
+  return withQueueLock(() => readQueue());
 }
 
 export async function pushQueuedPoints(points: QueuedLocationPoint[]): Promise<void> {
-  const current = await readQueue();
-  const next = [...current, ...points];
-  // enforce queue cap by preserving newest points (drop oldest)
-  if (next.length > MAX_QUEUE_SIZE) {
-    const toKeep = next.slice(next.length - MAX_QUEUE_SIZE);
-    await writeQueue(toKeep);
-  } else {
-    await writeQueue(next);
-  }
+  if (!points || !points.length) return;
+  return withQueueLock(async () => {
+    const current = await readQueue();
+    const next = [...current, ...points];
+    // enforce queue cap by preserving newest points (drop oldest)
+    if (next.length > MAX_QUEUE_SIZE) {
+      const toKeep = next.slice(next.length - MAX_QUEUE_SIZE);
+      await writeQueue(toKeep);
+    } else {
+      await writeQueue(next);
+    }
+  });
 }

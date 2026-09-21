@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -15,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { colors, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
 import { AppHeader } from '../components/AppHeader';
@@ -25,6 +27,7 @@ import {
   registerBackgroundLocationTask,
   startBackgroundTracking,
   stopBackgroundTracking,
+  LOCATION_TASK_NAME,
   type DriverTelemetryState,
 } from '../location';
 import { flushQueuedLocationsGuarded } from '../flushManager';
@@ -111,7 +114,17 @@ export function DriverHomeScreen({
       );
       const current = (shifts.items ?? [])[0] ?? null;
       setActiveShift(current);
-      setTrackingActive(Boolean(current));
+      if (current) {
+        const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+        if (!isRunning) {
+          const started = await startBackgroundTracking();
+          setTrackingActive(Boolean(started));
+        } else {
+          setTrackingActive(true);
+        }
+      } else {
+        setTrackingActive(false);
+      }
     } catch {
       // ignore
     }
@@ -132,7 +145,17 @@ export function DriverHomeScreen({
       setQueuedCount(count);
     }, 5000);
 
-    return () => clearInterval(interval);
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshState();
+        flushQueuedLocationsGuarded(apiUrl).then(() => getQueuedLocationCount().then(setQueuedCount));
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      appStateSub.remove();
+    };
   }, [apiUrl, refreshState, trackingActive]);
 
   const onRefresh = async () => {

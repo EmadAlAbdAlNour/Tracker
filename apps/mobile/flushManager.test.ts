@@ -450,4 +450,204 @@ describe('flushManager', () => {
       expect(fetchCallCount).toBe(1); // Only one network request despite three simultaneous calls
     });
   });
+
+  describe('concurrency & in-flight queue preservation', () => {
+    let memoryStore: string | null = null;
+
+    beforeEach(() => {
+      memoryStore = null;
+      (AsyncStorage.getItem as any).mockImplementation(() => Promise.resolve(memoryStore));
+      (AsyncStorage.setItem as any).mockImplementation((_k: string, v: string) => {
+        memoryStore = v;
+        return Promise.resolve();
+      });
+    });
+
+    it('Test 1: preserves Point B when enqueued while Point A request is in-flight', async () => {
+      const pointA = makePoint({ localId: 'point-A' });
+      const pointB = makePoint({ localId: 'point-B' });
+
+      // Initial queue has Point A
+      memoryStore = JSON.stringify([pointA]);
+
+      // When fetch starts, simulate background GPS task pushing Point B into AsyncStorage
+      global.fetch = vi.fn().mockImplementation(async () => {
+        // Enqueue Point B while network request is in flight
+        await flushManager.pushQueuedPoints([pointB]);
+        return {
+          ok: true,
+          json: async () => ({ acceptedClientIds: ['point-A'] }),
+        };
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(1);
+      // Point B MUST still exist in queue!
+      const remainingQueue = JSON.parse(memoryStore!);
+      expect(remainingQueue).toHaveLength(1);
+      expect(remainingQueue[0].localId).toBe('point-B');
+    });
+
+    it('Test 2: preserves multiple points (B, C) arriving during an in-flight request', async () => {
+      const pointA = makePoint({ localId: 'point-A' });
+      const pointB = makePoint({ localId: 'point-B' });
+      const pointC = makePoint({ localId: 'point-C' });
+
+      memoryStore = JSON.stringify([pointA]);
+
+      global.fetch = vi.fn().mockImplementation(async () => {
+        // Points B and C arrive while request is pending
+        await flushManager.pushQueuedPoints([pointB]);
+        await flushManager.pushQueuedPoints([pointC]);
+        return {
+          ok: true,
+          json: async () => ({ acceptedClientIds: ['point-A'] }),
+        };
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(1);
+      const remainingQueue = JSON.parse(memoryStore!);
+      expect(remainingQueue).toHaveLength(2);
+      expect(remainingQueue.map((p: any) => p.localId)).toEqual(['point-B', 'point-C']);
+    });
+
+    it('Test 3: Point A succeeds as duplicate while Point B arrives during request', async () => {
+      const pointA = makePoint({ localId: 'point-A' });
+      const pointB = makePoint({ localId: 'point-B' });
+
+      memoryStore = JSON.stringify([pointA]);
+
+      global.fetch = vi.fn().mockImplementation(async () => {
+        await flushManager.pushQueuedPoints([pointB]);
+        return {
+          ok: true,
+          json: async () => ({
+            acceptedClientIds: [],
+            duplicateClientIds: ['point-A'],
+          }),
+        };
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(1);
+      const remainingQueue = JSON.parse(memoryStore!);
+      // Point A removed (acknowledged as duplicate), Point B preserved
+      expect(remainingQueue).toHaveLength(1);
+      expect(remainingQueue[0].localId).toBe('point-B');
+    });
+
+    it('Test 4: Network failure preserves both in-flight and existing points', async () => {
+      const pointA = makePoint({ localId: 'point-A' });
+      const pointB = makePoint({ localId: 'point-B' });
+
+      memoryStore = JSON.stringify([pointA]);
+
+      global.fetch = vi.fn().mockImplementation(async () => {
+        await flushManager.pushQueuedPoints([pointB]);
+        throw new Error('Network timeout or connection dropped');
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(0);
+      const remainingQueue = JSON.parse(memoryStore!);
+      // Both points must be safely in the queue
+      expect(remainingQueue).toHaveLength(2);
+      const ids = remainingQueue.map((p: any) => p.localId);
+      expect(ids).toContain('point-A');
+      expect(ids).toContain('point-B');
+      // Point A should have retryCount incremented
+      const pointARef = remainingQueue.find((p: any) => p.localId === 'point-A');
+      expect(pointARef.retryCount).toBe(1);
+      // Point B (in-flight) should retain retryCount 0
+      const pointBRef = remainingQueue.find((p: any) => p.localId === 'point-B');
+      expect(pointBRef.retryCount).toBe(0);
+    });
+
+    it('Test 5: Concurrent push and flush operations do not lose points', async () => {
+      const initialPoints = [makePoint({ localId: 'init-1' }), makePoint({ localId: 'init-2' })];
+      memoryStore = JSON.stringify(initialPoints);
+
+      global.fetch = vi.fn().mockImplementation(async () => {
+        // Simulate network latency
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return {
+          ok: true,
+          json: async () => ({ acceptedClientIds: ['init-1', 'init-2'] }),
+        };
+      });
+
+      // Concurrently push 5 points while flush runs
+      const pushPromises = Array.from({ length: 5 }, (_, i) =>
+        flushManager.pushQueuedPoints([makePoint({ localId: `concurrent-${i}` })])
+      );
+
+      const [flushResult] = await Promise.all([
+        flushManager.flushQueuedLocations('http://api.local', 'token123'),
+        ...pushPromises,
+      ]);
+
+      expect(flushResult).toBe(2);
+      const finalQueue = JSON.parse(memoryStore!);
+      // All 5 concurrently pushed points must be intact!
+      expect(finalQueue).toHaveLength(5);
+      for (let i = 0; i < 5; i++) {
+        expect(finalQueue.some((p: any) => p.localId === `concurrent-${i}`)).toBe(true);
+      }
+    });
+  });
+
+  describe('network timeout & mutex safety', () => {
+    it('handles AbortError timeout gracefully without losing points or locking mutex', async () => {
+      const point1 = makePoint({ localId: 'point-timeout' });
+      (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify([point1]));
+      (AsyncStorage.setItem as any).mockResolvedValue(undefined);
+
+      global.fetch = vi.fn().mockImplementation(() => {
+        const err: any = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        return Promise.reject(err);
+      });
+
+      const SecureStore = await import('expo-secure-store');
+      (SecureStore as any).getItemAsync = vi.fn().mockResolvedValue(JSON.stringify({ accessToken: 'token123' }));
+
+      const result = await flushManager.flushQueuedLocationsGuarded('http://api.local');
+
+      expect(result).toBe(0);
+      expect(flushManager.isFlushing()).toBe(false); // Mutex released!
+      const setCall = (AsyncStorage.setItem as any).mock.calls[0];
+      const savedQueue = JSON.parse(setCall[1]);
+      expect(savedQueue).toHaveLength(1);
+      expect(savedQueue[0].retryCount).toBe(1);
+    });
+
+    it('always releases flushing mutex on 401, 500, network error, and unexpected exceptions', async () => {
+      const SecureStore = await import('expo-secure-store');
+      (SecureStore as any).getItemAsync = vi.fn().mockResolvedValue(JSON.stringify({ accessToken: 'token123' }));
+
+      // Case 1: 500 server error
+      (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify([makePoint()]));
+      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+      await flushManager.flushQueuedLocationsGuarded('http://api.local');
+      expect(flushManager.isFlushing()).toBe(false);
+
+      // Case 2: Network exception
+      global.fetch = vi.fn().mockRejectedValue(new Error('Fatal socket failure'));
+      await flushManager.flushQueuedLocationsGuarded('http://api.local');
+      expect(flushManager.isFlushing()).toBe(false);
+
+      // Case 3: Successful request
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ acceptedClientIds: [] }),
+      });
+      await flushManager.flushQueuedLocationsGuarded('http://api.local');
+      expect(flushManager.isFlushing()).toBe(false);
+    });
+  });
 });

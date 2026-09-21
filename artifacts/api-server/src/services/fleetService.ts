@@ -71,6 +71,34 @@ export interface LiveFleetResponse {
   drivers: FleetDriverLiveStatus[];
 }
 
+export function computeOperationalStatus(params: {
+  hasActiveShift: boolean;
+  isOnline: boolean;
+  isInsideGeofence: boolean;
+  location: { recorded_at?: string | Date | null; speed?: number | string | null } | null;
+  now?: number;
+}): "AT_RESTAURANT" | "MOVING" | "STOPPED" | "OFFLINE" {
+  const { hasActiveShift, isOnline, isInsideGeofence, location, now = Date.now() } = params;
+
+  if (!hasActiveShift || !isOnline) {
+    return "OFFLINE";
+  }
+
+  if (isInsideGeofence || !location) {
+    return "AT_RESTAURANT";
+  }
+
+  const locationAgeMs = location.recorded_at ? (now - new Date(location.recorded_at).getTime()) : Infinity;
+  const isLocationFresh = locationAgeMs <= (5 * 60 * 1000); // 5 minutes freshness threshold
+  const speed = (isLocationFresh && location.speed != null) ? Number(location.speed) : 0;
+
+  if (speed >= 1.0) {
+    return "MOVING";
+  }
+
+  return "STOPPED";
+}
+
 export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
   const [restaurantSettings, alertSettings] = await Promise.all([
     getRestaurantSettings(),
@@ -226,28 +254,24 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
     }
 
     // Operational status calculation with telemetry freshness check
-    let operationalStatus: "AT_RESTAURANT" | "MOVING" | "STOPPED" | "OFFLINE" = "OFFLINE";
+    const operationalStatus = computeOperationalStatus({
+      hasActiveShift,
+      isOnline,
+      isInsideGeofence,
+      location,
+      now,
+    });
 
-    const locationAgeMs = location?.recorded_at ? (now - new Date(location.recorded_at).getTime()) : Infinity;
-    const isLocationFresh = locationAgeMs <= (5 * 60 * 1000); // 5 minutes freshness threshold
-
-    if (!hasActiveShift || !isOnline) {
-      operationalStatus = "OFFLINE";
+    if (operationalStatus === "OFFLINE") {
       offlineCount++;
     } else {
       onlineCount++;
-      if (isInsideGeofence || !location) {
-        operationalStatus = "AT_RESTAURANT";
+      if (operationalStatus === "AT_RESTAURANT") {
         atRestaurantCount++;
+      } else if (operationalStatus === "MOVING") {
+        movingCount++;
       } else {
-        const speed = (isLocationFresh && location?.speed != null) ? Number(location.speed) : 0;
-        if (speed >= 1.0) {
-          operationalStatus = "MOVING";
-          movingCount++;
-        } else {
-          operationalStatus = "STOPPED";
-          stoppedCount++;
-        }
+        stoppedCount++;
       }
     }
 
