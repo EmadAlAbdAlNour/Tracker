@@ -526,3 +526,19 @@ export function getLocalizedErrorMessage(
   return errorMap.UNKNOWN_ERROR;
 }
 
+/**
+ * Formats a timestamp into a relative human-readable string (e.g. "منذ 5 دقائق" or "5m ago").
+ */
+export function formatTimeAgo(dateString: string | null | undefined, forceRtl?: boolean): string {
+  if (!dateString) return '-';
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  const mins = Math.max(0, Math.floor(diffMs / 60000));
+  const rtl = forceRtl !== undefined ? forceRtl : isRtl();
+  if (mins < 1) return rtl ? 'منذ ثوانٍ' : 'Just now';
+  if (mins < 60) return rtl ? `منذ ${formatWesternNumber(mins)} دقيقة` : `${formatWesternNumber(mins)}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return rtl ? `منذ ${formatWesternNumber(hours)} ساعة` : `${formatWesternNumber(hours)}h ago`;
+  const days = Math.floor(hours / 24);
+  return rtl ? `منذ ${formatWesternNumber(days)} يوم` : `${formatWesternNumber(days)}d ago`;
+}
+

@@ -170,7 +170,9 @@ const LeafletMap = dynamic(
                       color: visuals.color,
                     }}
                   >
-                    {visuals.statusLabel}
+                    {driver.operationalStatus === 'OFFLINE'
+                      ? (isRtl() ? 'آخر موقع معروف' : 'Last Known Location')
+                      : visuals.statusLabel}
                   </span>
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono mt-0.5">
@@ -179,7 +181,7 @@ const LeafletMap = dynamic(
               </div>
 
               <div className="space-y-1 text-slate-600">
-                {driver.location?.speed != null && (
+                {driver.operationalStatus !== 'OFFLINE' && driver.location?.speed != null && (
                   <div className="flex justify-between">
                     <span>{t('map.speed')}:</span>
                     <span className="font-mono font-semibold text-slate-800">
@@ -650,17 +652,23 @@ export default function MapPage() {
                             color: visuals.color,
                           }}
                         >
-                          {visuals.statusLabel}
+                          {driver.operationalStatus === 'OFFLINE'
+                            ? (isRtl() ? 'آخر موقع معروف' : 'Last Known')
+                            : visuals.statusLabel}
                         </span>
                       </div>
 
                       <div className="text-[10px] text-slate-500 font-mono mb-2 flex items-center justify-between">
                         <span>{formatWesternNumber(driver.employeeId)}</span>
-                        {driver.location?.speed != null && (
+                        {driver.operationalStatus !== 'OFFLINE' && driver.location?.speed != null ? (
                           <span className="font-bold text-slate-700">
                             {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
                           </span>
-                        )}
+                        ) : driver.operationalStatus === 'OFFLINE' ? (
+                          <span className="text-slate-400">
+                            {t('overview.offline')}
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="flex items-center justify-between text-[10px] text-slate-400">

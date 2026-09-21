@@ -6,7 +6,7 @@ import { StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'rea
 import { WebView } from 'react-native-webview';
 import { colors, radius, shadows, spacing } from '../designSystem';
 import { AppIcon } from './AppIcon';
-import { formatWesternNumber, isRtl, t } from '../i18n';
+import { formatTimeAgo, formatWesternNumber, isRtl, t } from '../i18n';
 
 export interface MapDriverPoint {
   driverId: string;
@@ -74,6 +74,7 @@ export function RealGeographicMapView({
         driverName: d.driverName,
         employeeId: d.employeeId,
         status: d.operationalStatus,
+        isOffline: d.operationalStatus === 'OFFLINE',
         lat: d.location?.latitude,
         lng: d.location?.longitude,
         speed: d.location?.speed,
@@ -112,6 +113,12 @@ export function RealGeographicMapView({
       font-size: 11px;
       font-weight: 800;
     }
+    .pin-circle.offline {
+      background: #64748b !important;
+      border: 2px dashed #cbd5e1 !important;
+      opacity: 0.75;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
     .pin-label {
       background: rgba(15, 23, 42, 0.85);
       color: #ffffff;
@@ -122,6 +129,19 @@ export function RealGeographicMapView({
       margin-top: 2px;
       white-space: nowrap;
       box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+    .pin-label.offline {
+      background: rgba(51, 65, 85, 0.85);
+      opacity: 0.85;
+      font-size: 9px;
+    }
+    .pin-sublabel-offline {
+      font-size: 8px;
+      font-weight: 500;
+      color: #cbd5e1;
+      display: block;
+      margin-top: 1px;
     }
     .restaurant-pin {
       background: #0f766e;
@@ -144,6 +164,7 @@ export function RealGeographicMapView({
   <script>
     const restaurant = ${restaurantJson};
     const drivers = ${driversJson};
+    const isRtlLang = ${rtl};
 
     const map = L.map('map', {
       zoomControl: false,
@@ -190,19 +211,40 @@ export function RealGeographicMapView({
     drivers.forEach(d => {
       if (d.lat && d.lng) {
         bounds.extend([d.lat, d.lng]);
+        const isOffline = d.isOffline || d.status === 'OFFLINE';
         const color = getStatusColor(d.status);
-        const borderStyle = d.isSelected ? 'border: 3px solid #0f172a; transform: scale(1.15);' : 'border: 2px solid #ffffff;';
+
+        let borderStyle = 'border: 2px solid #ffffff;';
+        if (d.isSelected) {
+          borderStyle = isOffline
+            ? 'border: 3px dashed #0f172a; transform: scale(1.15);'
+            : 'border: 3px solid #0f172a; transform: scale(1.15);';
+        } else if (isOffline) {
+          borderStyle = 'border: 2px dashed #cbd5e1;';
+        }
+
+        const circleContent = isOffline
+          ? '⊘'
+          : (d.speed != null && d.speed > 0 ? Math.round(d.speed * 3.6) : '●');
+
+        const circleClass = isOffline ? 'pin-circle offline' : 'pin-circle';
+        const labelClass = isOffline ? 'pin-label offline' : 'pin-label';
+        const staleLabel = isOffline
+          ? '<span class="pin-sublabel-offline">' + (isRtlLang ? 'آخر موقع معروف' : 'Last Known') + '</span>'
+          : '';
 
         const driverIcon = L.divIcon({
           className: '',
-          html: '<div class="driver-pin" onclick="selectDriver(\\'' + d.driverId + '\\')">' +
-                  '<div class="pin-circle" style="background:' + color + ';' + borderStyle + '">' +
-                    (d.speed != null && d.speed > 0 ? Math.round(d.speed * 3.6) : '●') +
+          html: '<div class="driver-pin' + (isOffline ? ' offline-pin' : '') + '" onclick="selectDriver(\\'' + d.driverId + '\\')">' +
+                  '<div class="' + circleClass + '" style="background:' + color + ';' + borderStyle + '">' +
+                    circleContent +
                   '</div>' +
-                  '<div class="pin-label">' + d.driverName + '</div>' +
+                  '<div class="' + labelClass + '">' +
+                    d.driverName + staleLabel +
+                  '</div>' +
                 '</div>',
-          iconSize: [60, 48],
-          iconAnchor: [30, 24]
+          iconSize: isOffline ? [72, 54] : [60, 48],
+          iconAnchor: isOffline ? [36, 27] : [30, 24]
         });
 
         const marker = L.marker([d.lat, d.lng], { icon: driverIcon }).addTo(map);
@@ -233,7 +275,7 @@ export function RealGeographicMapView({
   </script>
 </body>
 </html>`;
-  }, [restaurant, drivers, selectedDriverId]);
+  }, [restaurant, drivers, selectedDriverId, rtl]);
 
   // Handle messages from WebView
   const handleMessage = (event: any) => {
@@ -269,7 +311,9 @@ export function RealGeographicMapView({
     }
   }, [selectedDriver]);
 
-  const activeDriverCount = drivers.filter((d) => d.location?.latitude && d.location?.longitude).length;
+  const connectedDriverCount = drivers.filter(
+    (d) => d.operationalStatus !== 'OFFLINE' && d.location?.latitude && d.location?.longitude
+  ).length;
 
   return (
     <View style={[styles.container, { height: height as any }]}>
@@ -326,11 +370,16 @@ export function RealGeographicMapView({
 
       {/* Floating Status Pill (Top overlay) */}
       <View style={[styles.statusOverlay, rtl ? { right: spacing.md } : { left: spacing.md }]}>
-        <View style={styles.statusDot} />
+        <View
+          style={[
+            styles.statusDot,
+            { backgroundColor: connectedDriverCount > 0 ? colors.status.online : colors.text.muted },
+          ]}
+        />
         <Text style={styles.statusOverlayText}>
           {rtl
-            ? `${formatWesternNumber(activeDriverCount)} سائقين متصلين بالخريطة`
-            : `${formatWesternNumber(activeDriverCount)} Drivers on Map`}
+            ? `${formatWesternNumber(connectedDriverCount)} ${connectedDriverCount === 1 ? 'سائق متصل بالخريطة' : 'سائقين متصلين بالخريطة'}`
+            : `${formatWesternNumber(connectedDriverCount)} ${connectedDriverCount === 1 ? 'Driver Connected on Map' : 'Drivers Connected on Map'}`}
         </Text>
       </View>
 
@@ -339,9 +388,27 @@ export function RealGeographicMapView({
         <View style={styles.selectedDriverCard}>
           <View style={[styles.driverCardHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
             <View style={[styles.driverNameRow, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-              <Text style={styles.driverNameText}>{selectedDriver.driverName}</Text>
+              <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: spacing.xs }}>
+                <Text style={styles.driverNameText}>{selectedDriver.driverName}</Text>
+                {selectedDriver.operationalStatus === 'OFFLINE' ? (
+                  <View style={styles.staleStatusBadge}>
+                    <Text style={styles.staleStatusBadgeText}>
+                      {rtl ? 'آخر موقع معروف' : 'Last Known'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.liveStatusBadge}>
+                    <Text style={styles.liveStatusBadgeText}>
+                      {rtl ? 'متصل الآن' : 'Live'}
+                    </Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.driverMetaText}>
                 {t('diagnostics.employeeId')} {formatWesternNumber(selectedDriver.employeeId)}
+                {selectedDriver.operationalStatus === 'OFFLINE' && selectedDriver.location?.recordedAt && (
+                  ` • ${formatTimeAgo(selectedDriver.location.recordedAt, rtl)}`
+                )}
               </Text>
             </View>
 
@@ -356,9 +423,15 @@ export function RealGeographicMapView({
           </View>
 
           <View style={[styles.driverMetricsRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-            {selectedDriver.location?.speed != null && (
+            {selectedDriver.operationalStatus !== 'OFFLINE' && selectedDriver.location?.speed != null && (
               <Text style={styles.metricItem}>
                 {formatWesternNumber(Math.round(Number(selectedDriver.location.speed) * 3.6))} {t('driverDetail.speedUnit')}
+              </Text>
+            )}
+
+            {selectedDriver.operationalStatus === 'OFFLINE' && (
+              <Text style={[styles.metricItem, { color: colors.text.muted }]}>
+                {rtl ? 'غير متصل (متوقف)' : 'Offline (Stopped)'}
               </Text>
             )}
 
@@ -498,6 +571,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: colors.text.secondary,
+  },
+  staleStatusBadge: {
+    backgroundColor: colors.status.offlineBg,
+    borderColor: colors.status.offlineBorder,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.sm,
+  },
+  staleStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.status.offline,
+  },
+  liveStatusBadge: {
+    backgroundColor: colors.status.onlineBg,
+    borderColor: colors.status.onlineBorder,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.sm,
+  },
+  liveStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.status.online,
   },
 });
 
