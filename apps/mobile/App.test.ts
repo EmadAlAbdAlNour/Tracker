@@ -29,6 +29,12 @@ vi.mock('expo-task-manager', () => ({
   defineTask: vi.fn(),
   isTaskDefined: vi.fn().mockReturnValue(false),
 }));
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: vi.fn().mockResolvedValue(null),
+  setItemAsync: vi.fn().mockResolvedValue(undefined),
+  deleteItemAsync: vi.fn().mockResolvedValue(undefined),
+}));
+(global as any).__DEV__ = true;
 import { resolveHomeRoute } from './roleRouting';
 import { normalizeNetworkStatus } from './telemetry';
 import { isAllowedRole, isValidSession } from './session';

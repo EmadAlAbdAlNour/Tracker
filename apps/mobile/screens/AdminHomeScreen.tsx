@@ -92,15 +92,20 @@ export function AdminHomeScreen({
   // 1. Load Fleet Data
   const loadFleet = useCallback(async () => {
     try {
+      setFleetLoading(true);
       setFleetError(null);
       const data = await apiRequest<any>('/api/fleet/live');
       setFleet(data);
     } catch (err: any) {
+      if (err?.status === 401 || err?.code === 'AUTH_SESSION_EXPIRED' || err?.code === 'AUTH_INVALID_TOKEN') {
+        await onLogout();
+        return;
+      }
       setFleetError(err?.message || 'Failed to connect to server');
     } finally {
       setFleetLoading(false);
     }
-  }, [apiRequest]);
+  }, [apiRequest, onLogout]);
 
   // 2. Load Devices
   const loadDevices = useCallback(async () => {
@@ -465,10 +470,25 @@ export function AdminHomeScreen({
       <View style={styles.body}>
         {/* TAB 1: DASHBOARD */}
         {activeTab === 'dashboard' && (
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          >
+          fleetLoading && !fleet ? (
+            <View style={styles.stateCenterContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.stateLoadingText}>{t('app.loadingFleet')}</Text>
+            </View>
+          ) : !fleetLoading && !fleet && fleetError ? (
+            <View style={styles.stateErrorContainer}>
+              <AppIcon name="warning" size={36} color={colors.status.critical} />
+              <Text style={styles.stateErrorTitle}>{t('app.fleetLoadFailed')}</Text>
+              <Text style={styles.stateErrorMessage}>{fleetError}</Text>
+              <TouchableOpacity style={styles.primaryRetryButton} onPress={loadFleet}>
+                <Text style={styles.primaryRetryButtonText}>{t('app.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={styles.scrollContainer}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            >
             {/* Error Banner with Retry */}
             {fleetError && (
               <View style={styles.errorBanner}>
@@ -623,53 +643,85 @@ export function AdminHomeScreen({
                 );
               })}
             </View>
-          </ScrollView>
+            </ScrollView>
+          )
         )}
 
         {/* TAB 2: FULLSCREEN LIVE MAP */}
         {activeTab === 'map' && (
-          <View style={styles.mapScreenContainer}>
-            {/* Status Filter Bar */}
-            <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
-                <TouchableOpacity
-                  key={statusKey}
-                  style={[styles.filterPill, mapFilter === statusKey && styles.filterPillActive]}
-                  onPress={() => setMapFilter(statusKey)}
-                >
-                  <Text style={[styles.filterPillText, mapFilter === statusKey && styles.filterPillTextActive]}>
-                    {statusKey === 'ALL'
-                      ? rtl ? 'الكل' : 'All'
-                      : statusKey === 'MOVING'
-                      ? rtl ? 'متحرك' : 'Moving'
-                      : statusKey === 'AT_RESTAURANT'
-                      ? rtl ? 'بالمطعم' : 'Base'
-                      : statusKey === 'STOPPED'
-                      ? rtl ? 'متوقف' : 'Stopped'
-                      : rtl ? 'غير متصل' : 'Offline'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          fleetLoading && !fleet ? (
+            <View style={styles.stateCenterContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.stateLoadingText}>{t('app.loadingFleet')}</Text>
             </View>
+          ) : !fleetLoading && !fleet && fleetError ? (
+            <View style={styles.stateErrorContainer}>
+              <AppIcon name="warning" size={36} color={colors.status.critical} />
+              <Text style={styles.stateErrorTitle}>{t('app.fleetLoadFailed')}</Text>
+              <Text style={styles.stateErrorMessage}>{fleetError}</Text>
+              <TouchableOpacity style={styles.primaryRetryButton} onPress={loadFleet}>
+                <Text style={styles.primaryRetryButtonText}>{t('app.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.mapScreenContainer}>
+              {/* Status Filter Bar */}
+              <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
+                  <TouchableOpacity
+                    key={statusKey}
+                    style={[styles.filterPill, mapFilter === statusKey && styles.filterPillActive]}
+                    onPress={() => setMapFilter(statusKey)}
+                  >
+                    <Text style={[styles.filterPillText, mapFilter === statusKey && styles.filterPillTextActive]}>
+                      {statusKey === 'ALL'
+                        ? rtl ? 'الكل' : 'All'
+                        : statusKey === 'MOVING'
+                        ? rtl ? 'متحرك' : 'Moving'
+                        : statusKey === 'AT_RESTAURANT'
+                        ? rtl ? 'بالمطعم' : 'Base'
+                        : statusKey === 'STOPPED'
+                        ? rtl ? 'متوقف' : 'Stopped'
+                        : rtl ? 'غير متصل' : 'Offline'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            {/* Real Geographic Map */}
-            <RealGeographicMapView
-              restaurant={restaurantPoint}
-              drivers={filteredDrivers}
-              selectedDriverId={selectedDriver?.driverId}
-              onSelectDriver={(d) => setSelectedDriver(d)}
-              onViewDriverDetail={(d) => {
-                setSelectedDriver(d);
-                setDriverModalVisible(true);
-              }}
-              height="100%"
-            />
-          </View>
+              {/* Real Geographic Map */}
+              <RealGeographicMapView
+                restaurant={restaurantPoint}
+                drivers={filteredDrivers}
+                selectedDriverId={selectedDriver?.driverId}
+                onSelectDriver={(d) => setSelectedDriver(d)}
+                onViewDriverDetail={(d) => {
+                  setSelectedDriver(d);
+                  setDriverModalVisible(true);
+                }}
+                height="100%"
+              />
+            </View>
+          )
         )}
 
         {/* TAB 3: DRIVERS DIRECTORY */}
         {activeTab === 'drivers' && (
-          <View style={styles.driversScreenContainer}>
+          fleetLoading && !fleet ? (
+            <View style={styles.stateCenterContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.stateLoadingText}>{t('app.loadingFleet')}</Text>
+            </View>
+          ) : !fleetLoading && !fleet && fleetError ? (
+            <View style={styles.stateErrorContainer}>
+              <AppIcon name="warning" size={36} color={colors.status.critical} />
+              <Text style={styles.stateErrorTitle}>{t('app.fleetLoadFailed')}</Text>
+              <Text style={styles.stateErrorMessage}>{fleetError}</Text>
+              <TouchableOpacity style={styles.primaryRetryButton} onPress={loadFleet}>
+                <Text style={styles.primaryRetryButtonText}>{t('app.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.driversScreenContainer}>
             {/* Search Input */}
             <View style={styles.searchBar}>
               <AppIcon name="search" size={16} color={colors.text.muted} />
@@ -766,6 +818,7 @@ export function AdminHomeScreen({
               )}
             </ScrollView>
           </View>
+          )
         )}
 
         {/* TAB 4: MORE HUB & SUBSCREENS */}
@@ -1849,5 +1902,53 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  stateCenterContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: '#f8fafc',
+  },
+  stateLoadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.body.fontSize,
+    color: colors.text.muted,
+    fontWeight: '500',
+  },
+  stateErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: '#f8fafc',
+  },
+  stateErrorTitle: {
+    marginTop: spacing.md,
+    fontSize: typography.screenTitle.fontSize,
+    fontWeight: typography.screenTitle.fontWeight,
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  stateErrorMessage: {
+    marginTop: spacing.xs,
+    fontSize: typography.meta.fontSize,
+    color: colors.text.muted,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    maxWidth: 280,
+  },
+  primaryRetryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryRetryButtonText: {
+    color: '#ffffff',
+    fontSize: typography.body.fontSize,
+    fontWeight: '600',
   },
 });

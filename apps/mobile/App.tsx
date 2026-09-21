@@ -17,7 +17,19 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
 import { resolveHomeRoute } from './roleRouting';
-import { isAllowedRole, isValidSession, type Session } from './session';
+import {
+  API_URL,
+  SESSION_KEY,
+  apiRequest,
+  clearSession,
+  isAllowedRole,
+  isTokenExpiringSoon,
+  isValidSession,
+  readSession,
+  refreshAuthSession,
+  saveSession,
+  type Session,
+} from './session';
 import { getLocale, initLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from './i18n';
 import { AdminHomeScreen } from './screens/AdminHomeScreen';
 import { CallCenterHomeScreen } from './screens/CallCenterHomeScreen';
@@ -36,42 +48,7 @@ import {
 } from './updateManager';
 
 const DEVICE_ID_KEY = 'tracker_device_id';
-const SESSION_KEY = 'tracker_driver_session';
 const STACK = createNativeStackNavigator<any>();
-
-const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ||
-  (process.env.NODE_ENV === 'development'
-    ? 'http://10.0.2.2:3000'
-    : 'https://tracker-alpha-puce.vercel.app');
-
-async function saveSession(session: Session): Promise<void> {
-  if (!isValidSession(session)) {
-    throw new Error('Invalid session payload');
-  }
-  await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
-}
-
-async function readSession(): Promise<Session | null> {
-  const value = await SecureStore.getItemAsync(SESSION_KEY);
-  if (!value) return null;
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!isValidSession(parsed)) {
-      await clearSession().catch(() => undefined);
-      return null;
-    }
-    return parsed;
-  } catch {
-    await clearSession().catch(() => undefined);
-    return null;
-  }
-}
-
-async function clearSession(): Promise<void> {
-  await SecureStore.deleteItemAsync(SESSION_KEY);
-}
 
 function uuidv4(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -99,95 +76,8 @@ async function getOrCreateDeviceId(): Promise<string> {
   }
 }
 
-let activeRefreshPromise: Promise<Session | null> | null = null;
-
-async function refreshAuthSession(): Promise<Session | null> {
-  if (activeRefreshPromise) {
-    return activeRefreshPromise;
-  }
-
-  activeRefreshPromise = (async () => {
-    try {
-      const currentSession = await readSession();
-      if (!currentSession?.refreshToken) return null;
-
-      const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: currentSession.refreshToken }),
-      });
-
-      if (!refreshResponse.ok) {
-        if (refreshResponse.status === 401) {
-          await clearSession().catch(() => undefined);
-        }
-        return null;
-      }
-
-      const refreshedPayload = await refreshResponse.json();
-      if (!isValidSession(refreshedPayload)) {
-        await clearSession().catch(() => undefined);
-        return null;
-      }
-
-      await saveSession(refreshedPayload);
-      return refreshedPayload;
-    } catch {
-      return null;
-    } finally {
-      activeRefreshPromise = null;
-    }
-  })();
-
-  return activeRefreshPromise;
-}
-
-async function apiRequest<T>(
-  path: string,
-  options: RequestInit = {},
-  sessionOverride?: Session | null
-): Promise<T> {
-  const session = sessionOverride ?? (await readSession());
-  const headers = new Headers(options.headers ?? {});
-  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
-  }
-
-  if (session?.accessToken) {
-    headers.set('Authorization', `Bearer ${session.accessToken}`);
-  }
-
-  let response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
-
-  if (response.status === 401 && session?.refreshToken) {
-    const nextSession = await refreshAuthSession();
-    if (nextSession?.accessToken) {
-      headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
-      response = await fetch(`${API_URL}${path}`, {
-        ...options,
-        headers,
-      });
-    }
-  }
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    const code = payload?.error?.code ?? payload?.code;
-    const message = payload?.error?.message ?? payload?.message ?? 'Request failed';
-    const localized = getLocalizedErrorMessage(code || message, message as string);
-    const err = new Error(localized);
-    (err as any).code = code;
-    throw err;
-  }
-
-  return (await response.json()) as T;
-}
-
-
 function LoginScreen({ navigation }: any): React.JSX.Element {
+  const [checkingPersistedSession, setCheckingPersistedSession] = useState(true);
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -207,12 +97,41 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   useEffect(() => {
     initLocale().then(setLocaleState);
 
-    // Auto navigate if already logged in with valid session
-    readSession().then((session) => {
-      if (session && isValidSession(session) && isAllowedRole(session.user.role)) {
-        navigation.replace(resolveHomeRoute(session.user.role));
+    let isMounted = true;
+    (async () => {
+      try {
+        const session = await readSession();
+        if (!session || !isValidSession(session) || !isAllowedRole(session.user.role)) {
+          if (isMounted) setCheckingPersistedSession(false);
+          return;
+        }
+
+        if (isTokenExpiringSoon(session.accessToken)) {
+          const refreshed = await refreshAuthSession();
+          if (refreshed && isValidSession(refreshed) && isAllowedRole(refreshed.user.role)) {
+            if (isMounted) navigation.replace(resolveHomeRoute(refreshed.user.role));
+            return;
+          }
+
+          const current = await readSession();
+          if (!current) {
+            if (isMounted) setCheckingPersistedSession(false);
+            return;
+          }
+
+          if (isMounted) navigation.replace(resolveHomeRoute(session.user.role));
+          return;
+        }
+
+        if (isMounted) navigation.replace(resolveHomeRoute(session.user.role));
+      } catch {
+        if (isMounted) setCheckingPersistedSession(false);
       }
-    });
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigation]);
 
   const toggleLanguage = async () => {
@@ -303,6 +222,18 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
   };
 
   const rtl = isRtl();
+
+  if (checkingPersistedSession) {
+    return (
+      <SafeAreaView style={styles.centerContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+        <ActivityIndicator size="large" color="#059669" />
+        <Text style={[styles.loadingText, { marginTop: 16 }]}>
+          {t('app.checkingSession')}
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -399,13 +330,33 @@ function AdminHomeWrapper({ navigation }: any): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    readSession().then((curr) => {
+    let isMounted = true;
+    (async () => {
+      let curr = await readSession();
       if (!curr || !isValidSession(curr) || curr.user.role !== 'ADMIN') {
-        navigation.replace('Login');
+        if (isMounted) navigation.replace('Login');
         return;
       }
-      setSession(curr);
-    });
+
+      if (isTokenExpiringSoon(curr.accessToken)) {
+        const refreshed = await refreshAuthSession();
+        if (refreshed && isValidSession(refreshed) && refreshed.user.role === 'ADMIN') {
+          curr = refreshed;
+        } else {
+          const stillThere = await readSession();
+          if (!stillThere) {
+            if (isMounted) navigation.replace('Login');
+            return;
+          }
+        }
+      }
+
+      if (isMounted) setSession(curr);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigation]);
 
   const handleLogout = async () => {
@@ -425,6 +376,9 @@ function AdminHomeWrapper({ navigation }: any): React.JSX.Element {
     return (
       <SafeAreaView style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#059669" />
+        <Text style={[styles.loadingText, { marginTop: 16 }]}>
+          {t('app.checkingSession')}
+        </Text>
       </SafeAreaView>
     );
   }
@@ -444,13 +398,33 @@ function CallCenterHomeWrapper({ navigation }: any): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    readSession().then((curr) => {
+    let isMounted = true;
+    (async () => {
+      let curr = await readSession();
       if (!curr || !isValidSession(curr) || curr.user.role !== 'CALL_CENTER') {
-        navigation.replace('Login');
+        if (isMounted) navigation.replace('Login');
         return;
       }
-      setSession(curr);
-    });
+
+      if (isTokenExpiringSoon(curr.accessToken)) {
+        const refreshed = await refreshAuthSession();
+        if (refreshed && isValidSession(refreshed) && refreshed.user.role === 'CALL_CENTER') {
+          curr = refreshed;
+        } else {
+          const stillThere = await readSession();
+          if (!stillThere) {
+            if (isMounted) navigation.replace('Login');
+            return;
+          }
+        }
+      }
+
+      if (isMounted) setSession(curr);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigation]);
 
   const handleLogout = async () => {
@@ -470,6 +444,9 @@ function CallCenterHomeWrapper({ navigation }: any): React.JSX.Element {
     return (
       <SafeAreaView style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#0284c7" />
+        <Text style={[styles.loadingText, { marginTop: 16 }]}>
+          {t('app.checkingSession')}
+        </Text>
       </SafeAreaView>
     );
   }
@@ -489,13 +466,33 @@ function DriverHomeWrapper({ navigation }: any): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    readSession().then((curr) => {
+    let isMounted = true;
+    (async () => {
+      let curr = await readSession();
       if (!curr || !isValidSession(curr) || curr.user.role !== 'DRIVER') {
-        navigation.replace('Login');
+        if (isMounted) navigation.replace('Login');
         return;
       }
-      setSession(curr);
-    });
+
+      if (isTokenExpiringSoon(curr.accessToken)) {
+        const refreshed = await refreshAuthSession();
+        if (refreshed && isValidSession(refreshed) && refreshed.user.role === 'DRIVER') {
+          curr = refreshed;
+        } else {
+          const stillThere = await readSession();
+          if (!stillThere) {
+            if (isMounted) navigation.replace('Login');
+            return;
+          }
+        }
+      }
+
+      if (isMounted) setSession(curr);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigation]);
 
   const handleLogout = async () => {
@@ -515,6 +512,9 @@ function DriverHomeWrapper({ navigation }: any): React.JSX.Element {
     return (
       <SafeAreaView style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#059669" />
+        <Text style={[styles.loadingText, { marginTop: 16 }]}>
+          {t('app.checkingSession')}
+        </Text>
       </SafeAreaView>
     );
   }
@@ -635,6 +635,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
   },
   loginCard: {
     flex: 1,

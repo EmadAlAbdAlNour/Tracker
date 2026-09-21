@@ -65,15 +65,20 @@ export function CallCenterHomeScreen({
 
   const loadFleet = useCallback(async () => {
     try {
+      setFleetLoading(true);
       setFleetError(null);
       const data = await apiRequest<any>('/api/fleet/live');
       setFleet(data);
     } catch (err: any) {
+      if (err?.status === 401 || err?.code === 'AUTH_SESSION_EXPIRED' || err?.code === 'AUTH_INVALID_TOKEN') {
+        await onLogout();
+        return;
+      }
       setFleetError(err?.message || 'Failed to connect to server');
     } finally {
       setFleetLoading(false);
     }
-  }, [apiRequest]);
+  }, [apiRequest, onLogout]);
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -163,10 +168,25 @@ export function CallCenterHomeScreen({
       <View style={styles.body}>
         {/* TAB 1: DASHBOARD */}
         {activeTab === 'dashboard' && (
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          >
+          fleetLoading && !fleet ? (
+            <View style={styles.stateCenterContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.stateLoadingText}>{t('app.loadingFleet')}</Text>
+            </View>
+          ) : !fleetLoading && !fleet && fleetError ? (
+            <View style={styles.stateErrorContainer}>
+              <AppIcon name="warning" size={36} color={colors.status.critical} />
+              <Text style={styles.stateErrorTitle}>{t('app.fleetLoadFailed')}</Text>
+              <Text style={styles.stateErrorMessage}>{fleetError}</Text>
+              <TouchableOpacity style={styles.primaryRetryButton} onPress={loadFleet}>
+                <Text style={styles.primaryRetryButtonText}>{t('app.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={styles.scrollContainer}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            >
             {/* Read-Only Notice Banner */}
             <View style={[styles.readOnlyBanner, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
               <AppIcon name="warning" size={14} color="#0284c7" />
@@ -295,67 +315,105 @@ export function CallCenterHomeScreen({
                 );
               })}
             </View>
-          </ScrollView>
+            </ScrollView>
+          )
         )}
 
         {/* TAB 2: LIVE MAP */}
         {activeTab === 'map' && (
-          <View style={styles.mapScreenContainer}>
-            <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
-                <TouchableOpacity
-                  key={statusKey}
-                  style={[styles.filterPill, mapFilter === statusKey && styles.filterPillActive]}
-                  onPress={() => setMapFilter(statusKey)}
-                >
-                  <Text style={[styles.filterPillText, mapFilter === statusKey && styles.filterPillTextActive]}>
-                    {statusKey === 'ALL'
-                      ? rtl ? 'الكل' : 'All'
-                      : statusKey === 'MOVING'
-                      ? rtl ? 'متحرك' : 'Moving'
-                      : statusKey === 'AT_RESTAURANT'
-                      ? rtl ? 'بالمطعم' : 'Base'
-                      : statusKey === 'STOPPED'
-                      ? rtl ? 'متوقف' : 'Stopped'
-                      : rtl ? 'غير متصل' : 'Offline'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          fleetLoading && !fleet ? (
+            <View style={styles.stateCenterContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.stateLoadingText}>{t('app.loadingFleet')}</Text>
             </View>
+          ) : !fleetLoading && !fleet && fleetError ? (
+            <View style={styles.stateErrorContainer}>
+              <AppIcon name="warning" size={36} color={colors.status.critical} />
+              <Text style={styles.stateErrorTitle}>{t('app.fleetLoadFailed')}</Text>
+              <Text style={styles.stateErrorMessage}>{fleetError}</Text>
+              <TouchableOpacity style={styles.primaryRetryButton} onPress={loadFleet}>
+                <Text style={styles.primaryRetryButtonText}>{t('app.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.mapScreenContainer}>
+              <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
+                  <TouchableOpacity
+                    key={statusKey}
+                    style={[styles.filterPill, mapFilter === statusKey && styles.filterPillActive]}
+                    onPress={() => setMapFilter(statusKey)}
+                  >
+                    <Text style={[styles.filterPillText, mapFilter === statusKey && styles.filterPillTextActive]}>
+                      {statusKey === 'ALL'
+                        ? rtl ? 'الكل' : 'All'
+                        : statusKey === 'MOVING'
+                        ? rtl ? 'متحرك' : 'Moving'
+                        : statusKey === 'AT_RESTAURANT'
+                        ? rtl ? 'بالمطعم' : 'Base'
+                        : statusKey === 'STOPPED'
+                        ? rtl ? 'متوقف' : 'Stopped'
+                        : rtl ? 'غير متصل' : 'Offline'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            <RealGeographicMapView
-              restaurant={restaurantPoint}
-              drivers={filteredDrivers}
-              selectedDriverId={selectedDriver?.driverId}
-              onSelectDriver={(d) => setSelectedDriver(d)}
-              onViewDriverDetail={(d) => {
-                setSelectedDriver(d);
-                setDriverModalVisible(true);
-              }}
-              height="100%"
-            />
-          </View>
+              <RealGeographicMapView
+                restaurant={restaurantPoint}
+                drivers={filteredDrivers}
+                selectedDriverId={selectedDriver?.driverId}
+                onSelectDriver={(d) => setSelectedDriver(d)}
+                onViewDriverDetail={(d) => {
+                  setSelectedDriver(d);
+                  setDriverModalVisible(true);
+                }}
+                height="100%"
+              />
+            </View>
+          )
         )}
 
         {/* TAB 3: DRIVERS DIRECTORY */}
         {activeTab === 'drivers' && (
-          <View style={styles.driversScreenContainer}>
-            <View style={styles.searchBar}>
-              <AppIcon name="search" size={16} color={colors.text.muted} />
-              <TextInput
-                value={driverSearch}
-                onChangeText={setDriverSearch}
-                placeholder={rtl ? 'بحث بالاسم أو الرقم الوظيفي...' : 'Search by name or ID...'}
-                placeholderTextColor={colors.text.light}
-                style={[styles.searchInput, { textAlign: rtl ? 'right' : 'left' }]}
-              />
+          fleetLoading && !fleet ? (
+            <View style={styles.stateCenterContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.stateLoadingText}>{t('app.loadingFleet')}</Text>
             </View>
+          ) : !fleetLoading && !fleet && fleetError ? (
+            <View style={styles.stateErrorContainer}>
+              <AppIcon name="warning" size={36} color={colors.status.critical} />
+              <Text style={styles.stateErrorTitle}>{t('app.fleetLoadFailed')}</Text>
+              <Text style={styles.stateErrorMessage}>{fleetError}</Text>
+              <TouchableOpacity style={styles.primaryRetryButton} onPress={loadFleet}>
+                <Text style={styles.primaryRetryButtonText}>{t('app.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.driversScreenContainer}>
+              <View style={styles.searchBar}>
+                <AppIcon name="search" size={16} color={colors.text.muted} />
+                <TextInput
+                  value={driverSearch}
+                  onChangeText={setDriverSearch}
+                  placeholder={rtl ? 'بحث بالاسم أو الرقم الوظيفي...' : 'Search by name or ID...'}
+                  placeholderTextColor={colors.text.light}
+                  style={[styles.searchInput, { textAlign: rtl ? 'right' : 'left' }]}
+                />
+              </View>
 
-            <ScrollView
-              contentContainerStyle={styles.driversListContent}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            >
-              {filteredDrivers.map((d: any) => {
+              <ScrollView
+                contentContainerStyle={styles.driversListContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              >
+                {filteredDrivers.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <AppIcon name="driver" size={32} color={colors.text.light} />
+                    <Text style={styles.emptyStateText}>{t('operator.noDrivers')}</Text>
+                  </View>
+                ) : (
+                  filteredDrivers.map((d: any) => {
                 const isDOnline = d.operationalStatus !== 'OFFLINE';
                 const speed = d.location?.speed != null ? Math.round(Number(d.location.speed) * 3.6) : null;
                 return (
@@ -413,9 +471,11 @@ export function CallCenterHomeScreen({
                     </View>
                   </TouchableOpacity>
                 );
-              })}
+              })
+            )}
             </ScrollView>
           </View>
+          )
         )}
 
         {/* TAB 4: NOTIFICATIONS & INCIDENTS */}
@@ -791,5 +851,53 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 12,
     color: colors.text.muted,
+  },
+  stateCenterContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: '#f8fafc',
+  },
+  stateLoadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.body.fontSize,
+    color: colors.text.muted,
+    fontWeight: '500',
+  },
+  stateErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: '#f8fafc',
+  },
+  stateErrorTitle: {
+    marginTop: spacing.md,
+    fontSize: typography.screenTitle.fontSize,
+    fontWeight: typography.screenTitle.fontWeight,
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
+  stateErrorMessage: {
+    marginTop: spacing.xs,
+    fontSize: typography.meta.fontSize,
+    color: colors.text.muted,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    maxWidth: 280,
+  },
+  primaryRetryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryRetryButtonText: {
+    color: '#ffffff',
+    fontSize: typography.body.fontSize,
+    fontWeight: '600',
   },
 });

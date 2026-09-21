@@ -1,3 +1,6 @@
+import * as SecureStore from 'expo-secure-store';
+import { getLocalizedErrorMessage } from './i18n';
+
 export const SESSION_ROLES = ['ADMIN', 'DRIVER', 'CALL_CENTER'] as const;
 
 export type Session = {
@@ -12,6 +15,14 @@ export type Session = {
     active: boolean;
   };
 };
+
+export const SESSION_KEY = 'tracker_driver_session';
+
+export const API_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === 'development'
+    ? 'http://10.0.2.2:3000'
+    : 'https://tracker-alpha-puce.vercel.app');
 
 export function isAllowedRole(value: unknown): value is Session['user']['role'] {
   return typeof value === 'string' && SESSION_ROLES.includes(value as Session['user']['role']);
@@ -47,4 +58,151 @@ export function isValidSession(value: unknown): value is Session {
     isAllowedRole(user.role) &&
     typeof user.active === 'boolean'
   );
+}
+
+export function isTokenExpiringSoon(token: string, thresholdSeconds = 30): boolean {
+  try {
+    if (!token || typeof token !== 'string') return true;
+    const parts = token.split('.');
+    if (parts.length !== 3) return true;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    let decodedJson = '';
+    if (typeof atob === 'function') {
+      decodedJson = atob(padded);
+    } else if (typeof Buffer !== 'undefined') {
+      decodedJson = Buffer.from(padded, 'base64').toString('utf8');
+    } else {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+      let output = '';
+      const clean = padded.replace(/=+$/, '');
+      for (let bc = 0, bs = 0, buffer, idx = 0; (buffer = clean.charAt(idx++)); ~buffer && ((bs = bc % 4 ? bs * 64 + buffer : buffer), bc++ % 4) ? (output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)))) : 0) {
+        buffer = chars.indexOf(buffer);
+      }
+      decodedJson = output;
+    }
+    const payload = JSON.parse(decodedJson);
+    if (!payload.exp || typeof payload.exp !== 'number') return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return payload.exp <= nowSec + thresholdSeconds;
+  } catch {
+    return true;
+  }
+}
+
+export async function saveSession(session: Session): Promise<void> {
+  if (!isValidSession(session)) {
+    throw new Error('Invalid session payload');
+  }
+  await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
+}
+
+export async function readSession(): Promise<Session | null> {
+  const value = await SecureStore.getItemAsync(SESSION_KEY);
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!isValidSession(parsed)) {
+      await clearSession().catch(() => undefined);
+      return null;
+    }
+    return parsed;
+  } catch {
+    await clearSession().catch(() => undefined);
+    return null;
+  }
+}
+
+export async function clearSession(): Promise<void> {
+  await SecureStore.deleteItemAsync(SESSION_KEY);
+}
+
+let activeRefreshPromise: Promise<Session | null> | null = null;
+
+export async function refreshAuthSession(): Promise<Session | null> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
+  }
+
+  activeRefreshPromise = (async () => {
+    try {
+      const currentSession = await readSession();
+      if (!currentSession?.refreshToken) return null;
+
+      const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: currentSession.refreshToken }),
+      });
+
+      if (!refreshResponse.ok) {
+        if (refreshResponse.status === 401 || refreshResponse.status === 403) {
+          await clearSession().catch(() => undefined);
+        }
+        return null;
+      }
+
+      const refreshedPayload = await refreshResponse.json();
+      if (!isValidSession(refreshedPayload)) {
+        await clearSession().catch(() => undefined);
+        return null;
+      }
+
+      await saveSession(refreshedPayload);
+      return refreshedPayload;
+    } catch {
+      return null;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+  sessionOverride?: Session | null
+): Promise<T> {
+  const session = sessionOverride ?? (await readSession());
+  const headers = new Headers(options.headers ?? {});
+  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (session?.accessToken) {
+    headers.set('Authorization', `Bearer ${session.accessToken}`);
+  }
+
+  let response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401 && session?.refreshToken) {
+    const nextSession = await refreshAuthSession();
+    if (nextSession?.accessToken) {
+      headers.set('Authorization', `Bearer ${nextSession.accessToken}`);
+      response = await fetch(`${API_URL}${path}`, {
+        ...options,
+        headers,
+      });
+    }
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const code = payload?.error?.code ?? payload?.code;
+    const message = payload?.error?.message ?? payload?.message ?? 'Request failed';
+    const localized = getLocalizedErrorMessage(code || message, message as string);
+    const err = new Error(localized);
+    (err as any).code = code;
+    (err as any).status = response.status;
+    throw err;
+  }
+
+  return (await response.json()) as T;
 }
