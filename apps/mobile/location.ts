@@ -183,6 +183,12 @@ export function registerBackgroundLocationTask(): void {
 
     const manager = await import('./flushManager');
     await manager.pushQueuedPoints(toPush);
+    try {
+      const { API_URL } = await import('./session');
+      await manager.flushQueuedLocationsGuarded(API_URL);
+    } catch {
+      // In background or offline, points remain safely persisted in the queue
+    }
   });
 }
 

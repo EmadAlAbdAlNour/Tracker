@@ -1,7 +1,7 @@
 // Real Geographic Fleet Map for Tracker Mobile
 // Powered by Leaflet + OpenStreetMap via WebView with Native Touch Gestures
 
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { colors, radius, shadows, spacing } from '../designSystem';
@@ -58,6 +58,7 @@ export function RealGeographicMapView({
 }: RealGeographicMapViewProps): React.JSX.Element {
   const webViewRef = useRef<WebView>(null);
   const rtl = isRtl();
+  const isWebViewReadyRef = useRef(false);
 
   // Find selected driver object
   const selectedDriver = useMemo(() => {
@@ -65,24 +66,26 @@ export function RealGeographicMapView({
     return drivers.find((d) => d.driverId === selectedDriverId) ?? null;
   }, [drivers, selectedDriverId]);
 
-  // Generate HTML for Leaflet Map
+  const serializedDrivers = useMemo(() => {
+    return drivers.map((d) => ({
+      driverId: d.driverId,
+      driverName: d.driverName,
+      employeeId: d.employeeId,
+      status: d.operationalStatus,
+      isOffline: d.operationalStatus === 'OFFLINE',
+      lat: d.location?.latitude,
+      lng: d.location?.longitude,
+      speed: d.location?.speed,
+      heading: d.location?.heading,
+      battery: d.device?.batteryPercentage,
+      isSelected: d.driverId === selectedDriverId,
+    }));
+  }, [drivers, selectedDriverId]);
+
+  // Generate static base HTML for Leaflet Map (does not reload on driver updates)
   const mapHtml = useMemo(() => {
     const restaurantJson = JSON.stringify(restaurant);
-    const driversJson = JSON.stringify(
-      drivers.map((d) => ({
-        driverId: d.driverId,
-        driverName: d.driverName,
-        employeeId: d.employeeId,
-        status: d.operationalStatus,
-        isOffline: d.operationalStatus === 'OFFLINE',
-        lat: d.location?.latitude,
-        lng: d.location?.longitude,
-        speed: d.location?.speed,
-        heading: d.location?.heading,
-        battery: d.device?.batteryPercentage,
-        isSelected: d.driverId === selectedDriverId,
-      }))
-    );
+    const isRtlLang = rtl;
 
     return `<!DOCTYPE html>
 <html>
@@ -163,8 +166,7 @@ export function RealGeographicMapView({
   <div id="map"></div>
   <script>
     const restaurant = ${restaurantJson};
-    const drivers = ${driversJson};
-    const isRtlLang = ${rtl};
+    const isRtlLang = ${isRtlLang};
 
     const map = L.map('map', {
       zoomControl: false,
@@ -204,54 +206,79 @@ export function RealGeographicMapView({
       }
     }
 
-    // Driver markers
-    const driverMarkers = {};
-    const bounds = L.latLngBounds([[restaurant.latitude, restaurant.longitude]]);
+    function buildDriverIcon(d) {
+      const isOffline = d.isOffline || d.status === 'OFFLINE';
+      const color = getStatusColor(d.status);
 
-    drivers.forEach(d => {
-      if (d.lat && d.lng) {
-        bounds.extend([d.lat, d.lng]);
-        const isOffline = d.isOffline || d.status === 'OFFLINE';
-        const color = getStatusColor(d.status);
-
-        let borderStyle = 'border: 2px solid #ffffff;';
-        if (d.isSelected) {
-          borderStyle = isOffline
-            ? 'border: 3px dashed #0f172a; transform: scale(1.15);'
-            : 'border: 3px solid #0f172a; transform: scale(1.15);';
-        } else if (isOffline) {
-          borderStyle = 'border: 2px dashed #cbd5e1;';
-        }
-
-        const circleContent = isOffline
-          ? '⊘'
-          : (d.speed != null && d.speed > 0 ? Math.round(d.speed * 3.6) : '●');
-
-        const circleClass = isOffline ? 'pin-circle offline' : 'pin-circle';
-        const labelClass = isOffline ? 'pin-label offline' : 'pin-label';
-        const staleLabel = isOffline
-          ? '<span class="pin-sublabel-offline">' + (isRtlLang ? 'آخر موقع معروف' : 'Last Known') + '</span>'
-          : '';
-
-        const driverIcon = L.divIcon({
-          className: '',
-          html: '<div class="driver-pin' + (isOffline ? ' offline-pin' : '') + '" onclick="selectDriver(\\'' + d.driverId + '\\')">' +
-                  '<div class="' + circleClass + '" style="background:' + color + ';' + borderStyle + '">' +
-                    circleContent +
-                  '</div>' +
-                  '<div class="' + labelClass + '">' +
-                    d.driverName + staleLabel +
-                  '</div>' +
-                '</div>',
-          iconSize: isOffline ? [72, 54] : [60, 48],
-          iconAnchor: isOffline ? [36, 27] : [30, 24]
-        });
-
-        const marker = L.marker([d.lat, d.lng], { icon: driverIcon }).addTo(map);
-        marker.on('click', () => selectDriver(d.driverId));
-        driverMarkers[d.driverId] = marker;
+      let borderStyle = 'border: 2px solid #ffffff;';
+      if (d.isSelected) {
+        borderStyle = isOffline
+          ? 'border: 3px dashed #0f172a; transform: scale(1.15);'
+          : 'border: 3px solid #0f172a; transform: scale(1.15);';
+      } else if (isOffline) {
+        borderStyle = 'border: 2px dashed #cbd5e1;';
       }
-    });
+
+      const circleContent = isOffline
+        ? '⊘'
+        : (d.speed != null && d.speed > 0 ? Math.round(d.speed * 3.6) : '●');
+
+      const circleClass = isOffline ? 'pin-circle offline' : 'pin-circle';
+      const labelClass = isOffline ? 'pin-label offline' : 'pin-label';
+      const staleLabel = isOffline
+        ? '<span class="pin-sublabel-offline">' + (isRtlLang ? 'آخر موقع معروف' : 'Last Known') + '</span>'
+        : '';
+
+      return L.divIcon({
+        className: '',
+        html: '<div class="driver-pin' + (isOffline ? ' offline-pin' : '') + '" onclick="selectDriver(\\'' + d.driverId + '\\')">' +
+                '<div class="' + circleClass + '" style="background:' + color + ';' + borderStyle + '">' +
+                  circleContent +
+                '</div>' +
+                '<div class="' + labelClass + '">' +
+                  d.driverName + staleLabel +
+                '</div>' +
+              '</div>',
+        iconSize: isOffline ? [72, 54] : [60, 48],
+        iconAnchor: isOffline ? [36, 27] : [30, 24]
+      });
+    }
+
+    const driverMarkers = {};
+    let currentBounds = L.latLngBounds([[restaurant.latitude, restaurant.longitude]]);
+
+    window.updateFleetDrivers = function(driverList) {
+      if (!Array.isArray(driverList)) return;
+      const incomingIds = new Set();
+      currentBounds = L.latLngBounds([[restaurant.latitude, restaurant.longitude]]);
+
+      driverList.forEach(function(d) {
+        if (d.lat && d.lng) {
+          incomingIds.add(d.driverId);
+          currentBounds.extend([d.lat, d.lng]);
+
+          const icon = buildDriverIcon(d);
+          const existingMarker = driverMarkers[d.driverId];
+
+          if (existingMarker) {
+            existingMarker.setLatLng([d.lat, d.lng]);
+            existingMarker.setIcon(icon);
+          } else {
+            const marker = L.marker([d.lat, d.lng], { icon: icon }).addTo(map);
+            marker.on('click', function() { selectDriver(d.driverId); });
+            driverMarkers[d.driverId] = marker;
+          }
+        }
+      });
+
+      // Clean up removed drivers
+      Object.keys(driverMarkers).forEach(function(id) {
+        if (!incomingIds.has(id)) {
+          map.removeLayer(driverMarkers[id]);
+          delete driverMarkers[id];
+        }
+      });
+    };
 
     function selectDriver(driverId) {
       if (window.ReactNativeWebView) {
@@ -267,20 +294,43 @@ export function RealGeographicMapView({
     window.mapZoomOut = () => map.zoomOut();
     window.mapRecenter = () => map.setView([restaurant.latitude, restaurant.longitude], 14);
     window.mapFitFleet = () => {
-      if (bounds.isValid()) {
-        map.fitBounds(bounds.pad(0.15));
+      if (currentBounds.isValid()) {
+        map.fitBounds(currentBounds.pad(0.15));
       }
     };
     window.mapFocusDriver = (lat, lng) => map.setView([lat, lng], 16);
+
+    // Notify React Native that Leaflet DOM is fully loaded and ready for initial driver stream
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'MAP_READY' }));
+    }
   </script>
 </body>
 </html>`;
-  }, [restaurant, drivers, selectedDriverId, rtl]);
+  }, [restaurant.latitude, restaurant.longitude, restaurant.radiusMeters, restaurant.name, rtl]);
+
+  const sendDriversUpdate = useCallback(() => {
+    if (webViewRef.current && isWebViewReadyRef.current) {
+      const payload = JSON.stringify(serializedDrivers);
+      webViewRef.current.injectJavaScript(
+        `if (window.updateFleetDrivers) { window.updateFleetDrivers(${payload}); } true;`
+      );
+    }
+  }, [serializedDrivers]);
+
+  useEffect(() => {
+    sendDriversUpdate();
+  }, [sendDriversUpdate]);
 
   // Handle messages from WebView
   const handleMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'MAP_READY') {
+        isWebViewReadyRef.current = true;
+        sendDriversUpdate();
+        return;
+      }
       if (data.type === 'SELECT_DRIVER') {
         const found = drivers.find((d) => d.driverId === data.driverId);
         if (found && onSelectDriver) {

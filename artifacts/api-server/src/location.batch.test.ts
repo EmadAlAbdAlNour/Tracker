@@ -59,7 +59,80 @@ describe('Location batch service', () => {
     const res = await authService.submitDriverLocationBatch(user.id, inputs as any);
     expect(res.accepted).toBe(2);
     expect(res.duplicates).toBe(0);
-    expect(Array.isArray(res.acceptedClientIds)).toBe(true);
+    expect(res.acceptedClientIds).toEqual(['c1', 'c2']);
+    expect(res.insertedClientIds).toEqual(['c1', 'c2']);
+    expect(res.duplicateClientIds).toEqual([]);
+  });
+
+  it('handles duplicate points idempotently without failing client', async () => {
+    const user = makeUser('u1-dup');
+    const driver = makeDriver(user.id, 'd1-dup');
+    const shift = makeShift('s1-dup', driver.id);
+
+    vi.spyOn(authService as any, 'getDriverByUserId').mockResolvedValue(driver as any);
+
+    dbModule.db.select = () => ({
+      from: (table: any) => ({
+        limit: async () => [],
+        where: () => ({
+          orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
+          limit: async () => (table?.name === 'shifts' ? [shift] : [driver]),
+        }),
+        orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
+        innerJoin: () => ({ where: () => ({ limit: async () => (table === (dbModule as any).shiftsTable ? [shift] : [driver]) }) }),
+      } as any),
+    }) as any;
+
+    // Simulate ON CONFLICT DO NOTHING: point c1 already exists, so 0 rows returned
+    const pool = (dbModule as any).pool;
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [] } as any);
+
+    const now = new Date().toISOString();
+    const inputs = [{ clientLocationId: 'c1', latitude: 10, longitude: 10, recordedAt: now }];
+
+    const res = await authService.submitDriverLocationBatch(user.id, inputs as any);
+    expect(res.accepted).toBe(0);
+    expect(res.duplicates).toBe(1);
+    expect(res.acceptedClientIds).toEqual(['c1']); // c1 was duplicate, so still reported as accepted
+    expect(res.insertedClientIds).toEqual([]);
+    expect(res.duplicateClientIds).toEqual(['c1']);
+  });
+
+  it('handles mixed new and duplicate batch correctly', async () => {
+    const user = makeUser('u1-mix');
+    const driver = makeDriver(user.id, 'd1-mix');
+    const shift = makeShift('s1-mix', driver.id);
+
+    vi.spyOn(authService as any, 'getDriverByUserId').mockResolvedValue(driver as any);
+
+    dbModule.db.select = () => ({
+      from: (table: any) => ({
+        limit: async () => [],
+        where: () => ({
+          orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
+          limit: async () => (table?.name === 'shifts' ? [shift] : [driver]),
+        }),
+        orderBy: () => ({ limit: async () => (table?.name === 'shifts' ? [shift] : [driver]) }),
+        innerJoin: () => ({ where: () => ({ limit: async () => (table === (dbModule as any).shiftsTable ? [shift] : [driver]) }) }),
+      } as any),
+    }) as any;
+
+    // Simulate mixed: c1 newly inserted, c2 was duplicate (ON CONFLICT DO NOTHING)
+    const pool = (dbModule as any).pool;
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ client_location_id: 'c1' }] } as any);
+
+    const now = new Date().toISOString();
+    const inputs = [
+      { clientLocationId: 'c1', latitude: 10, longitude: 10, recordedAt: now },
+      { clientLocationId: 'c2', latitude: 11, longitude: 11, recordedAt: now },
+    ];
+
+    const res = await authService.submitDriverLocationBatch(user.id, inputs as any);
+    expect(res.accepted).toBe(1);
+    expect(res.duplicates).toBe(1);
+    expect(res.acceptedClientIds).toEqual(['c1', 'c2']);
+    expect(res.insertedClientIds).toEqual(['c1']);
+    expect(res.duplicateClientIds).toEqual(['c2']);
   });
 
   it('rejects batches larger than 20', async () => {

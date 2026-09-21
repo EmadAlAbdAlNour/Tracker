@@ -105,6 +105,8 @@ const LeafletMap = dynamic(
     }) {
       const map = useMap();
       const initialMounted = useRef(false);
+      const lastHandledDriverPanTriggerRef = useRef(0);
+      const lastHandledRecenterTriggerRef = useRef(0);
 
       // Recenter only on initial mount
       useEffect(() => {
@@ -114,16 +116,18 @@ const LeafletMap = dynamic(
         }
       }, [center, map]);
 
-      // Handle user-requested recenter to restaurant
+      // Handle user-requested recenter to restaurant ONLY when trigger increments
       useEffect(() => {
-        if (recenterTrigger > 0) {
+        if (recenterTrigger > 0 && recenterTrigger > lastHandledRecenterTriggerRef.current) {
+          lastHandledRecenterTriggerRef.current = recenterTrigger;
           map.setView(center, 14, { animate: true });
         }
       }, [recenterTrigger, center, map]);
 
-      // Smoothly pan/zoom to selected driver ONLY when user explicitly triggers selection
+      // Smoothly pan/zoom to selected driver ONLY when user explicitly triggers selection (trigger increments)
       useEffect(() => {
-        if (driverPanTrigger > 0 && targetLocation) {
+        if (driverPanTrigger > 0 && driverPanTrigger > lastHandledDriverPanTriggerRef.current && targetLocation) {
+          lastHandledDriverPanTriggerRef.current = driverPanTrigger;
           map.setView(targetLocation, 16, { animate: true });
         }
       }, [driverPanTrigger, targetLocation, map]);
@@ -364,6 +368,7 @@ export default function MapPage() {
   const [isTabVisible, setIsTabVisible] = useState(true);
   const mountedRef = useRef(true);
   const latestRecordedAtRef = useRef<Map<string, number>>(new Map());
+  const initialLoadDoneRef = useRef(false);
 
   const handleSelectDriver = useCallback((driverId: string) => {
     setSelectedDriverId(driverId);
@@ -396,7 +401,8 @@ export default function MapPage() {
           }
 
           // Out-of-order / stale location protection:
-          // Ignore incoming location if incoming.recordedAt <= current.recordedAt
+          // Tolerates small clock skews while discarding truly stale historical replayed batches
+          const SKEW_TOLERANCE_MS = 15_000;
           const sanitizedDrivers = data.drivers.map((incoming) => {
             const incomingRecordedAt = incoming.location?.recordedAt;
             if (!incomingRecordedAt) return incoming;
@@ -404,7 +410,9 @@ export default function MapPage() {
             const incomingTime = new Date(incomingRecordedAt).getTime();
             const lastAccepted = latestRecordedAtRef.current.get(incoming.driverId) ?? 0;
 
-            if (incomingTime < lastAccepted) {
+            const isStaleReplay = lastAccepted > 0 && incomingTime < (lastAccepted - SKEW_TOLERANCE_MS);
+
+            if (isStaleReplay) {
               // Stale/out-of-order point (e.g. from offline queue replay): preserve current newer location
               const existing = prevFleet.drivers.find((d) => d.driverId === incoming.driverId);
               if (existing?.location) {
@@ -417,7 +425,7 @@ export default function MapPage() {
                 };
               }
             } else {
-              latestRecordedAtRef.current.set(incoming.driverId, incomingTime);
+              latestRecordedAtRef.current.set(incoming.driverId, Math.max(lastAccepted, incomingTime));
             }
             return incoming;
           });
@@ -461,7 +469,12 @@ export default function MapPage() {
   // 15s if no active shifts, 30s when tab is hidden
   useEffect(() => {
     if (!isAuthenticated) return;
-    loadData(true);
+    if (!initialLoadDoneRef.current) {
+      initialLoadDoneRef.current = true;
+      loadData(true);
+    } else {
+      loadData(false);
+    }
 
     const getPollingIntervalMs = () => {
       if (!isTabVisible) return 30000; // 30s when tab is backgrounded

@@ -46,10 +46,20 @@ function getRetryDelayMs(retryCount: number): number {
 let flushing = false;
 
 // guarded single-flight flush that reads auth session internally to ensure fresh token
-export async function flushQueuedLocationsGuarded(apiBaseUrl: string): Promise<number> {
+export async function flushQueuedLocationsGuarded(apiBaseUrl?: string): Promise<number> {
   if (flushing) return 0;
   flushing = true;
   try {
+    let targetUrl: string = apiBaseUrl || '';
+    if (!targetUrl) {
+      try {
+        const sessionModule = await import('./session');
+        targetUrl = sessionModule.API_URL || 'https://tracker-alpha-puce.vercel.app';
+      } catch {
+        targetUrl = 'https://tracker-alpha-puce.vercel.app';
+      }
+    }
+
     const SecureStore = await import('expo-secure-store');
     const SESSION_KEY = 'tracker_driver_session';
     const value = await (SecureStore as any).getItemAsync(SESSION_KEY);
@@ -57,11 +67,11 @@ export async function flushQueuedLocationsGuarded(apiBaseUrl: string): Promise<n
     const session = JSON.parse(value) as any;
     if (!session?.accessToken) return 0;
 
-    let flushed = await flushQueuedLocations(apiBaseUrl, session.accessToken);
+    let flushed = await flushQueuedLocations(targetUrl, session.accessToken);
     // If response was 401 unauthorized (-1), attempt refresh and retry
     if (flushed === -1 && session.refreshToken) {
       try {
-        const refreshResp = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+        const refreshResp = await fetch(`${targetUrl}/api/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refreshToken: session.refreshToken }),
@@ -74,7 +84,7 @@ export async function flushQueuedLocationsGuarded(apiBaseUrl: string): Promise<n
             refreshToken: newTokens.refreshToken,
           };
           await (SecureStore as any).setItemAsync(SESSION_KEY, JSON.stringify(updatedSession));
-          flushed = await flushQueuedLocations(apiBaseUrl, updatedSession.accessToken);
+          flushed = await flushQueuedLocations(targetUrl, updatedSession.accessToken);
         }
       } catch {
         // Refresh failed
@@ -148,13 +158,22 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
 
     const body = await response.json();
     const acceptedClientIds: string[] = Array.isArray(body.acceptedClientIds) ? body.acceptedClientIds : [];
+    const duplicateClientIds: string[] = Array.isArray(body.duplicateClientIds) ? body.duplicateClientIds : [];
+    // Both accepted and duplicate points represent points successfully in the DB
+    const successClientIds = new Set([...acceptedClientIds, ...duplicateClientIds]);
 
     const failedPoints: QueuedLocationPoint[] = [];
 
     for (const point of batch) {
-      if (!acceptedClientIds.includes(point.localId)) {
-        // point not accepted -> keep with retry inc
-        failedPoints.push({ ...point, retryCount: point.retryCount + 1, nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1) });
+      if (!successClientIds.has(point.localId)) {
+        // point truly not accepted -> keep with retry inc if under 8 retries
+        if (point.retryCount < 8) {
+          failedPoints.push({
+            ...point,
+            retryCount: point.retryCount + 1,
+            nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
+          });
+        }
       }
     }
 
@@ -162,10 +181,16 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
     const persisted = queue.filter((p) => !batchIds.has(p.localId)).concat(failedPoints);
     await writeQueue(persisted);
 
-    return acceptedClientIds.length;
+    return successClientIds.size;
   } catch (err) {
     // network error: keep batch with increased retry
-    const failed = batch.map((point) => ({ ...point, retryCount: point.retryCount + 1, nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1) }));
+    const failed = batch
+      .filter((point) => point.retryCount < 8)
+      .map((point) => ({
+        ...point,
+        retryCount: point.retryCount + 1,
+        nextRetryAt: Date.now() + getRetryDelayMs(point.retryCount + 1),
+      }));
     const batchIds = new Set(batch.map((p) => p.localId));
     const q = await readQueue();
     const persisted = q.filter((p) => !batchIds.has(p.localId)).concat(failed);

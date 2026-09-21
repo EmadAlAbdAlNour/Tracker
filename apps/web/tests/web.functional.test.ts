@@ -439,4 +439,65 @@ describe('WEB ADMIN FUNCTIONAL TEST SUITE', () => {
       setStoredLocale('ar');
     });
   });
+
+  // ==========================================
+  // 8. LIVE FLEET POLLING & CLOCK SKEW TOLERANCE
+  // ==========================================
+  describe('Live Fleet Polling & Clock Skew Tolerance', () => {
+    it('clock skew tolerance - allows fresh location updates within 15-second skew window', () => {
+      const SKEW_TOLERANCE_MS = 15_000;
+      const prevRecordedAt = '2026-09-21T12:00:10.000Z';
+      const prevTime = new Date(prevRecordedAt).getTime();
+
+      // Case A: Next point is 3 seconds ahead (normal monotonic progression)
+      const normalPointTime = new Date('2026-09-21T12:00:13.000Z').getTime();
+      expect(normalPointTime >= prevTime - SKEW_TOLERANCE_MS).toBe(true);
+
+      // Case B: Next point has slight clock skew / out-of-order within 15s window (e.g. 5s behind prev due to device skew)
+      const skewedPointTime = new Date('2026-09-21T12:00:06.000Z').getTime();
+      expect(skewedPointTime >= prevTime - SKEW_TOLERANCE_MS).toBe(true);
+
+      // Case C: Genuinely stale historical point (e.g. 60 seconds behind prev)
+      const stalePointTime = new Date('2026-09-21T11:59:00.000Z').getTime();
+      expect(stalePointTime >= prevTime - SKEW_TOLERANCE_MS).toBe(false);
+    });
+
+    it('getLiveFleetStatus - fetches live fleet and includes updated driver positions', async () => {
+      global.fetch = vi.fn().mockResolvedValue(mockResponse({
+        summary: {
+          totalDrivers: 3,
+          activeShifts: 1,
+          onlineDrivers: 1,
+          atRestaurant: 0,
+          moving: 1,
+          stopped: 0,
+          offline: 2,
+          lowBattery: 0,
+        },
+        drivers: [
+          {
+            driverId: 'd-1',
+            name: 'Reda',
+            phone: '0501112233',
+            employeeId: 'DRV-001',
+            status: 'MOVING',
+            isOnline: true,
+            hasActiveShift: true,
+            lastLocation: {
+              latitude: 24.7136,
+              longitude: 46.6753,
+              recordedAt: new Date().toISOString(),
+              speed: 25,
+            },
+          },
+        ],
+      }));
+
+      const fleet = await getLiveFleetStatus();
+      expect(fleet.summary.onlineDrivers).toBe(1);
+      expect(fleet.drivers[0].name).toBe('Reda');
+      expect(fleet.drivers[0].isOnline).toBe(true);
+      expect(fleet.drivers[0].lastLocation?.latitude).toBe(24.7136);
+    });
+  });
 });

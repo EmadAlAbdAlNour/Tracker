@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -89,10 +90,15 @@ export function AdminHomeScreen({
     setLocaleState(next);
   };
 
+  const fleetLoadingRef = useRef(false);
+
   // 1. Load Fleet Data
-  const loadFleet = useCallback(async () => {
+  const loadFleet = useCallback(async (silent?: boolean | unknown) => {
+    const isSilent = silent === true;
+    if (fleetLoadingRef.current) return;
+    fleetLoadingRef.current = true;
     try {
-      setFleetLoading(true);
+      if (!isSilent) setFleetLoading(true);
       setFleetError(null);
       const data = await apiRequest<any>('/api/fleet/live');
       setFleet(data);
@@ -101,9 +107,12 @@ export function AdminHomeScreen({
         await onLogout();
         return;
       }
-      setFleetError(err?.message || 'Failed to connect to server');
+      if (!isSilent) {
+        setFleetError(err?.message || 'Failed to connect to server');
+      }
     } finally {
-      setFleetLoading(false);
+      fleetLoadingRef.current = false;
+      if (!isSilent) setFleetLoading(false);
     }
   }, [apiRequest, onLogout]);
 
@@ -214,9 +223,41 @@ export function AdminHomeScreen({
   }, []);
 
   useEffect(() => {
-    loadFleet();
+    // Initial fetch
+    loadFleet(false);
     loadNotifications();
-  }, [loadFleet, loadNotifications]);
+
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(() => {
+        if (activeTab === 'dashboard' || activeTab === 'map' || activeTab === 'drivers') {
+          loadFleet(true);
+        }
+      }, 5000);
+    };
+
+    startPolling();
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        loadFleet(true);
+        loadNotifications();
+        startPolling();
+      } else {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+      }
+    });
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+      appStateSub.remove();
+    };
+  }, [loadFleet, loadNotifications, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'more') {

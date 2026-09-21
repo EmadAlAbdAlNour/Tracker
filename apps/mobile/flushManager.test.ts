@@ -115,7 +115,7 @@ describe('flushManager', () => {
       expect(savedQueue[0].localId).toBe(point2.localId);
     });
 
-    it('preserves duplicate/unaccepted points', async () => {
+    it('preserves unaccepted points when server accepts nothing', async () => {
       const point1 = makePoint();
       const point2 = makePoint();
       const points = [point1, point2];
@@ -136,6 +136,63 @@ describe('flushManager', () => {
       expect(savedQueue).toHaveLength(2);
       expect(savedQueue[0].retryCount).toBe(1);
       expect(savedQueue[1].retryCount).toBe(1);
+    });
+
+    it('clears duplicate points from queue without retry penalty when returned in duplicateClientIds', async () => {
+      const point1 = makePoint();
+      const point2 = makePoint();
+      const points = [point1, point2];
+
+      (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify(points));
+      (AsyncStorage.setItem as any).mockResolvedValue(undefined);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          acceptedClientIds: [],
+          duplicateClientIds: [point1.localId],
+        }),
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(1);
+      const setCall = (AsyncStorage.setItem as any).mock.calls[0];
+      const savedQueue = JSON.parse(setCall[1]);
+      // point1 was a duplicate -> removed successfully
+      // point2 was not in accepted or duplicate -> retained with retry increment
+      expect(savedQueue).toHaveLength(1);
+      expect(savedQueue[0].localId).toBe(point2.localId);
+      expect(savedQueue[0].retryCount).toBe(1);
+    });
+
+    it('handles mixed batch of accepted, duplicate, and unaccepted points correctly', async () => {
+      const point1 = makePoint();
+      const point2 = makePoint();
+      const point3 = makePoint();
+      const points = [point1, point2, point3];
+
+      (AsyncStorage.getItem as any).mockResolvedValue(JSON.stringify(points));
+      (AsyncStorage.setItem as any).mockResolvedValue(undefined);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          acceptedClientIds: [point1.localId],
+          duplicateClientIds: [point2.localId],
+        }),
+      });
+
+      const result = await flushManager.flushQueuedLocations('http://api.local', 'token123');
+
+      expect(result).toBe(2);
+      const setCall = (AsyncStorage.setItem as any).mock.calls[0];
+      const savedQueue = JSON.parse(setCall[1]);
+      // point1 (accepted) and point2 (duplicate) both drained
+      // point3 (unaccepted) preserved
+      expect(savedQueue).toHaveLength(1);
+      expect(savedQueue[0].localId).toBe(point3.localId);
+      expect(savedQueue[0].retryCount).toBe(1);
     });
   });
 

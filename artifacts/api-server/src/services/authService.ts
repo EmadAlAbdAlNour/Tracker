@@ -897,9 +897,14 @@ export async function submitDriverLocationBatch(
   const { pool } = await import("@workspace/db");
   const result = await pool.query(sqlText, fullValues);
 
-  const insertedClientIds = (result.rows ?? []).map((r: any) => r.client_location_id).filter(Boolean);
+  const insertedClientIds: string[] = (result.rows ?? []).map((r: any) => r.client_location_id).filter(Boolean);
+  const inputClientIds = inputs.map((it) => it.clientLocationId?.trim()).filter((id): id is string => Boolean(id));
+  const insertedSet = new Set(insertedClientIds);
+  const duplicateClientIds = inputClientIds.filter((id) => !insertedSet.has(id));
   const accepted = insertedClientIds.length;
-  const duplicates = inputs.length - accepted;
+  const duplicates = duplicateClientIds.length;
+  // All points with clientLocationId that are present in the DB (inserted + preexisting duplicates)
+  const acceptedClientIds = inputClientIds;
 
   // update devices lastSeen/lastLocationAt and telemetry from latest point
   const lastPoint = inputs[inputs.length - 1];
@@ -934,7 +939,13 @@ export async function submitDriverLocationBatch(
     }).catch((err) => console.error("Batch location alert evaluation error:", err));
   }).catch((err) => console.error("Alert service module load error in batch:", err));
 
-  return { accepted, duplicates, acceptedClientIds: insertedClientIds };
+  return {
+    accepted,
+    duplicates,
+    acceptedClientIds,
+    insertedClientIds,
+    duplicateClientIds,
+  };
 }
 
 export async function getLatestDriverLocation(driverId: string) {
