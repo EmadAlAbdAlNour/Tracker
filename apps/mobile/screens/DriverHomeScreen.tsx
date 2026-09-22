@@ -32,7 +32,7 @@ import {
 } from '../location';
 import { flushQueuedLocationsGuarded } from '../flushManager';
 import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from '../i18n';
-import { type Session } from '../session';
+import { type Session, saveTelemetryToken, clearTelemetryToken, readTelemetryToken } from '../session';
 import { TrackerDialog } from '../components/TrackerDialog';
 
 interface DriverHomeScreenProps {
@@ -115,6 +115,22 @@ export function DriverHomeScreen({
       const current = (shifts.items ?? [])[0] ?? null;
       setActiveShift(current);
       if (current) {
+        // Ensure background-safe telemetry credential is valid in AsyncStorage
+        const cachedToken = await readTelemetryToken();
+        if (!cachedToken) {
+          apiRequest<{ telemetryToken: string; expiresIn: number; shiftId: string }>(
+            '/api/drivers/me/telemetry-token',
+            { method: 'POST' }
+          )
+            .then(async (tok) => {
+              if (tok?.telemetryToken) {
+                const expiresAt = Date.now() + (tok.expiresIn ? tok.expiresIn * 1000 : 86400 * 1000);
+                await saveTelemetryToken(tok.telemetryToken, expiresAt, tok.shiftId || current.id);
+              }
+            })
+            .catch(() => {});
+        }
+
         const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
         if (!isRunning) {
           const started = await startBackgroundTracking();
@@ -123,6 +139,7 @@ export function DriverHomeScreen({
           setTrackingActive(true);
         }
       } else {
+        await clearTelemetryToken().catch(() => {});
         setTrackingActive(false);
       }
     } catch {
@@ -170,10 +187,17 @@ export function DriverHomeScreen({
   const handleStartShift = async () => {
     setLoading(true);
     try {
-      const resp = await apiRequest<{ shift: any }>('/api/drivers/me/shifts/start', {
-        method: 'POST',
-      });
+      const resp = await apiRequest<{ shift: any; telemetryToken?: string; expiresIn?: number }>(
+        '/api/drivers/me/shifts/start',
+        {
+          method: 'POST',
+        }
+      );
       if (resp?.shift) {
+        if (resp.telemetryToken) {
+          const expiresAt = Date.now() + (resp.expiresIn ? resp.expiresIn * 1000 : 86400 * 1000);
+          await saveTelemetryToken(resp.telemetryToken, expiresAt, resp.shift.id);
+        }
         setActiveShift(resp.shift);
         const started = await startBackgroundTracking();
         setTrackingActive(Boolean(started));
@@ -209,6 +233,7 @@ export function DriverHomeScreen({
     try {
       await stopBackgroundTracking();
       setTrackingActive(false);
+      await clearTelemetryToken().catch(() => {});
       await flushQueuedLocationsGuarded(apiUrl).catch(() => {});
       await apiRequest('/api/drivers/me/shifts/end', { method: 'POST' });
       setActiveShift(null);

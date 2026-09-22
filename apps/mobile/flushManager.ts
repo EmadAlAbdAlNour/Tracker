@@ -58,7 +58,7 @@ export function isFlushing(): boolean {
   return flushing;
 }
 
-// guarded single-flight flush that reads auth session internally to ensure fresh token
+// guarded single-flight flush that prioritizes background-safe telemetry credential from AsyncStorage, with SecureStore fallback
 export async function flushQueuedLocationsGuarded(apiBaseUrl?: string): Promise<number> {
   if (flushing) return 0;
   flushing = true;
@@ -73,36 +73,69 @@ export async function flushQueuedLocationsGuarded(apiBaseUrl?: string): Promise<
       }
     }
 
-    const SecureStore = await import('expo-secure-store');
-    const SESSION_KEY = 'tracker_driver_session';
-    const value = await (SecureStore as any).getItemAsync(SESSION_KEY);
-    if (!value) return 0;
-    const session = JSON.parse(value) as any;
-    if (!session?.accessToken) return 0;
+    const sessionModule = await import('./session');
 
-    let flushed = await flushQueuedLocations(targetUrl, session.accessToken);
-    // If response was 401 unauthorized (-1), attempt refresh and retry
-    if (flushed === -1 && session.refreshToken) {
+    // Priority 1: Check background-safe telemetry credential from AsyncStorage (accessible in headless tasks)
+    let token: string | null = await sessionModule.readTelemetryToken().catch(() => null);
+    let isMasterSession = false;
+    let masterSession: any = null;
+
+    // Priority 2: If telemetry token is missing or expired, attempt SecureStore (works when foreground/unlocked)
+    if (!token) {
+      try {
+        const SecureStore = await import('expo-secure-store');
+        const SESSION_KEY = 'tracker_driver_session';
+        const value = await (SecureStore as any).getItemAsync(SESSION_KEY);
+        if (value) {
+          masterSession = JSON.parse(value);
+          if (masterSession?.accessToken) {
+            token = masterSession.accessToken;
+            isMasterSession = true;
+          }
+        }
+      } catch {
+        // SecureStore inaccessible in background/headless mode
+      }
+    }
+
+    // If still no token available, safely preserve queued points and exit
+    if (!token) {
+      const q = await readQueue();
+      if (q.length > 0) {
+        console.warn('[TelemetryFlush] Credential unavailable in background; preserving queued points', {
+          queueCount: q.length,
+          operation: 'flushQueuedLocationsGuarded',
+        });
+      }
+      return 0;
+    }
+
+    let flushed = await flushQueuedLocations(targetUrl, token);
+
+    // If master session was used and got 401, attempt refresh (foreground path)
+    if (flushed === -1 && isMasterSession && masterSession?.refreshToken) {
       try {
         const refreshResp = await fetch(`${targetUrl}/api/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken: session.refreshToken }),
+          body: JSON.stringify({ refreshToken: masterSession.refreshToken }),
         });
         if (refreshResp.ok) {
           const newTokens = await refreshResp.json();
           const updatedSession = {
-            ...session,
+            ...masterSession,
             accessToken: newTokens.accessToken,
             refreshToken: newTokens.refreshToken,
           };
-          await (SecureStore as any).setItemAsync(SESSION_KEY, JSON.stringify(updatedSession));
+          const SecureStore = await import('expo-secure-store');
+          await (SecureStore as any).setItemAsync('tracker_driver_session', JSON.stringify(updatedSession));
           flushed = await flushQueuedLocations(targetUrl, updatedSession.accessToken);
         }
       } catch {
         // Refresh failed
       }
     }
+
     return Math.max(0, flushed);
   } finally {
     flushing = false;
@@ -154,6 +187,11 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
       signal: controller.signal,
     });
   } catch (err: any) {
+    console.warn('[TelemetryFlush] Network failure during batch upload:', {
+      category: err?.name === 'AbortError' ? 'network_timeout' : 'network_error',
+      batchSize: batch.length,
+      operation: 'flushQueuedLocations',
+    });
     // Network error or timeout (AbortError): acquire lock and update retry state on CURRENT queue
     await withQueueLock(async () => {
       const currentQueue = await readQueue();
@@ -184,7 +222,19 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
   }
 
   if (!response.ok) {
+    console.warn('[TelemetryFlush] Non-OK HTTP response:', {
+      category: 'http_error',
+      status: response.status,
+      batchSize: batch.length,
+      operation: 'flushQueuedLocations',
+    });
+
     if (response.status === 401) {
+      // Telemetry token or access token expired/invalid: clear cached telemetry token so subsequent attempts can reauthenticate
+      try {
+        const sessionModule = await import('./session');
+        await sessionModule.clearTelemetryToken().catch(() => {});
+      } catch {}
       return -1;
     }
 
@@ -193,9 +243,13 @@ export async function flushQueuedLocations(apiBaseUrl: string, accessToken: stri
       const batchIds = new Set(batch.map((p) => p.localId));
 
       if (response.status === 409 || response.status === 403) {
-        // Shift not active or device unauthorized: discard stale points to prevent eternal queue jamming
+        // Shift not active or device unauthorized: discard stale points to prevent eternal queue jamming and clear token
         const updatedQueue = currentQueue.filter((p) => !batchIds.has(p.localId));
         await writeQueue(updatedQueue);
+        try {
+          const sessionModule = await import('./session');
+          await sessionModule.clearTelemetryToken().catch(() => {});
+        } catch {}
         return;
       }
 

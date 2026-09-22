@@ -185,8 +185,19 @@ export function registerBackgroundLocationTask(): void {
     await manager.pushQueuedPoints(toPush);
     try {
       const { API_URL } = await import('./session');
-      await manager.flushQueuedLocationsGuarded(API_URL);
-    } catch {
+      const flushed = await manager.flushQueuedLocationsGuarded(API_URL);
+      if (flushed > 0) {
+        console.log('[BackgroundLocationTask] Flushed telemetry points:', {
+          flushedCount: flushed,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err: any) {
+      console.warn('[BackgroundLocationTask] Flush attempt failed:', {
+        category: 'flush_execution_error',
+        message: err?.message || 'unknown',
+        timestamp: new Date().toISOString(),
+      });
       // In background or offline, points remain safely persisted in the queue
     }
   });

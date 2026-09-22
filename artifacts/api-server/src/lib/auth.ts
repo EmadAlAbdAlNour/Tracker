@@ -31,6 +31,8 @@ const JWT_SECRET = env.jwtSecret;
 const JWT_REFRESH_SECRET = env.jwtRefreshSecret;
 const ACCESS_TOKEN_TTL = "15m";
 const REFRESH_TOKEN_TTL = "30d";
+export const TELEMETRY_TOKEN_TTL = "24h";
+export const TELEMETRY_TOKEN_EXPIRY_SECONDS = 86400;
 
 export function sanitizeUser(user: { id: string; name: string; email: string; phone: string | null; role: string; active: boolean; passwordHash?: string }): SafeUser {
   const role = normalizeRole(user.role);
@@ -72,6 +74,14 @@ export function signRefreshToken(userId: string, role: string, jti: string): str
   return jwt.sign({ sub: userId, role, type: "refresh", jti }, JWT_REFRESH_SECRET, {
     expiresIn: REFRESH_TOKEN_TTL,
   });
+}
+
+export function signTelemetryToken(userId: string, role: string, deviceId: string, shiftId: string): string {
+  return jwt.sign(
+    { sub: userId, role, type: "telemetry", deviceId, shiftId },
+    JWT_SECRET,
+    { expiresIn: TELEMETRY_TOKEN_TTL }
+  );
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

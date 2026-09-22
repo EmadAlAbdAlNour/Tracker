@@ -22,7 +22,8 @@ import {
   resetDriverDeviceByDriverId,
   assignDriverDevice,
 } from "../services/authService";
-import { type AuthenticatedRequest, requireAuth, requireRole } from "../middleware/auth";
+import { type AuthenticatedRequest, requireAuth, requireAuthOrTelemetry, requireRole } from "../middleware/auth";
+import { signTelemetryToken, TELEMETRY_TOKEN_EXPIRY_SECONDS } from "../lib/auth";
 import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, locationBatchSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
 
 const router = Router();
@@ -103,7 +104,39 @@ router.post("/me/shifts/start", requireAuth, requireRole("DRIVER"), async (req: 
   try {
     const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
     const shift = await startDriverShift(req.user!.id, callerDeviceId);
-    res.status(201).json({ shift });
+    const device = await getDriverDevice(req.user!.id);
+    const deviceId = callerDeviceId || device?.id || "";
+    const telemetryToken = signTelemetryToken(req.user!.id, "DRIVER", deviceId, shift.id);
+    res.status(201).json({ shift, telemetryToken, expiresIn: TELEMETRY_TOKEN_EXPIRY_SECONDS });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/me/telemetry-token", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driver = await getDriverByUserId(req.user!.id);
+    if (!driver) throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+    if (!driver.active) throw createError(403, "DRIVER_INACTIVE", "Driver is inactive");
+
+    const device = await getDriverDevice(req.user!.id);
+    if (!device || !(device as any).authorized) {
+      throw createError(403, "DEVICE_UNAUTHORIZED", "Device is not authorized or has been revoked");
+    }
+
+    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId || device.id;
+    if (device.id !== callerDeviceId) {
+      throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
+    }
+
+    const activeShifts = await listDriverShiftsForUser(req.user!.id, { status: "ACTIVE", limit: 1 });
+    const activeShift = activeShifts.items[0];
+    if (!activeShift) {
+      throw createError(409, "SHIFT_NOT_ACTIVE", "Driver does not have an active shift");
+    }
+
+    const telemetryToken = signTelemetryToken(req.user!.id, "DRIVER", device.id, activeShift.id);
+    res.status(200).json({ telemetryToken, expiresIn: TELEMETRY_TOKEN_EXPIRY_SECONDS, shiftId: activeShift.id });
   } catch (error) {
     next(error);
   }
@@ -118,11 +151,12 @@ router.post("/me/shifts/end", requireAuth, requireRole("DRIVER"), async (req: Au
   }
 });
 
-router.post("/me/location", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+router.post("/me/location", requireAuthOrTelemetry, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = locationPointSchema.parse(req.body);
     const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
-    const point = await submitDriverLocation(req.user!.id, body, callerDeviceId);
+    const expectedShiftId = req.user?.isTelemetryToken ? req.user?.shiftId : null;
+    const point = await submitDriverLocation(req.user!.id, body, callerDeviceId, expectedShiftId);
     res.status(201).json({ location: point });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -134,11 +168,12 @@ router.post("/me/location", requireAuth, requireRole("DRIVER"), async (req: Auth
 });
 
 // Batch upload: up to 20 points
-router.post("/me/location/batch", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+router.post("/me/location/batch", requireAuthOrTelemetry, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = locationBatchSchema.parse(req.body);
     const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
-    const result = await submitDriverLocationBatch(req.user!.id, body, callerDeviceId);
+    const expectedShiftId = req.user?.isTelemetryToken ? req.user?.shiftId : null;
+    const result = await submitDriverLocationBatch(req.user!.id, body, callerDeviceId, expectedShiftId);
     res.status(201).json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {

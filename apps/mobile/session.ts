@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocalizedErrorMessage } from './i18n';
 
 export const SESSION_ROLES = ['ADMIN', 'DRIVER', 'CALL_CENTER'] as const;
@@ -115,8 +116,55 @@ export async function readSession(): Promise<Session | null> {
   }
 }
 
+export const TELEMETRY_TOKEN_KEY = 'tracker_driver_telemetry_token';
+
+export type TelemetryCredential = {
+  token: string;
+  expiresAt: number;
+  shiftId: string;
+};
+
+export async function saveTelemetryToken(token: string, expiresAt: number, shiftId: string): Promise<void> {
+  if (!token || typeof token !== 'string') return;
+  const credential: TelemetryCredential = {
+    token,
+    expiresAt,
+    shiftId,
+  };
+  await AsyncStorage.setItem(TELEMETRY_TOKEN_KEY, JSON.stringify(credential));
+}
+
+export async function readTelemetryToken(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(TELEMETRY_TOKEN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as TelemetryCredential;
+    if (!parsed?.token || typeof parsed.token !== 'string') {
+      await clearTelemetryToken().catch(() => undefined);
+      return null;
+    }
+    // Check if token has at least 60 seconds remaining
+    if (parsed.expiresAt && parsed.expiresAt <= Date.now() + 60_000) {
+      await clearTelemetryToken().catch(() => undefined);
+      return null;
+    }
+    return parsed.token;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearTelemetryToken(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(TELEMETRY_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export async function clearSession(): Promise<void> {
-  await SecureStore.deleteItemAsync(SESSION_KEY);
+  await SecureStore.deleteItemAsync(SESSION_KEY).catch(() => undefined);
+  await clearTelemetryToken().catch(() => undefined);
 }
 
 let activeRefreshPromise: Promise<Session | null> | null = null;

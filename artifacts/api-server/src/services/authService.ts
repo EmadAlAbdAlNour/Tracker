@@ -697,6 +697,7 @@ export async function submitDriverLocation(
     networkStatus?: string | null;
   },
   requestDeviceId?: string | null,
+  expectedShiftId?: string | null,
 ) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
@@ -730,6 +731,10 @@ export async function submitDriverLocation(
 
   if (!activeShift[0]) {
     throw createError(409, "SHIFT_NOT_ACTIVE", "Driver is not on an active shift");
+  }
+
+  if (expectedShiftId && activeShift[0].id !== expectedShiftId) {
+    throw createError(409, "SHIFT_NOT_ACTIVE", "Telemetry credential shift does not match active shift");
   }
 
   const recordedAt = new Date(input.recordedAt);
@@ -827,6 +832,7 @@ export async function submitDriverLocationBatch(
     networkStatus?: string | null;
   }>,
   requestDeviceId?: string | null,
+  expectedShiftId?: string | null,
 ) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
@@ -860,6 +866,10 @@ export async function submitDriverLocationBatch(
 
   if (!activeShift[0]) {
     throw createError(409, "SHIFT_NOT_ACTIVE", "Driver is not on an active shift");
+  }
+
+  if (expectedShiftId && activeShift[0].id !== expectedShiftId) {
+    throw createError(409, "SHIFT_NOT_ACTIVE", "Telemetry credential shift does not match active shift");
   }
 
   if (!Array.isArray(inputs) || inputs.length === 0) {

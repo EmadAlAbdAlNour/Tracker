@@ -650,4 +650,196 @@ describe('flushManager', () => {
       expect(flushManager.isFlushing()).toBe(false);
     });
   });
+
+  describe('background telemetry authentication & 24h shift support', () => {
+    it('13 & 14. 24h telemetry token is stored in AsyncStorage and readTelemetryToken accepts token near 20h mark', async () => {
+      const { saveTelemetryToken, readTelemetryToken } = await import('./session');
+
+      let asyncStorageMap: Record<string, string> = {};
+      (AsyncStorage.getItem as any).mockImplementation((k: string) => Promise.resolve(asyncStorageMap[k] ?? null));
+      (AsyncStorage.setItem as any).mockImplementation((k: string, v: string) => {
+        asyncStorageMap[k] = v;
+        return Promise.resolve();
+      });
+
+      const baseTime = 1760000000000;
+      vi.useFakeTimers();
+      vi.setSystemTime(baseTime);
+
+      const twentyFourHoursMs = 24 * 3600 * 1000;
+      const twentyHoursMs = 20 * 3600 * 1000;
+
+      // Save 24h telemetry token
+      await saveTelemetryToken('telemetry-long-shift-tok', baseTime + twentyFourHoursMs, 'shift-long');
+
+      expect(asyncStorageMap['tracker_driver_telemetry_token']).toBeDefined();
+      const saved = JSON.parse(asyncStorageMap['tracker_driver_telemetry_token']);
+      expect(saved.token).toBe('telemetry-long-shift-tok');
+      expect(saved.expiresAt).toBe(baseTime + twentyFourHoursMs);
+
+      // Advance time to 20 hours into the shift
+      vi.setSystemTime(baseTime + twentyHoursMs);
+
+      const tokenAt20h = await readTelemetryToken();
+      expect(tokenAt20h).toBe('telemetry-long-shift-tok');
+
+      vi.useRealTimers();
+    });
+
+    it('15. existing expiration safety guard (<= 60s remaining) purges token and returns null', async () => {
+      const { readTelemetryToken } = await import('./session');
+
+      const baseTime = 1760000000000;
+      vi.useFakeTimers();
+      vi.setSystemTime(baseTime);
+
+      // Token expiring in 45 seconds (within the 60s buffer)
+      const telemetryCredential = {
+        token: 'telemetry_token_expiring_soon',
+        expiresAt: baseTime + 45_000,
+        shiftId: 'shift_123',
+      };
+
+      (AsyncStorage.getItem as any).mockImplementation((key: string) => {
+        if (key === 'tracker_driver_telemetry_token') {
+          return Promise.resolve(JSON.stringify(telemetryCredential));
+        }
+        return Promise.resolve(null);
+      });
+
+      const token = await readTelemetryToken();
+      expect(token).toBeNull();
+      expect(AsyncStorage.removeItem).toHaveBeenCalledWith('tracker_driver_telemetry_token');
+
+      vi.useRealTimers();
+    });
+
+    it('16 & 17. background flush works using only the 24h telemetry token from AsyncStorage when SecureStore is inaccessible', async () => {
+      const SecureStore = await import('expo-secure-store');
+      (SecureStore as any).getItemAsync = vi.fn().mockRejectedValue(new Error('ReactContextLost'));
+
+      const baseTime = 1760000000000;
+      vi.useFakeTimers();
+      vi.setSystemTime(baseTime + 20 * 3600 * 1000); // 20 hours into shift
+
+      const point = makePoint();
+      const telemetryCredential = {
+        token: 'telemetry_token_24h_at_20h',
+        expiresAt: baseTime + 24 * 3600 * 1000,
+        shiftId: 'shift_long_20h',
+      };
+
+      (AsyncStorage.getItem as any).mockImplementation((key: string) => {
+        if (key === 'tracker_driver_telemetry_token') {
+          return Promise.resolve(JSON.stringify(telemetryCredential));
+        }
+        if (key === 'tracker_driver_location_queue') {
+          return Promise.resolve(JSON.stringify([point]));
+        }
+        return Promise.resolve(null);
+      });
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ acceptedClientIds: [point.localId] }),
+      });
+
+      const flushed = await flushManager.flushQueuedLocationsGuarded('http://api.local');
+
+      expect(flushed).toBe(1);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = (global.fetch as any).mock.calls[0];
+      expect(callArgs[0]).toBe('http://api.local/api/drivers/me/location/batch');
+      expect(callArgs[1].headers.Authorization).toBe('Bearer telemetry_token_24h_at_20h');
+
+      vi.useRealTimers();
+    });
+
+    it('18 & 19. expired telemetry token is not used and queue is safely preserved when SecureStore is inaccessible', async () => {
+      const SecureStore = await import('expo-secure-store');
+      (SecureStore as any).getItemAsync = vi.fn().mockRejectedValue(new Error('ReactContextLost'));
+
+      const baseTime = 1760000000000;
+      vi.useFakeTimers();
+      vi.setSystemTime(baseTime + (24 * 3600 + 100) * 1000); // Past 24h
+
+      const point = makePoint();
+      const expiredTelemetryCredential = {
+        token: 'telemetry_token_expired',
+        expiresAt: baseTime + 24 * 3600 * 1000,
+        shiftId: 'shift_long',
+      };
+
+      (AsyncStorage.getItem as any).mockImplementation((key: string) => {
+        if (key === 'tracker_driver_telemetry_token') {
+          return Promise.resolve(JSON.stringify(expiredTelemetryCredential));
+        }
+        if (key === 'tracker_driver_location_queue') {
+          return Promise.resolve(JSON.stringify([point]));
+        }
+        return Promise.resolve(null);
+      });
+
+      global.fetch = vi.fn();
+
+      const flushed = await flushManager.flushQueuedLocationsGuarded('http://api.local');
+
+      expect(flushed).toBe(0);
+      expect(global.fetch).not.toHaveBeenCalled();
+      // Queue in AsyncStorage is NOT overwritten or cleared
+      expect(AsyncStorage.setItem).not.toHaveBeenCalledWith('tracker_driver_location_queue', expect.anything());
+
+      vi.useRealTimers();
+    });
+
+    it('safely preserves queue when telemetry token is missing and SecureStore is inaccessible', async () => {
+      const SecureStore = await import('expo-secure-store');
+      (SecureStore as any).getItemAsync = vi.fn().mockResolvedValue(null);
+
+      const point = makePoint();
+      (AsyncStorage.getItem as any).mockImplementation((key: string) => {
+        if (key === 'tracker_driver_location_queue') {
+          return Promise.resolve(JSON.stringify([point]));
+        }
+        return Promise.resolve(null);
+      });
+
+      global.fetch = vi.fn();
+
+      const flushed = await flushManager.flushQueuedLocationsGuarded('http://api.local');
+
+      expect(flushed).toBe(0);
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    });
+
+    it('clears cached telemetry token on 401 but preserves queued points', async () => {
+      const point = makePoint();
+      const telemetryCredential = {
+        token: 'telemetry_token_expired',
+        expiresAt: Date.now() + 3600_000,
+        shiftId: 'shift_123',
+      };
+
+      (AsyncStorage.getItem as any).mockImplementation((key: string) => {
+        if (key === 'tracker_driver_telemetry_token') {
+          return Promise.resolve(JSON.stringify(telemetryCredential));
+        }
+        if (key === 'tracker_driver_location_queue') {
+          return Promise.resolve(JSON.stringify([point]));
+        }
+        return Promise.resolve(null);
+      });
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+      });
+
+      const flushed = await flushManager.flushQueuedLocationsGuarded('http://api.local');
+
+      expect(flushed).toBe(0);
+      expect(AsyncStorage.removeItem).toHaveBeenCalledWith('tracker_driver_telemetry_token');
+    });
+  });
 });
