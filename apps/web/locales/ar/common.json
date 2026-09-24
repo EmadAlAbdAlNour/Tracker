@@ -66,7 +66,14 @@
     "charging": "يشحن",
     "notCharging": "لا يشحن",
     "lastSeen": "آخر ظهور",
-    "createSuccess": "تم إنشاء حساب السائق بنجاح"
+    "createSuccess": "تم إنشاء حساب السائق بنجاح",
+    "start": "البدء",
+    "end": "الانتهاء",
+    "noShifts": "لا توجد ورديات مسجلة",
+    "coordinates": "الإحداثيات",
+    "accuracy": "الدقة",
+    "recordedTime": "الوقت المسجل",
+    "noLocations": "لا توجد نقاط موقع مسجلة حديثاً"
   },
   "devices": {
     "title": "أجهزة السائقين",

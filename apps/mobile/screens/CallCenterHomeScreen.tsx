@@ -23,6 +23,7 @@ import { RealGeographicMapView, type MapRestaurantPoint } from '../components/Re
 import { DriverDetailModal } from '../components/DriverDetailModal';
 import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
+import { NotificationService } from '../notificationService';
 
 interface CallCenterHomeScreenProps {
   session: Session;
@@ -100,6 +101,77 @@ export function CallCenterHomeScreen({
     }
   }, [apiRequest]);
 
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+
+  const handleMarkNotificationRead = useCallback(async (notificationId: string) => {
+    try {
+      await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'PATCH' });
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === notificationId ? { ...item, read: true } : item))
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch {
+      // ignore
+    }
+  }, [apiRequest]);
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    if (markingAllRead) return;
+    setMarkingAllRead(true);
+    try {
+      await apiRequest('/api/notifications/read-all', { method: 'POST' });
+      setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+      setUnreadCount(0);
+    } catch {
+      // ignore
+    } finally {
+      setMarkingAllRead(false);
+    }
+  }, [apiRequest, markingAllRead]);
+
+  const handleNotificationTap = useCallback(async (notif: any) => {
+    // 1. Mark notification as read if unread
+    if (!notif.read) {
+      await handleMarkNotificationRead(notif.id);
+    }
+
+    // 2. If driverId is present, navigate to driver on map and show detail modal
+    if (notif.driverId) {
+      const driversList = fleet?.drivers ?? [];
+      const foundDriver = driversList.find(
+        (d: any) => d.driverId === notif.driverId || d.id === notif.driverId
+      );
+
+      if (foundDriver) {
+        setSelectedDriver(foundDriver);
+        setDriverFocusTrigger((prev) => prev + 1);
+        setActiveTab('map');
+        setDriverModalVisible(true);
+      }
+    }
+  }, [fleet, handleMarkNotificationRead]);
+
+  useEffect(() => {
+    NotificationService.getInitialNotification().then((initial) => {
+      if (initial && initial.action === 'OPEN_NOTIFICATIONS') {
+        setActiveTab('notifications');
+        if (initial.notificationId) {
+          handleMarkNotificationRead(initial.notificationId);
+        }
+      }
+    });
+
+    const unsubscribe = NotificationService.onNotificationTap((data) => {
+      if (data.action === 'OPEN_NOTIFICATIONS') {
+        setActiveTab('notifications');
+        if (data.notificationId) {
+          handleMarkNotificationRead(data.notificationId);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [handleMarkNotificationRead]);
+
   useEffect(() => {
     // Initial load
     loadFleet(false);
@@ -147,7 +219,7 @@ export function CallCenterHomeScreen({
     name: fleet?.restaurant?.name || 'Branch Base',
     latitude: fleet?.restaurant?.latitude ?? 30.0444,
     longitude: fleet?.restaurant?.longitude ?? 31.2357,
-    radiusMeters: fleet?.restaurant?.radiusMeters ?? 1500,
+    radiusMeters: fleet?.restaurant?.radiusMeters ?? 150,
   }), [
     fleet?.restaurant?.name,
     fleet?.restaurant?.latitude,
@@ -528,44 +600,79 @@ export function CallCenterHomeScreen({
 
         {/* TAB 4: NOTIFICATIONS & INCIDENTS */}
         {activeTab === 'notifications' && (
-          <ScrollView
-            contentContainerStyle={styles.notificationsScroll}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          >
-            {notifications.length === 0 ? (
-              <View style={styles.emptyState}>
-                <AppIcon name="bell" size={32} color={colors.text.light} />
-                <Text style={styles.emptyStateText}>{t('notifications.noNotifications')}</Text>
-              </View>
-            ) : (
-              notifications.map((n: any) => {
-                const itemTitle = rtl
-                  ? n.titleAr || n.title || n.titleEn || 'تقرير بلاغ ميداني'
-                  : n.titleEn || n.title || n.titleAr || 'Incident Report';
-                const itemMessage = rtl
-                  ? n.messageAr || n.message || n.messageEn || ''
-                  : n.messageEn || n.message || n.messageAr || '';
-                return (
-                  <View key={n.id} style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}>
-                    <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                      <Text style={styles.notificationTitle}>{itemTitle}</Text>
-                      {!n.isRead && (
-                        <View style={styles.unreadPill}>
-                          <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
-                      {itemMessage}
-                    </Text>
-                    <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
-                      {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </Text>
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
+          <View style={{ flex: 1 }}>
+            <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.subviewTitle}>{t('notifications.title')}</Text>
+              {notifications.length > 0 && unreadCount > 0 && (
+                <TouchableOpacity
+                  onPress={handleMarkAllNotificationsRead}
+                  style={styles.markAllReadButton}
+                  disabled={markingAllRead}
+                  activeOpacity={0.7}
+                >
+                  {markingAllRead ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.notificationsScroll}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            >
+              {notifications.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <AppIcon name="bell" size={32} color={colors.text.light} />
+                  <Text style={styles.emptyStateText}>{t('notifications.noNotifications')}</Text>
+                </View>
+              ) : (
+                notifications.map((n: any) => {
+                  const itemTitle = rtl
+                    ? n.titleAr || n.title || n.titleEn || t('notifications.title') || 'تنبيه النظام'
+                    : n.titleEn || n.title || n.titleAr || t('notifications.title') || 'Incident Report';
+                  const itemMessage = rtl
+                    ? n.messageAr || n.message || n.messageEn || ''
+                    : n.messageEn || n.message || n.messageAr || '';
+                  return (
+                    <TouchableOpacity
+                      key={n.id}
+                      activeOpacity={0.7}
+                      onPress={() => handleNotificationTap(n)}
+                      style={[styles.notificationCard, !n.read && styles.unreadNotification]}
+                    >
+                      <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <Text style={styles.notificationTitle}>{itemTitle}</Text>
+                        {!n.read && (
+                          <View style={styles.unreadPill}>
+                            <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
+                        {itemMessage}
+                      </Text>
+                      <View style={[styles.notificationMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
+                          {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </Text>
+                        {n.driverId && (
+                          <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}>
+                            <AppIcon name="map" size={12} color={colors.primary} />
+                            <Text style={styles.viewDriverHintText}>
+                              {rtl ? 'عرض على الخريطة' : 'View on Map'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
         )}
       </View>
 
@@ -889,6 +996,41 @@ const styles = StyleSheet.create({
   notificationTime: {
     fontSize: 10,
     color: colors.text.muted,
+  },
+  subviewHeader: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  subviewTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  markAllReadButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    backgroundColor: '#f1f5f9',
+  },
+  markAllReadText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  notificationMetaRow: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+  },
+  viewDriverHintText: {
+    fontSize: 10,
+    color: colors.primary,
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',

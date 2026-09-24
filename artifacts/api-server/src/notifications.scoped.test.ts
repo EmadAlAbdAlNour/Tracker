@@ -147,5 +147,80 @@ describe('User-Scoped Notifications Service', () => {
     expect(success).toBe(true);
     expect(mockInsert).toHaveBeenCalled();
   });
+
+  it('guarantees per-user notification read isolation between users', async () => {
+    const userA = 'user-uuid-1111';
+    const userB = 'user-uuid-2222';
+    const notifId = 'notif-shared-999';
+
+    // Mock User B querying notifications where User A marked it read, but User B has not
+    const userBRows = [
+      {
+        notification: {
+          id: notifId,
+          type: 'BATTERY_LOW',
+          titleAr: 'بطارية منخفضة',
+          titleEn: 'Low Battery',
+          messageAr: 'تنبيه',
+          messageEn: 'Alert',
+          read: true, // Legacy global field might be true because User A marked it read
+        },
+        userReadAt: null, // But User B's join with notificationReadsTable has NO readAt
+      },
+    ];
+
+    mockSelect
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        offset: vi.fn().mockResolvedValue(userBRows),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([{ count: 1 }]),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([{ count: 1 }]),
+      });
+
+    const resB = await listNotifications({ page: 1, limit: 10 }, userB);
+
+    // User B's read status MUST be false despite legacy global field being true
+    expect(resB.items[0].read).toBe(false);
+    expect(resB.unreadCount).toBe(1);
+  });
+
+  it('scopes notifications by driverId to ensure driver isolation', async () => {
+    const driverId = 'driver-uuid-4444';
+    const userId = 'user-uuid-3333';
+
+    mockSelect
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        offset: vi.fn().mockResolvedValue([]),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([{ count: 0 }]),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnThis(),
+        leftJoin: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([{ count: 0 }]),
+      });
+
+    const res = await listNotifications({ page: 1, limit: 10, driverId }, userId);
+    expect(res.items.length).toBe(0);
+    expect(res.total).toBe(0);
+  });
 });
 

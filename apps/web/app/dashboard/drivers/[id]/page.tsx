@@ -377,15 +377,15 @@ export default function DriverDetailsPage() {
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-100">
               <tr>
                 <th className="px-5 py-3 text-start">{t('drivers.shiftStatus')}</th>
-                <th className="px-5 py-3 text-start">البدء</th>
-                <th className="px-5 py-3 text-start">الانتهاء</th>
+                <th className="px-5 py-3 text-start">{t('drivers.start')}</th>
+                <th className="px-5 py-3 text-start">{t('drivers.end')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
               {shifts.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="p-6 text-center text-slate-400">
-                    لا توجد ورديات مسجلة
+                    {t('drivers.noShifts')}
                   </td>
                 </tr>
               ) : (
@@ -431,17 +431,17 @@ export default function DriverDetailsPage() {
           <table className="w-full text-start text-xs">
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-100">
               <tr>
-                <th className="px-5 py-3 text-start">الإحداثيات</th>
+                <th className="px-5 py-3 text-start">{t('drivers.coordinates')}</th>
                 <th className="px-5 py-3 text-start">{t('map.speed')}</th>
-                <th className="px-5 py-3 text-start">الدقة</th>
-                <th className="px-5 py-3 text-start">الوقت المسجل</th>
+                <th className="px-5 py-3 text-start">{t('drivers.accuracy')}</th>
+                <th className="px-5 py-3 text-start">{t('drivers.recordedTime')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
               {locations.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="p-6 text-center text-slate-400">
-                    لا توجد نقاط موقع مسجلة حديثاً
+                    {t('drivers.noLocations')}
                   </td>
                 </tr>
               ) : (

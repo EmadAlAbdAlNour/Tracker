@@ -249,7 +249,7 @@ describe('Tracker Mobile Auth Flow & Session Resolution Gate', () => {
         name: 'Al Shayeb Restaurant',
         latitude: 30.05,
         longitude: 31.25,
-        radiusMeters: 1500,
+        radiusMeters: 150,
       },
       alerts: [],
     };

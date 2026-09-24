@@ -66,11 +66,11 @@ export function AdminHomeScreen({
     name: '',
     latitude: 30.0444,
     longitude: 31.2357,
-    radiusMeters: 1500,
+    radiusMeters: 150,
   });
   const [settingsAlerts, setSettingsAlerts] = useState<any>({
-    maxStopDurationMinutes: 15,
-    offlineGraceMinutes: 10,
+    maxStopDurationMinutes: 10,
+    offlineGraceMinutes: 5,
     lowBatteryThreshold: 20,
   });
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -158,8 +158,6 @@ export function AdminHomeScreen({
   }, [apiRequest]);
 
   // 5. Load Notifications
-  const postedNotificationIdsRef = useRef<Set<string>>(new Set());
-
   const loadNotifications = useCallback(async () => {
     try {
       const data = await apiRequest<any>('/api/notifications?limit=30');
@@ -167,11 +165,12 @@ export function AdminHomeScreen({
       setNotifications(items);
       setUnreadCount(data.unreadCount ?? 0);
 
-      // Post unread notifications to Android system notification shade
+      // Post unread notifications to Android system notification shade with persisted deduplication
       if (settingsAlerts.inAppAlertsEnabled !== false) {
         for (const notif of items) {
-          if (!notif.isRead && !postedNotificationIdsRef.current.has(notif.id)) {
-            postedNotificationIdsRef.current.add(notif.id);
+          const shouldPost = await NotificationService.shouldPostSystemNotification(notif);
+          if (shouldPost) {
+            await NotificationService.recordNotificationPosted(notif.id);
             const itemTitle = rtl
               ? notif.titleAr || notif.title || notif.titleEn || 'تنبيه النظام'
               : notif.titleEn || notif.title || notif.titleAr || 'System Alert';
@@ -382,7 +381,7 @@ export function AdminHomeScreen({
     try {
       await apiRequest(`/api/notifications/${notificationId}/read`, { method: 'PATCH' });
       setNotifications((prev) =>
-        prev.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item))
+        prev.map((item) => (item.id === notificationId ? { ...item, read: true } : item))
       );
       setUnreadCount((c) => Math.max(0, c - 1));
     } catch {
@@ -396,7 +395,7 @@ export function AdminHomeScreen({
       const res = await apiRequest<any>('/api/notifications/test', { method: 'POST' });
       const notif = res?.notification;
       if (notif) {
-        postedNotificationIdsRef.current.add(notif.id);
+        await NotificationService.recordNotificationPosted(notif.id);
         const itemTitle = rtl
           ? notif.titleAr || notif.title || 'إشعار اختباري للنظام'
           : notif.titleEn || notif.title || 'System Test Notification';
@@ -434,7 +433,7 @@ export function AdminHomeScreen({
     name: fleet?.restaurant?.name || settingsRestaurant.name || 'Branch Base',
     latitude: fleet?.restaurant?.latitude ?? settingsRestaurant.latitude ?? 30.0444,
     longitude: fleet?.restaurant?.longitude ?? settingsRestaurant.longitude ?? 31.2357,
-    radiusMeters: fleet?.restaurant?.radiusMeters ?? settingsRestaurant.radiusMeters ?? 1500,
+    radiusMeters: fleet?.restaurant?.radiusMeters ?? settingsRestaurant.radiusMeters ?? 150,
   }), [
     fleet?.restaurant?.name,
     fleet?.restaurant?.latitude,
@@ -1139,7 +1138,7 @@ export function AdminHomeScreen({
                         {t('admin.geofenceRadius')}
                       </Text>
                       <TextInput
-                        value={String(settingsRestaurant.radiusMeters ?? 1500)}
+                        value={String(settingsRestaurant.radiusMeters ?? 150)}
                         onChangeText={(t) => setSettingsRestaurant((prev: any) => ({ ...prev, radiusMeters: t }))}
                         keyboardType="numeric"
                         style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
@@ -1185,7 +1184,7 @@ export function AdminHomeScreen({
                         {t('admin.maxStopDuration')}
                       </Text>
                       <TextInput
-                        value={String(settingsAlerts.maxStopDurationMinutes ?? 15)}
+                        value={String(settingsAlerts.maxStopDurationMinutes ?? 10)}
                         onChangeText={(t) => setSettingsAlerts((prev: any) => ({ ...prev, maxStopDurationMinutes: t }))}
                         keyboardType="numeric"
                         style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
@@ -1197,7 +1196,7 @@ export function AdminHomeScreen({
                         {t('admin.offlineGraceMinutes')}
                       </Text>
                       <TextInput
-                        value={String(settingsAlerts.offlineGraceMinutes ?? 10)}
+                        value={String(settingsAlerts.offlineGraceMinutes ?? 5)}
                         onChangeText={(t) => setSettingsAlerts((prev: any) => ({ ...prev, offlineGraceMinutes: t }))}
                         keyboardType="numeric"
                         style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
@@ -1343,11 +1342,11 @@ export function AdminHomeScreen({
                           key={n.id}
                           activeOpacity={0.7}
                           onPress={() => handleMarkNotificationRead(n.id)}
-                          style={[styles.notificationCard, !n.isRead && styles.unreadNotification]}
+                          style={[styles.notificationCard, !n.read && styles.unreadNotification]}
                         >
                           <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
                             <Text style={styles.notificationTitle}>{itemTitle}</Text>
-                            {!n.isRead && (
+                            {!n.read && (
                               <View style={styles.unreadPill}>
                                 <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
                               </View>

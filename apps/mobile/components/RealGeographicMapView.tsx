@@ -186,7 +186,7 @@ export function RealGeographicMapView({
       fillOpacity: 0.12,
       weight: 2,
       dashArray: '6, 6',
-      radius: restaurant.radiusMeters || 500
+      radius: restaurant.radiusMeters || 150
     }).addTo(map);
 
     // Restaurant marker

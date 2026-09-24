@@ -66,7 +66,14 @@
     "charging": "Charging",
     "notCharging": "Not Charging",
     "lastSeen": "Last Seen",
-    "createSuccess": "Driver profile created successfully"
+    "createSuccess": "Driver profile created successfully",
+    "start": "Start",
+    "end": "End",
+    "noShifts": "No shift records found",
+    "coordinates": "Coordinates",
+    "accuracy": "Accuracy",
+    "recordedTime": "Recorded At",
+    "noLocations": "No recent location points found"
   },
   "devices": {
     "title": "Driver Devices",
