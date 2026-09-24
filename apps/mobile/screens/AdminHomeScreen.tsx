@@ -77,6 +77,13 @@ export function AdminHomeScreen({
   });
   const [settingsSaving, setSettingsSaving] = useState(false);
 
+  // Ref to hold the latest settingsAlerts without re-creating callbacks on keystroke
+  const settingsAlertsRef = useRef(settingsAlerts);
+  settingsAlertsRef.current = settingsAlerts;
+  useEffect(() => {
+    settingsAlertsRef.current = settingsAlerts;
+  }, [settingsAlerts]);
+
   // Users Data
   const [users, setUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -213,8 +220,9 @@ export function AdminHomeScreen({
       setNotifications(items);
       setUnreadCount(data.unreadCount ?? 0);
 
+      const currentAlerts = settingsAlertsRef.current;
       // Post unread notifications to Android system notification shade with persisted deduplication
-      if (settingsAlerts.inAppAlertsEnabled !== false) {
+      if (currentAlerts?.inAppAlertsEnabled !== false) {
         for (const notif of items) {
           const shouldPost = await NotificationService.shouldPostSystemNotification(notif);
           if (shouldPost) {
@@ -227,7 +235,7 @@ export function AdminHomeScreen({
               : notif.messageEn || notif.message || notif.messageAr || '';
 
             NotificationService.showNotification({
-              channelId: settingsAlerts.soundEnabled ? 'tracker_alerts_channel' : 'tracker_system_channel',
+              channelId: currentAlerts?.soundEnabled ? 'tracker_alerts_channel' : 'tracker_system_channel',
               title: itemTitle,
               body: itemMessage,
               data: { notificationId: notif.id },
@@ -238,7 +246,7 @@ export function AdminHomeScreen({
     } catch {
       // ignore
     }
-  }, [apiRequest, rtl, settingsAlerts]);
+  }, [apiRequest, rtl]);
 
   // Setup Notification permission check and tap routing on mount
   useEffect(() => {
