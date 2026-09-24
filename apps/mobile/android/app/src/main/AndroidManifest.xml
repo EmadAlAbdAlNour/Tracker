@@ -30,7 +30,7 @@
       </intent-filter>
     </activity>
     <service
-      android:name="expo.modules.location.services.LocationTaskService"
+      android:name=".tracking.TrackerLocationService"
       android:foregroundServiceType="location"
       android:exported="false" />
     <provider

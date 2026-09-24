@@ -22,20 +22,7 @@ vi.mock('expo-battery', () => ({
   BatteryState: { CHARGING: 1, FULL: 2 },
 }));
 
-vi.mock('expo-location', () => ({
-  Accuracy: { High: 4 },
-  getProviderStatusAsync: vi.fn().mockResolvedValue({ locationServicesEnabled: true }),
-  requestForegroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
-  requestBackgroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
-  startLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
-  stopLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
-  hasStartedLocationUpdatesAsync: vi.fn().mockResolvedValue(false),
-}));
 
-vi.mock('expo-task-manager', () => ({
-  defineTask: vi.fn(),
-  isTaskDefined: vi.fn().mockReturnValue(false),
-}));
 
 vi.mock('@react-navigation/native', () => ({
   NavigationContainer: ({ children }: any) => children,

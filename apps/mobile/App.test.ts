@@ -1,39 +1,49 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'android', constants: {} },
+  Platform: { OS: 'android', Version: 34, constants: {} },
+  PermissionsAndroid: {
+    PERMISSIONS: {
+      ACCESS_FINE_LOCATION: 'android.permission.ACCESS_FINE_LOCATION',
+      ACCESS_BACKGROUND_LOCATION: 'android.permission.ACCESS_BACKGROUND_LOCATION',
+      POST_NOTIFICATIONS: 'android.permission.POST_NOTIFICATIONS',
+    },
+    RESULTS: { GRANTED: 'granted', DENIED: 'denied' },
+    request: vi.fn().mockResolvedValue('granted'),
+    check: vi.fn().mockResolvedValue(true),
+  },
+  NativeModules: {
+    TrackerLocationModule: {
+      startTracking: vi.fn().mockResolvedValue(true),
+      stopTracking: vi.fn().mockResolvedValue({ drained: true, remainingCount: 0 }),
+      getTrackingStatus: vi.fn().mockResolvedValue({ isTracking: false, queueSize: 0 }),
+      getQueueSize: vi.fn().mockResolvedValue(0),
+      updateTelemetryToken: vi.fn().mockResolvedValue(true),
+    },
+  },
   StyleSheet: { create: (s: any) => s },
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
 }));
+
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
     getItem: vi.fn().mockResolvedValue(null),
     setItem: vi.fn().mockResolvedValue(undefined),
   },
 }));
+
 vi.mock('expo-battery', () => ({
   getBatteryLevelAsync: vi.fn().mockResolvedValue(0.8),
   getBatteryStateAsync: vi.fn().mockResolvedValue(1),
   BatteryState: { CHARGING: 1, FULL: 2 },
 }));
-vi.mock('expo-location', () => ({
-  Accuracy: { High: 4 },
-  getProviderStatusAsync: vi.fn().mockResolvedValue({ locationServicesEnabled: true }),
-  requestForegroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
-  requestBackgroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
-  startLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
-  stopLocationUpdatesAsync: vi.fn().mockResolvedValue(undefined),
-  hasStartedLocationUpdatesAsync: vi.fn().mockResolvedValue(false),
-}));
-vi.mock('expo-task-manager', () => ({
-  defineTask: vi.fn(),
-  isTaskDefined: vi.fn().mockReturnValue(false),
-}));
+
 vi.mock('expo-secure-store', () => ({
   getItemAsync: vi.fn().mockResolvedValue(null),
   setItemAsync: vi.fn().mockResolvedValue(undefined),
   deleteItemAsync: vi.fn().mockResolvedValue(undefined),
 }));
+
 (global as any).__DEV__ = true;
 import { resolveHomeRoute } from './roleRouting';
 import { normalizeNetworkStatus } from './telemetry';
@@ -125,30 +135,34 @@ describe('mobile telemetry configuration', () => {
     expect(DEFAULT_LOCATION_DISTANCE_METERS).toBe(10);
   });
 
-  it('resumes background tracking when inactive on active shift', async () => {
-    const Location = await import('expo-location');
-    const { startBackgroundTracking, LOCATION_TASK_NAME } = await import('./location');
+  it('starts native background tracking when requested', async () => {
+    const { startBackgroundTracking } = await import('./location');
+    const { NativeModules } = await import('react-native');
 
-    (Location.hasStartedLocationUpdatesAsync as any).mockResolvedValueOnce(false);
-    const started = await startBackgroundTracking();
+    const started = await startBackgroundTracking({
+      apiUrl: 'http://api.local',
+      telemetryToken: 'token123',
+      shiftId: 'shift123',
+      deviceId: 'dev123',
+    });
     expect(started).toBe(true);
-    expect(Location.startLocationUpdatesAsync).toHaveBeenCalledWith(
-      LOCATION_TASK_NAME,
+    expect(NativeModules.TrackerLocationModule.startTracking).toHaveBeenCalledWith(
       expect.objectContaining({
-        timeInterval: 5000,
-        distanceInterval: 10,
+        apiUrl: 'http://api.local',
+        telemetryToken: 'token123',
+        shiftId: 'shift123',
       })
     );
   });
 
-  it('no-ops startBackgroundTracking when background updates are already running', async () => {
-    const Location = await import('expo-location');
-    const { startBackgroundTracking } = await import('./location');
+  it('stops native background tracking and performs bounded drain', async () => {
+    const { stopBackgroundTracking } = await import('./location');
+    const { NativeModules } = await import('react-native');
 
-    (Location.hasStartedLocationUpdatesAsync as any).mockResolvedValueOnce(true);
-    const started = await startBackgroundTracking();
-    expect(started).toBe(true);
+    const result = await stopBackgroundTracking(5000);
+    expect(result.drained).toBe(true);
+    expect(NativeModules.TrackerLocationModule.stopTracking).toHaveBeenCalledWith({
+      timeoutMs: 5000,
+    });
   });
 });
-
-

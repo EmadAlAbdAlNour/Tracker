@@ -16,7 +16,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import * as Location from 'expo-location';
 import { colors, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
 import { AppHeader } from '../components/AppHeader';
@@ -24,13 +23,11 @@ import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import {
   collectDriverTelemetry,
   getQueuedLocationCount,
-  registerBackgroundLocationTask,
+  getTrackingStatus,
   startBackgroundTracking,
   stopBackgroundTracking,
-  LOCATION_TASK_NAME,
   type DriverTelemetryState,
 } from '../location';
-import { flushQueuedLocationsGuarded } from '../flushManager';
 import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from '../i18n';
 import { type Session, saveTelemetryToken, clearTelemetryToken, readTelemetryToken } from '../session';
 import { TrackerDialog } from '../components/TrackerDialog';
@@ -103,8 +100,9 @@ export function DriverHomeScreen({
       const telem = await collectDriverTelemetry();
       setTelemetry(telem);
 
-      const count = await getQueuedLocationCount();
-      setQueuedCount(count);
+      const status = await getTrackingStatus();
+      setTrackingActive(status.isTracking);
+      setQueuedCount(status.queueSize);
 
       const prof = await apiRequest<{ driver: any }>('/api/drivers/me').catch(() => null);
       if (prof?.driver) setProfile(prof.driver);
@@ -115,57 +113,59 @@ export function DriverHomeScreen({
       const current = (shifts.items ?? [])[0] ?? null;
       setActiveShift(current);
       if (current) {
-        // Ensure background-safe telemetry credential is valid in AsyncStorage
+        let tokenToUse: string | null = null;
         const cachedToken = await readTelemetryToken();
         if (!cachedToken) {
-          apiRequest<{ telemetryToken: string; expiresIn: number; shiftId: string }>(
-            '/api/drivers/me/telemetry-token',
-            { method: 'POST' }
-          )
-            .then(async (tok) => {
-              if (tok?.telemetryToken) {
-                const expiresAt = Date.now() + (tok.expiresIn ? tok.expiresIn * 1000 : 86400 * 1000);
-                await saveTelemetryToken(tok.telemetryToken, expiresAt, tok.shiftId || current.id);
-              }
-            })
-            .catch(() => {});
+          try {
+            const tok = await apiRequest<{ telemetryToken: string; expiresIn: number; shiftId: string }>(
+              '/api/drivers/me/telemetry-token',
+              { method: 'POST' }
+            );
+            if (tok?.telemetryToken) {
+              const expiresAt = Date.now() + (tok.expiresIn ? tok.expiresIn * 1000 : 86400 * 1000);
+              await saveTelemetryToken(tok.telemetryToken, expiresAt, tok.shiftId || current.id);
+              tokenToUse = tok.telemetryToken;
+            }
+          } catch {}
+        } else {
+          tokenToUse = cachedToken;
         }
 
-        const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-        if (!isRunning) {
-          const started = await startBackgroundTracking();
+        if (!status.isTracking && tokenToUse) {
+          const started = await startBackgroundTracking({
+            apiUrl,
+            telemetryToken: tokenToUse,
+            shiftId: current.id,
+          });
           setTrackingActive(Boolean(started));
-        } else {
-          setTrackingActive(true);
         }
       } else {
+        if (status.isTracking) {
+          await stopBackgroundTracking();
+        }
         await clearTelemetryToken().catch(() => {});
         setTrackingActive(false);
       }
     } catch {
       // ignore
     }
-  }, [apiRequest]);
+  }, [apiUrl, apiRequest, session.user?.id]);
 
   useEffect(() => {
-    registerBackgroundLocationTask();
     refreshState();
-    flushQueuedLocationsGuarded(apiUrl).then(() => getQueuedLocationCount().then(setQueuedCount));
 
     const interval = setInterval(async () => {
       const telem = await collectDriverTelemetry();
       setTelemetry(telem);
-      if (trackingActive) {
-        await flushQueuedLocationsGuarded(apiUrl).catch(() => {});
-      }
       const count = await getQueuedLocationCount();
       setQueuedCount(count);
+      const status = await getTrackingStatus();
+      setTrackingActive(status.isTracking);
     }, 5000);
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         refreshState();
-        flushQueuedLocationsGuarded(apiUrl).then(() => getQueuedLocationCount().then(setQueuedCount));
       }
     });
 
@@ -173,14 +173,11 @@ export function DriverHomeScreen({
       clearInterval(interval);
       appStateSub.remove();
     };
-  }, [apiUrl, refreshState, trackingActive]);
+  }, [refreshState]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await refreshState();
-    await flushQueuedLocationsGuarded(apiUrl);
-    const count = await getQueuedLocationCount();
-    setQueuedCount(count);
     setRefreshing(false);
   };
 
@@ -194,14 +191,19 @@ export function DriverHomeScreen({
         }
       );
       if (resp?.shift) {
+        let tokenToPass: string | null = null;
         if (resp.telemetryToken) {
           const expiresAt = Date.now() + (resp.expiresIn ? resp.expiresIn * 1000 : 86400 * 1000);
           await saveTelemetryToken(resp.telemetryToken, expiresAt, resp.shift.id);
+          tokenToPass = resp.telemetryToken;
         }
         setActiveShift(resp.shift);
-        const started = await startBackgroundTracking();
+        const started = await startBackgroundTracking({
+          apiUrl,
+          telemetryToken: tokenToPass,
+          shiftId: resp.shift.id,
+        });
         setTrackingActive(Boolean(started));
-        await flushQueuedLocationsGuarded(apiUrl);
         await refreshState();
         if (started) {
           Alert.alert(t('shift.started'), t('shift.activeTrackingNotice'));
@@ -231,11 +233,17 @@ export function DriverHomeScreen({
   const handleEndShift = async () => {
     setLoading(true);
     try {
-      await stopBackgroundTracking();
+      // Step 1-4: Stop accepting new GPS points and perform bounded queue drain
+      const drainResult = await stopBackgroundTracking(8000);
       setTrackingActive(false);
-      await clearTelemetryToken().catch(() => {});
-      await flushQueuedLocationsGuarded(apiUrl).catch(() => {});
+      setQueuedCount(drainResult.remainingCount > 0 ? drainResult.remainingCount : 0);
+
+      // Step 5: Complete shift-end API call while credentials are still intact
       await apiRequest('/api/drivers/me/shifts/end', { method: 'POST' });
+
+      // Step 6: Clear telemetry credentials
+      await clearTelemetryToken().catch(() => {});
+
       setActiveShift(null);
       await refreshState();
       Alert.alert(t('shift.ended'), t('shift.offDuty'));
@@ -249,7 +257,6 @@ export function DriverHomeScreen({
   const handleManualSync = async () => {
     setSyncing(true);
     try {
-      await flushQueuedLocationsGuarded(apiUrl);
       const count = await getQueuedLocationCount();
       setQueuedCount(count);
       Alert.alert(t('app.notice'), t('app.synced'));
