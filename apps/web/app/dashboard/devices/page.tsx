@@ -166,7 +166,7 @@ export default function DevicesPage() {
                 </div>
 
                 {/* Telemetry row */}
-                <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
                   <div>
                     <span className="text-slate-400 block">{t('devices.platform')}</span>
                     <span className="font-semibold text-slate-800 uppercase mt-0.5 block">
@@ -198,19 +198,32 @@ export default function DevicesPage() {
                     <span className="text-slate-400 block">{t('devices.gps')}</span>
                     <span
                       className={`inline-block mt-0.5 text-[11px] font-semibold ${
-                        device.locationServicesEnabled !== false
+                        device.locationServicesEnabled === true
                           ? 'text-emerald-700'
-                          : 'text-rose-700'
+                          : device.locationServicesEnabled === false
+                          ? 'text-rose-700'
+                          : 'text-slate-500'
                       }`}
                     >
-                      {device.locationServicesEnabled !== false ? t('devices.gpsEnabled') : t('devices.gpsDisabled')}
+                      {device.locationServicesEnabled === true
+                        ? t('devices.gpsEnabled')
+                        : device.locationServicesEnabled === false
+                        ? t('devices.gpsDisabled')
+                        : t('devices.gpsUnknown')}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block">{t('drivers.lastSeen')}</span>
+                    <span className="text-slate-400 block">{t('devices.lastConnection')}</span>
                     <span className="text-slate-600 font-mono mt-0.5 block">
                       {formatTimeAgo(device.lastSeen)}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block">{t('devices.lastLocation')}</span>
+                    <span className="text-slate-600 font-mono mt-0.5 block">
+                      {device.lastLocationAt ? formatTimeAgo(device.lastLocationAt) : '—'}
                     </span>
                   </div>
                 </div>

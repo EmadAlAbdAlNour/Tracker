@@ -14,10 +14,20 @@ export type Session = {
     phone: string | null;
     role: (typeof SESSION_ROLES)[number];
     active: boolean;
+    deviceId?: string | null;
   };
 };
 
 export const SESSION_KEY = 'tracker_driver_session';
+export const DEVICE_ID_KEY = 'tracker_device_id';
+
+export async function getStoredDeviceId(): Promise<string | null> {
+  try {
+    return await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL ||
@@ -134,12 +144,17 @@ export async function saveTelemetryToken(token: string, expiresAt: number, shift
   await AsyncStorage.setItem(TELEMETRY_TOKEN_KEY, JSON.stringify(credential));
 }
 
-export async function readTelemetryToken(): Promise<string | null> {
+export async function readTelemetryToken(expectedShiftId?: string): Promise<string | null> {
   try {
     const raw = await AsyncStorage.getItem(TELEMETRY_TOKEN_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as TelemetryCredential;
     if (!parsed?.token || typeof parsed.token !== 'string') {
+      await clearTelemetryToken().catch(() => undefined);
+      return null;
+    }
+    // Prevent accidental reuse of stale telemetry token from an old shift
+    if (expectedShiftId && parsed.shiftId && parsed.shiftId !== expectedShiftId) {
       await clearTelemetryToken().catch(() => undefined);
       return null;
     }

@@ -14,8 +14,11 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -55,6 +58,8 @@ class TrackerLocationService : Service() {
         private const val KEY_SHIFT_ID = "shift_id"
         private const val KEY_DEVICE_ID = "device_id"
 
+        private const val QUEUE_CHECK_INTERVAL_MS = 30_000L
+
         @Volatile
         var isServiceRunning: Boolean = false
             private set
@@ -72,12 +77,19 @@ class TrackerLocationService : Service() {
     @Volatile
     private var isLocationUpdatesActive = false
 
+    @Volatile
+    private var locationHandlerThread: HandlerThread? = null
+
+    private var queueCheckHandler: Handler? = null
+
     private val isoDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
+            val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+            Log.d(TAG, "TRACKER_LOCATION_CALLBACK_RECEIVED count=${result.locations.size} shiftId=$shiftSuffix")
             for (location in result.locations) {
                 handleNewLocation(location)
             }
@@ -177,11 +189,73 @@ class TrackerLocationService : Service() {
 
         // Trigger any pending points from previous session
         uploader.triggerUpload()
-        Log.i(TAG, "TRACKER_LOCATION_SERVICE_STARTED shiftId=$shiftId queueSize=${store.getQueueSize()}")
+        Log.i(TAG, "TRACKER_LOCATION_SERVICE_STARTED shiftId=${shiftId?.takeLast(8)} deviceId=${deviceId?.takeLast(8)} queueSize=${store.getQueueSize()}")
+    }
+
+    @Synchronized
+    private fun ensureLocationLooper(): Looper {
+        var thread = locationHandlerThread
+        if (thread == null || !thread.isAlive) {
+            thread = HandlerThread("TrackerLocationCallbackThread", Process.THREAD_PRIORITY_MORE_FAVORABLE).apply {
+                start()
+            }
+            locationHandlerThread = thread
+            Log.i(TAG, "TRACKER_HANDLER_THREAD_STARTED name=${thread.name} tid=${thread.threadId}")
+        }
+        return thread.looper
+    }
+
+    @Synchronized
+    private fun stopLocationHandlerThread() {
+        locationHandlerThread?.let { thread ->
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                    thread.quitSafely()
+                } else {
+                    thread.quit()
+                }
+                Log.i(TAG, "TRACKER_HANDLER_THREAD_STOPPED")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping location HandlerThread: ${e.message}")
+            } finally {
+                locationHandlerThread = null
+            }
+        }
+    }
+
+    private fun startPeriodicQueueCheck(looper: Looper) {
+        stopPeriodicQueueCheck()
+        val handler = Handler(looper)
+        queueCheckHandler = handler
+        val checkRunnable = object : Runnable {
+            override fun run() {
+                if (!isServiceRunning || !isLocationUpdatesActive) return
+                try {
+                    val queueSize = store.getQueueSize()
+                    if (queueSize > 0) {
+                        val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+                        Log.d(TAG, "TRACKER_PERIODIC_QUEUE_CHECK pending=$queueSize shiftId=$shiftSuffix")
+                        uploader.triggerUpload()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Periodic queue check error: ${e.message}")
+                }
+                if (isServiceRunning && isLocationUpdatesActive) {
+                    queueCheckHandler?.postDelayed(this, QUEUE_CHECK_INTERVAL_MS)
+                }
+            }
+        }
+        handler.postDelayed(checkRunnable, QUEUE_CHECK_INTERVAL_MS)
+    }
+
+    private fun stopPeriodicQueueCheck() {
+        queueCheckHandler?.removeCallbacksAndMessages(null)
+        queueCheckHandler = null
     }
 
     fun stopLocationUpdates() {
         if (!isLocationUpdatesActive) return
+        stopPeriodicQueueCheck()
         try {
             fusedLocationClient.removeLocationUpdates(locationCallback)
             Log.i(TAG, "FusedLocation updates stopped")
@@ -190,6 +264,7 @@ class TrackerLocationService : Service() {
         } finally {
             isLocationUpdatesActive = false
         }
+        stopLocationHandlerThread()
     }
 
     fun drainQueue(timeoutMs: Long): Boolean {
@@ -208,7 +283,8 @@ class TrackerLocationService : Service() {
             stopForeground(true)
         }
         stopSelf()
-        Log.i(TAG, "TRACKER_LOCATION_SERVICE_STOPPED")
+        val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+        Log.i(TAG, "TRACKER_LOCATION_SERVICE_STOPPED shiftId=$shiftSuffix")
     }
 
     private fun stopTrackingInternal() {
@@ -237,13 +313,33 @@ class TrackerLocationService : Service() {
             .build()
 
         try {
+            val looper = ensureLocationLooper()
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
                 locationCallback,
-                Looper.getMainLooper()
+                looper
             )
             isLocationUpdatesActive = true
-            Log.i(TAG, "FusedLocationProvider updates requested (interval=5000ms, minDistance=10m)")
+            Log.i(TAG, "FusedLocationProvider updates requested (interval=5000ms, minDistance=10m, dedicatedThread=true)")
+
+            // Check if fresh lastLocation is available to seed the initial point immediately
+            try {
+                fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
+                    if (lastLoc != null && isLocationUpdatesActive) {
+                        val ageMs = System.currentTimeMillis() - lastLoc.time
+                        if (ageMs in 0..(2 * 60 * 1000) && store.getQueueSize() == 0) {
+                            val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+                            Log.i(TAG, "TRACKER_INITIAL_LOCATION_CAPTURED age=${ageMs / 1000}s shiftId=$shiftSuffix")
+                            handleNewLocation(lastLoc)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Could not fetch lastLocation on start: ${e.message}")
+            }
+
+            // Start periodic queue check on dedicated looper
+            startPeriodicQueueCheck(looper)
         } catch (securityEx: SecurityException) {
             Log.e(TAG, "Missing location permissions for FusedLocationProvider", securityEx)
             stopSelf()
@@ -280,7 +376,8 @@ class TrackerLocationService : Service() {
         )
 
         store.enqueue(point)
-        Log.d(TAG, "TRACKER_LOCATION_UPDATE lat=${point.latitude} lng=${point.longitude} acc=${point.accuracy} time=${point.recordedAt}")
+        val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+        Log.d(TAG, "TRACKER_QUEUE_INSERTED lat=${point.latitude} lng=${point.longitude} acc=${point.accuracy} queueSize=${store.getQueueSize()} shiftId=$shiftSuffix")
 
         // Immediately trigger uploader (does not wait for 20 points)
         uploader.triggerUpload()
@@ -360,7 +457,8 @@ class TrackerLocationService : Service() {
     }
 
     override fun onDestroy() {
-        Log.i(TAG, "TRACKER_LOCATION_SERVICE_DESTROYED")
+        val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+        Log.i(TAG, "TRACKER_LOCATION_SERVICE_STOPPED shiftId=$shiftSuffix")
         isServiceRunning = false
         if (activeService === this) {
             activeService = null

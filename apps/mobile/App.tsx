@@ -58,19 +58,28 @@ function uuidv4(): string {
   });
 }
 
+let cachedDeviceId: string | null = null;
+
 async function getOrCreateDeviceId(): Promise<string> {
+  if (cachedDeviceId) return cachedDeviceId;
   try {
     const existing = await SecureStore.getItemAsync(DEVICE_ID_KEY);
-    if (existing) return existing;
+    if (existing) {
+      cachedDeviceId = existing;
+      return existing;
+    }
     const id = uuidv4();
     await SecureStore.setItemAsync(DEVICE_ID_KEY, id);
+    cachedDeviceId = id;
     return id;
   } catch {
     const fallback = uuidv4();
     try {
       await SecureStore.setItemAsync(DEVICE_ID_KEY, fallback);
+      cachedDeviceId = fallback;
       return fallback;
     } catch {
+      cachedDeviceId = fallback;
       return fallback;
     }
   }
@@ -152,6 +161,11 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
     }
 
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 15000);
+
     try {
       const deviceIdentifier = await getOrCreateDeviceId();
       const rawModel = (Platform.constants as any)?.Model;
@@ -171,11 +185,31 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
         appVersion: CURRENT_VERSION_NAME,
       };
 
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrPhone: emailOrPhone.trim(), password, device }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${API_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emailOrPhone: emailOrPhone.trim(), password, device }),
+          signal: controller.signal,
+        });
+      } catch (fetchErr: any) {
+        if (fetchErr?.name === 'AbortError' || controller.signal.aborted) {
+          const timeoutMsg = locale === 'ar'
+            ? 'انتهت مهلة الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.'
+            : 'Connection timed out. Please check your internet connection and try again.';
+          setDialog({
+            visible: true,
+            title: locale === 'ar' ? 'مهلة الاتصال' : 'Connection Timeout',
+            message: timeoutMsg,
+            type: 'error',
+          });
+          return;
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const payload = await response.json();
       if (!response.ok) {
@@ -217,6 +251,7 @@ function LoginScreen({ navigation }: any): React.JSX.Element {
         type: 'error',
       });
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };

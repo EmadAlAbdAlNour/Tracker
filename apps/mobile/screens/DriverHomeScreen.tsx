@@ -29,7 +29,7 @@ import {
   type DriverTelemetryState,
 } from '../location';
 import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from '../i18n';
-import { type Session, saveTelemetryToken, clearTelemetryToken, readTelemetryToken } from '../session';
+import { type Session, saveTelemetryToken, clearTelemetryToken, readTelemetryToken, getStoredDeviceId } from '../session';
 import { TrackerDialog } from '../components/TrackerDialog';
 
 interface DriverHomeScreenProps {
@@ -165,7 +165,7 @@ export function DriverHomeScreen({
       setActiveShift(current);
       if (current) {
         let tokenToUse: string | null = null;
-        const cachedToken = await readTelemetryToken();
+        const cachedToken = await readTelemetryToken(current.id);
         if (!cachedToken) {
           try {
             const tok = await apiRequest<{ telemetryToken: string; expiresIn: number; shiftId: string }>(
@@ -183,10 +183,12 @@ export function DriverHomeScreen({
         }
 
         if (!status.isTracking && tokenToUse) {
+          const storedDeviceId = await getStoredDeviceId();
           const started = await startBackgroundTracking({
             apiUrl,
             telemetryToken: tokenToUse,
             shiftId: current.id,
+            deviceId: session.user?.deviceId || storedDeviceId || null,
           });
           setTrackingActive(Boolean(started));
         }
@@ -249,10 +251,12 @@ export function DriverHomeScreen({
           tokenToPass = resp.telemetryToken;
         }
         setActiveShift(resp.shift);
+        const storedDeviceId = await getStoredDeviceId();
         const started = await startBackgroundTracking({
           apiUrl,
           telemetryToken: tokenToPass,
           shiftId: resp.shift.id,
+          deviceId: session.user?.deviceId || storedDeviceId || null,
         });
         setTrackingActive(Boolean(started));
         await refreshState();

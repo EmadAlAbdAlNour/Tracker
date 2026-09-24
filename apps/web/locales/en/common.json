@@ -73,7 +73,8 @@
     "coordinates": "Coordinates",
     "accuracy": "Accuracy",
     "recordedTime": "Recorded At",
-    "noLocations": "No recent location points found"
+    "noLocations": "No recent location points found",
+    "awaitingTelemetry": "On shift — awaiting location data"
   },
   "devices": {
     "title": "Driver Devices",
@@ -89,6 +90,9 @@
     "gps": "Location Services (GPS)",
     "gpsEnabled": "Enabled",
     "gpsDisabled": "Disabled",
+    "gpsUnknown": "Unknown / Not reported",
+    "lastConnection": "Last Connection",
+    "lastLocation": "Last Location",
     "reset": "Unauthorize",
     "noDevices": "No devices registered"
   },

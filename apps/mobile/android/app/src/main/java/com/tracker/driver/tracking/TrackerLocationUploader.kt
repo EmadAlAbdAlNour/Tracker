@@ -122,7 +122,7 @@ class TrackerLocationUploader(
         val urlString = "${apiBaseUrl.trimEnd('/')}/api/drivers/me/location/batch"
         val batchIds = batch.map { it.clientLocationId }
 
-        Log.d(TAG, "TRACKER_LOCATION_UPLOAD_START batchSize=${batch.size} targetUrl=$urlString")
+        Log.d(TAG, "TRACKER_UPLOAD_STARTED batchSize=${batch.size} shiftId=${shiftId?.takeLast(8)} queueSize=${store.getQueueSize()}")
 
         var connection: HttpURLConnection? = null
         try {
@@ -165,11 +165,11 @@ class TrackerLocationUploader(
                 val acceptedCount = json.optInt("accepted", batch.size)
                 val dupCount = json.optInt("duplicates", 0)
 
-                Log.d(TAG, "TRACKER_LOCATION_UPLOAD_SUCCESS accepted=$acceptedCount duplicates=$dupCount remainingQueue=$remaining")
+                Log.d(TAG, "TRACKER_UPLOAD_SUCCESS accepted=$acceptedCount duplicates=$dupCount remainingQueue=$remaining shiftId=${shiftId?.takeLast(8)}")
                 listener?.onUploadSuccess(acceptedCount, dupCount, remaining)
                 return true
             } else {
-                Log.w(TAG, "TRACKER_LOCATION_UPLOAD_FAILURE: HTTP $responseCode body=$responseBody")
+                Log.w(TAG, "TRACKER_UPLOAD_FAILURE statusCode=$responseCode message=${responseBody.take(100)} shiftId=${shiftId?.takeLast(8)}")
                 listener?.onUploadError(responseCode, responseBody)
 
                 when (responseCode) {
@@ -203,7 +203,7 @@ class TrackerLocationUploader(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "TRACKER_LOCATION_UPLOAD_FAILURE: Network error: ${e.message}")
+            Log.w(TAG, "TRACKER_UPLOAD_FAILURE statusCode=-1 message=${e.message} shiftId=${shiftId?.takeLast(8)}")
             store.markFailedAttempts(batchIds)
             listener?.onUploadError(-1, e.message ?: "Network error")
             return false

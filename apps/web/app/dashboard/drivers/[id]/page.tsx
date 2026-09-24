@@ -272,11 +272,17 @@ export default function DriverDetailsPage() {
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                     driver.currentShiftStatus === 'ACTIVE'
-                      ? 'bg-emerald-100 text-emerald-700'
+                      ? locations.length === 0
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-emerald-100 text-emerald-700'
                       : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  {driver.currentShiftStatus === 'ACTIVE' ? t('drivers.onShift') : t('drivers.offShift')}
+                  {driver.currentShiftStatus === 'ACTIVE'
+                    ? locations.length === 0
+                      ? t('drivers.awaitingTelemetry')
+                      : t('drivers.onShift')
+                    : t('drivers.offShift')}
                 </span>
               </dd>
             </div>
@@ -345,18 +351,28 @@ export default function DriverDetailsPage() {
                 <dd>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                      device.locationServicesEnabled !== false
+                      device.locationServicesEnabled === true
                         ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-rose-100 text-rose-700'
+                        : device.locationServicesEnabled === false
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    {device.locationServicesEnabled !== false ? t('devices.gpsEnabled') : t('devices.gpsDisabled')}
+                    {device.locationServicesEnabled === true
+                      ? t('devices.gpsEnabled')
+                      : device.locationServicesEnabled === false
+                      ? t('devices.gpsDisabled')
+                      : t('devices.gpsUnknown')}
                   </span>
                 </dd>
               </div>
-              <div className="flex justify-between items-center py-1">
-                <dt className="font-medium text-slate-500">{t('drivers.lastSeen')}</dt>
+              <div className="flex justify-between items-center py-1 border-b border-slate-50">
+                <dt className="font-medium text-slate-500">{t('devices.lastConnection')}</dt>
                 <dd className="text-slate-600">{formatTimeAgo(device.lastSeen)}</dd>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <dt className="font-medium text-slate-500">{t('devices.lastLocation')}</dt>
+                <dd className="text-slate-600">{device.lastLocationAt ? formatTimeAgo(device.lastLocationAt) : '—'}</dd>
               </div>
             </dl>
           )}

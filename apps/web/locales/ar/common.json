@@ -73,7 +73,8 @@
     "coordinates": "الإحداثيات",
     "accuracy": "الدقة",
     "recordedTime": "الوقت المسجل",
-    "noLocations": "لا توجد نقاط موقع مسجلة حديثاً"
+    "noLocations": "لا توجد نقاط موقع مسجلة حديثاً",
+    "awaitingTelemetry": "في الوردية — بانتظار بيانات الموقع"
   },
   "devices": {
     "title": "أجهزة السائقين",
@@ -89,6 +90,9 @@
     "gps": "خدمة الموقع (GPS)",
     "gpsEnabled": "مفعّل",
     "gpsDisabled": "معطّل",
+    "gpsUnknown": "غير محدد / لم يُرسل",
+    "lastConnection": "آخر اتصال / تسجيل",
+    "lastLocation": "آخر موقع مُرسل",
     "reset": "إلغاء الترخيص",
     "noDevices": "لا توجد أجهزة مسجلة"
   },

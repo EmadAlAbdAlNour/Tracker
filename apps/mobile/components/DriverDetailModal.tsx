@@ -58,12 +58,18 @@ export function DriverDetailModal({
   const rtl = isRtl();
 
   // Freshness & Connection vs Movement Logic
+  const hasActiveShift = Boolean(driver.shift && (driver.shift.status === 'ACTIVE' || !driver.shift.status));
+  const hasLocation = Boolean(driver.location && (driver.location.latitude != null || driver.location.longitude != null));
+  const isAwaitingTelemetry = hasActiveShift && !hasLocation;
+
   const isOnline = driver.operationalStatus !== 'OFFLINE';
   const recordedAtMs = driver.location?.recordedAt ? new Date(driver.location.recordedAt).getTime() : 0;
   const elapsedMinutes = recordedAtMs > 0 ? Math.max(0, Math.round((Date.now() - recordedAtMs) / 60000)) : null;
 
-  // Connection State: Online / Delayed / Offline
-  const connectionState = !isOnline
+  // Connection State: Online / Delayed / Offline / Awaiting
+  const connectionState = isAwaitingTelemetry
+    ? 'awaiting'
+    : !isOnline
     ? 'offline'
     : elapsedMinutes != null && elapsedMinutes > 5
     ? 'delayed'
@@ -72,7 +78,7 @@ export function DriverDetailModal({
   // Movement State: Moving / Stopped / Unknown
   const speedKmh =
     driver.location?.speed != null ? Math.round(Number(driver.location.speed) * 3.6) : null;
-  const movementState = !isOnline
+  const movementState = isAwaitingTelemetry || !isOnline
     ? 'unknown'
     : speedKmh != null && speedKmh > 3
     ? 'moving'
@@ -80,6 +86,13 @@ export function DriverDetailModal({
 
   const getConnectionBadge = () => {
     switch (connectionState) {
+      case 'awaiting':
+        return {
+          label: rtl ? 'في الوردية — بانتظار بيانات الموقع' : 'On shift — awaiting location data',
+          bg: colors.status.warningBg,
+          text: colors.status.warning,
+          border: colors.status.warningBorder,
+        };
       case 'online':
         return { label: rtl ? 'متصل الآن' : 'ONLINE', bg: colors.status.onlineBg, text: colors.status.online, border: colors.status.onlineBorder };
       case 'delayed':
@@ -226,7 +239,9 @@ export function DriverDetailModal({
             <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
               <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Contact:'}</Text>
               <Text style={styles.metaValue}>
-                {elapsedMinutes != null
+                {isAwaitingTelemetry
+                  ? rtl ? 'لا توجد بيانات موقع مسجلة' : 'No telemetry recorded'
+                  : elapsedMinutes != null
                   ? elapsedMinutes === 0
                     ? rtl ? 'منذ ثوانٍ' : 'seconds ago'
                     : rtl ? `منذ ${formatWesternNumber(elapsedMinutes)} دقيقة` : `${formatWesternNumber(elapsedMinutes)}m ago`
@@ -247,15 +262,21 @@ export function DriverDetailModal({
           <View style={styles.card}>
             <View style={[styles.telemetryHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
               <Text style={styles.cardSectionTitle}>
-                {isOnline
+                {isAwaitingTelemetry
+                  ? rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal'
+                  : isOnline
                   ? rtl ? 'بيانات التتبع المباشرة' : 'Live Telemetry'
                   : rtl ? 'آخر بيانات معروفة (تاريخية)' : 'Last Known Telemetry'}
               </Text>
-              {!isOnline && (
+              {isAwaitingTelemetry ? (
+                <View style={styles.staleNoticePill}>
+                  <Text style={styles.staleNoticeText}>{rtl ? 'قيد الانتظار' : 'Pending'}</Text>
+                </View>
+              ) : !isOnline ? (
                 <View style={styles.staleNoticePill}>
                   <Text style={styles.staleNoticeText}>{rtl ? 'غير مباشر' : 'Stale'}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
 
             <View style={styles.grid2Col}>
@@ -285,10 +306,20 @@ export function DriverDetailModal({
                 <Text
                   style={[
                     styles.gridCellValue,
-                    { color: driver.isInsideGeofence ? colors.status.online : colors.status.warning },
+                    {
+                      color: isAwaitingTelemetry
+                        ? colors.text.muted
+                        : driver.isInsideGeofence
+                        ? colors.status.online
+                        : colors.status.warning,
+                    },
                   ]}
                 >
-                  {driver.isInsideGeofence ? t('driverDetail.insideGeofence') : t('driverDetail.outsideGeofence')}
+                  {isAwaitingTelemetry
+                    ? rtl ? 'بانتظار تحديد الموقع' : 'Awaiting location'
+                    : driver.isInsideGeofence
+                    ? t('driverDetail.insideGeofence')
+                    : t('driverDetail.outsideGeofence')}
                 </Text>
               </View>
 
