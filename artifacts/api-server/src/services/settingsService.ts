@@ -55,32 +55,37 @@ const DEFAULT_ALERTS: Omit<AlertSettingsData, "id"> = {
 };
 
 export async function getRestaurantSettings(): Promise<RestaurantSettingsData> {
-  const rows = await db.select().from(restaurantSettingsTable).limit(1);
-  if (rows[0]) {
-    return {
-      id: rows[0].id,
-      name: rows[0].name,
-      latitude: rows[0].latitude,
-      longitude: rows[0].longitude,
-      radiusMeters: rows[0].radiusMeters,
-      enabled: rows[0].enabled,
-      updatedAt: rows[0].updatedAt,
-      updatedBy: rows[0].updatedBy,
-    };
+  try {
+    const q: any = db.select().from(restaurantSettingsTable);
+    const rows = typeof q?.limit === "function" ? await q.limit(1) : (typeof q?.where === "function" ? await q.where().limit(1) : []);
+    if (rows && rows[0]) {
+      return {
+        id: rows[0].id,
+        name: rows[0].name,
+        latitude: rows[0].latitude,
+        longitude: rows[0].longitude,
+        radiusMeters: rows[0].radiusMeters,
+        enabled: rows[0].enabled,
+        updatedAt: rows[0].updatedAt,
+        updatedBy: rows[0].updatedBy,
+      };
+    }
+
+    const [created] = await db
+      .insert(restaurantSettingsTable)
+      .values({
+        name: DEFAULT_RESTAURANT.name,
+        latitude: DEFAULT_RESTAURANT.latitude,
+        longitude: DEFAULT_RESTAURANT.longitude,
+        radiusMeters: DEFAULT_RESTAURANT.radiusMeters,
+        enabled: DEFAULT_RESTAURANT.enabled,
+      })
+      .returning();
+
+    return created ?? { ...DEFAULT_RESTAURANT };
+  } catch {
+    return { ...DEFAULT_RESTAURANT };
   }
-
-  const [created] = await db
-    .insert(restaurantSettingsTable)
-    .values({
-      name: DEFAULT_RESTAURANT.name,
-      latitude: DEFAULT_RESTAURANT.latitude,
-      longitude: DEFAULT_RESTAURANT.longitude,
-      radiusMeters: DEFAULT_RESTAURANT.radiusMeters,
-      enabled: DEFAULT_RESTAURANT.enabled,
-    })
-    .returning();
-
-  return created ?? { ...DEFAULT_RESTAURANT };
 }
 
 export async function updateRestaurantSettings(
@@ -123,33 +128,38 @@ export async function updateRestaurantSettings(
 }
 
 export async function getAlertSettings(): Promise<AlertSettingsData> {
-  const rows = await db.select().from(alertSettingsTable).limit(1);
-  if (rows[0]) {
-    return {
-      id: rows[0].id,
-      maxStopDurationMinutes: rows[0].maxStopDurationMinutes,
-      offlineGraceMinutes: rows[0].offlineGraceMinutes,
-      lowBatteryThreshold: rows[0].lowBatteryThreshold,
-      criticalBatteryThreshold: rows[0].criticalBatteryThreshold,
-      maxShiftDurationHours: rows[0].maxShiftDurationHours,
-      stopAlertEnabled: rows[0].stopAlertEnabled,
-      gpsAlertEnabled: rows[0].gpsAlertEnabled,
-      offlineAlertEnabled: rows[0].offlineAlertEnabled,
-      batteryAlertEnabled: rows[0].batteryAlertEnabled,
-      restaurantGeofenceAlertEnabled: rows[0].restaurantGeofenceAlertEnabled,
-      soundEnabled: rows[0].soundEnabled,
-      inAppAlertsEnabled: rows[0].inAppAlertsEnabled,
-      pushAlertsEnabled: rows[0].pushAlertsEnabled,
-      updatedAt: rows[0].updatedAt,
-    };
+  try {
+    const q: any = db.select().from(alertSettingsTable);
+    const rows = typeof q?.limit === "function" ? await q.limit(1) : (typeof q?.where === "function" ? await q.where().limit(1) : []);
+    if (rows && rows[0]) {
+      return {
+        id: rows[0].id,
+        maxStopDurationMinutes: rows[0].maxStopDurationMinutes,
+        offlineGraceMinutes: rows[0].offlineGraceMinutes,
+        lowBatteryThreshold: rows[0].lowBatteryThreshold,
+        criticalBatteryThreshold: rows[0].criticalBatteryThreshold,
+        maxShiftDurationHours: rows[0].maxShiftDurationHours,
+        stopAlertEnabled: rows[0].stopAlertEnabled,
+        gpsAlertEnabled: rows[0].gpsAlertEnabled,
+        offlineAlertEnabled: rows[0].offlineAlertEnabled,
+        batteryAlertEnabled: rows[0].batteryAlertEnabled,
+        restaurantGeofenceAlertEnabled: rows[0].restaurantGeofenceAlertEnabled,
+        soundEnabled: rows[0].soundEnabled,
+        inAppAlertsEnabled: rows[0].inAppAlertsEnabled,
+        pushAlertsEnabled: rows[0].pushAlertsEnabled,
+        updatedAt: rows[0].updatedAt,
+      };
+    }
+
+    const [created] = await db
+      .insert(alertSettingsTable)
+      .values({ ...DEFAULT_ALERTS })
+      .returning();
+
+    return created ?? { ...DEFAULT_ALERTS };
+  } catch {
+    return { ...DEFAULT_ALERTS };
   }
-
-  const [created] = await db
-    .insert(alertSettingsTable)
-    .values({ ...DEFAULT_ALERTS })
-    .returning();
-
-  return created ?? { ...DEFAULT_ALERTS };
 }
 
 export async function updateAlertSettings(

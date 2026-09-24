@@ -19,6 +19,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -27,6 +28,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.tracker.driver.MainActivity
 import com.tracker.driver.R
 import java.text.SimpleDateFormat
@@ -322,20 +324,33 @@ class TrackerLocationService : Service() {
             isLocationUpdatesActive = true
             Log.i(TAG, "FusedLocationProvider updates requested (interval=5000ms, minDistance=10m, dedicatedThread=true)")
 
-            // Check if fresh lastLocation is available to seed the initial point immediately
+            // Acquire an immediate fresh high-accuracy location fix to seed initial telemetry safely
             try {
-                fusedLocationClient.lastLocation.addOnSuccessListener { lastLoc: Location? ->
-                    if (lastLoc != null && isLocationUpdatesActive) {
-                        val ageMs = System.currentTimeMillis() - lastLoc.time
-                        if (ageMs in 0..(2 * 60 * 1000) && store.getQueueSize() == 0) {
-                            val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
-                            Log.i(TAG, "TRACKER_INITIAL_LOCATION_CAPTURED age=${ageMs / 1000}s shiftId=$shiftSuffix")
-                            handleNewLocation(lastLoc)
+                val cts = CancellationTokenSource()
+                fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                    .addOnSuccessListener { freshLoc: Location? ->
+                        if (freshLoc != null && isLocationUpdatesActive) {
+                            val ageMs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+                                (SystemClock.elapsedRealtimeNanos() - freshLoc.elapsedRealtimeNanos) / 1_000_000
+                            } else {
+                                System.currentTimeMillis() - freshLoc.time
+                            }
+                            val isFresh = ageMs in 0..15_000
+                            val isAccurate = freshLoc.hasAccuracy() && freshLoc.accuracy <= 50f
+                            if (isFresh && isAccurate && store.getQueueSize() == 0) {
+                                val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+                                Log.i(TAG, "TRACKER_INITIAL_LOCATION_CAPTURED age=${ageMs / 1000}s acc=${freshLoc.accuracy}m shiftId=$shiftSuffix")
+                                handleNewLocation(freshLoc)
+                            } else {
+                                Log.d(TAG, "Skipping initial location seed: isFresh=$isFresh (age=${ageMs}ms) isAccurate=$isAccurate (acc=${if (freshLoc.hasAccuracy()) freshLoc.accuracy else -1f}m)")
+                            }
                         }
                     }
-                }
+                    .addOnFailureListener { e ->
+                        Log.d(TAG, "getCurrentLocation for initial seed failed (relying on callback): ${e.message}")
+                    }
             } catch (e: Exception) {
-                Log.d(TAG, "Could not fetch lastLocation on start: ${e.message}")
+                Log.d(TAG, "Could not request getCurrentLocation on start: ${e.message}")
             }
 
             // Start periodic queue check on dedicated looper

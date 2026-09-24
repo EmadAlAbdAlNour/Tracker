@@ -84,7 +84,11 @@ export function computeOperationalStatus(params: {
     return "OFFLINE";
   }
 
-  if (isInsideGeofence || !location) {
+  if (!location) {
+    return "STOPPED";
+  }
+
+  if (isInsideGeofence) {
     return "AT_RESTAURANT";
   }
 
@@ -172,14 +176,15 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
     deviceMap.set(dev.driverId, dev);
   }
 
-  // Fetch latest location per driver using DISTINCT ON (driver_id)
+  // Fetch latest location per driver scoped strictly to active shifts
   let latestLocations: any[] = [];
   try {
     const locResult = await db.execute(sql`
-      SELECT DISTINCT ON (driver_id)
-        id, driver_id, latitude, longitude, speed, heading, accuracy, altitude, recorded_at, received_at
-      FROM location_points
-      ORDER BY driver_id, recorded_at DESC
+      SELECT DISTINCT ON (lp.driver_id)
+        lp.id, lp.driver_id, lp.shift_id, lp.latitude, lp.longitude, lp.speed, lp.heading, lp.accuracy, lp.altitude, lp.recorded_at, lp.received_at
+      FROM location_points lp
+      INNER JOIN shifts s ON lp.driver_id = s.driver_id AND s.status = 'ACTIVE' AND (lp.shift_id = s.id OR (lp.shift_id IS NULL AND lp.recorded_at >= s.started_at))
+      ORDER BY lp.driver_id, lp.recorded_at DESC
     `);
     latestLocations = locResult.rows ?? [];
   } catch (e) {

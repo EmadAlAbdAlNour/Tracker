@@ -22,6 +22,7 @@ import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import {
   collectDriverTelemetry,
+  getCurrentDeviceLocation,
   getQueuedLocationCount,
   getTrackingStatus,
   startBackgroundTracking,
@@ -237,10 +238,27 @@ export function DriverHomeScreen({
   const handleStartShift = async () => {
     setLoading(true);
     try {
+      const loc = await getCurrentDeviceLocation();
+      if (!loc || loc.latitude == null || loc.longitude == null) {
+        setLoading(false);
+        showDialog(
+          t('app.error'),
+          rtl
+            ? 'تعذر تحديد موقعك الحالي بدقة عبر GPS. يرجى التأكد من تفعيل خدمة الموقع وإشارة الـ GPS ثم المحاولة مرة أخرى.'
+            : 'Unable to acquire a fresh GPS fix. Please ensure location services are enabled and try again.',
+          'error'
+        );
+        return;
+      }
+
       const resp = await apiRequest<{ shift: any; telemetryToken?: string; expiresIn?: number }>(
         '/api/drivers/me/shifts/start',
         {
           method: 'POST',
+          body: JSON.stringify({
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+          }),
         }
       );
       if (resp?.shift) {

@@ -784,9 +784,14 @@ export async function submitDriverLocation(
 
   const deviceUpdates: Record<string, unknown> = {
     lastSeen: receivedAt,
-    lastLocationAt: receivedAt,
     updatedAt: receivedAt,
   };
+  const existingLastLocTime = authorizedDevice[0]?.lastLocationAt
+    ? new Date(authorizedDevice[0].lastLocationAt).getTime()
+    : 0;
+  if (recordedAt.getTime() > existingLastLocTime) {
+    deviceUpdates.lastLocationAt = recordedAt;
+  }
   if (input.batteryPercentage !== undefined) deviceUpdates.batteryPercentage = input.batteryPercentage;
   if (input.isCharging !== undefined) deviceUpdates.isCharging = input.isCharging;
   if (input.locationServicesEnabled !== undefined) deviceUpdates.locationServicesEnabled = input.locationServicesEnabled;
@@ -918,13 +923,26 @@ export async function submitDriverLocationBatch(
   // All points with clientLocationId that are present in the DB (inserted + preexisting duplicates)
   const acceptedClientIds = inputClientIds;
 
-  // update devices lastSeen/lastLocationAt and telemetry from latest point
+  // update devices lastSeen and telemetry from latest point
   const lastPoint = inputs[inputs.length - 1];
   const deviceUpdates: Record<string, unknown> = {
     lastSeen: now,
-    lastLocationAt: now,
     updatedAt: now,
   };
+
+  // Last location timestamp integrity:
+  // Must represent the latest accepted location's recordedAt timestamp.
+  // Never move lastLocationAt backwards if older points are uploaded.
+  const latestBatchRecordedAt = new Date(Math.max(...inputs.map((it) => new Date(it.recordedAt).getTime())));
+  if (!Number.isNaN(latestBatchRecordedAt.getTime())) {
+    const existingLastLocTime = authorizedDevice[0]?.lastLocationAt
+      ? new Date(authorizedDevice[0].lastLocationAt).getTime()
+      : 0;
+    if (latestBatchRecordedAt.getTime() > existingLastLocTime) {
+      deviceUpdates.lastLocationAt = latestBatchRecordedAt;
+    }
+  }
+
   if (lastPoint.batteryPercentage !== undefined) deviceUpdates.batteryPercentage = lastPoint.batteryPercentage;
   if (lastPoint.isCharging !== undefined) deviceUpdates.isCharging = lastPoint.isCharging;
   if (lastPoint.locationServicesEnabled !== undefined) deviceUpdates.locationServicesEnabled = lastPoint.locationServicesEnabled;
@@ -1002,7 +1020,22 @@ export async function getDriverTrackingStatus(driverId: string) {
     .orderBy(desc(shiftsTable.startedAt))
     .limit(1);
 
-  const latestLocation = await getLatestDriverLocation(driverId);
+  let latestLocation: typeof locationPointsTable.$inferSelect | null = null;
+  if (activeShift[0]) {
+    const rows = await db
+      .select()
+      .from(locationPointsTable)
+      .where(
+        and(
+          eq(locationPointsTable.driverId, driverId),
+          eq(locationPointsTable.shiftId, activeShift[0].id)
+        )
+      )
+      .orderBy(desc(locationPointsTable.recordedAt))
+      .limit(1);
+    latestLocation = rows[0] ?? null;
+  }
+
   const device = await db
     .select()
     .from(devicesTable)
@@ -1014,7 +1047,7 @@ export async function getDriverTrackingStatus(driverId: string) {
     driverId,
     activeShift: activeShift[0] ?? null,
     trackingActive: Boolean(activeShift[0]),
-    latestLocation: latestLocation ?? null,
+    latestLocation,
     lastSeen: device[0]?.lastSeen ?? null,
     lastLocationAt: device[0]?.lastLocationAt ?? null,
   };
@@ -1039,23 +1072,6 @@ export async function startDriverShift(
     throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
   }
 
-  // Geofence check:
-  // Validate driver is within configured restaurant radius (authoritative default: 150m)
-  if (locationCoords?.latitude != null && locationCoords?.longitude != null) {
-    const restaurantSettings = await getRestaurantSettings();
-    if (restaurantSettings.enabled) {
-      const distance = calculateDistanceMeters(
-        locationCoords.latitude,
-        locationCoords.longitude,
-        restaurantSettings.latitude,
-        restaurantSettings.longitude
-      );
-      if (distance > restaurantSettings.radiusMeters) {
-        throw createError(403, "OUTSIDE_GEOFENCE", "Driver must be inside restaurant geofence to start shift");
-      }
-    }
-  }
-
   const authorizedDevice = await db
     .select()
     .from(devicesTable)
@@ -1068,6 +1084,29 @@ export async function startDriverShift(
 
   if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
+  }
+
+  // Geofence check:
+  // Validate driver is within configured restaurant radius (authoritative default: 150m)
+  const restaurantSettings = await getRestaurantSettings();
+  if (restaurantSettings.enabled) {
+    if (locationCoords?.latitude == null || locationCoords?.longitude == null) {
+      throw createError(400, "GEOFENCE_LOCATION_REQUIRED", "Current location coordinates (latitude and longitude) are required to start shift");
+    }
+    const lat = Number(locationCoords.latitude);
+    const lng = Number(locationCoords.longitude);
+    if (Number.isNaN(lat) || lat < -90 || lat > 90 || Number.isNaN(lng) || lng < -180 || lng > 180) {
+      throw createError(400, "INVALID_COORDINATES", "Invalid latitude or longitude provided");
+    }
+    const distance = calculateDistanceMeters(
+      lat,
+      lng,
+      restaurantSettings.latitude,
+      restaurantSettings.longitude
+    );
+    if (distance > restaurantSettings.radiusMeters) {
+      throw createError(403, "OUTSIDE_GEOFENCE", "Driver must be inside restaurant geofence to start shift");
+    }
   }
 
   const existingActive = await db

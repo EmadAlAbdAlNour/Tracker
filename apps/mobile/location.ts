@@ -205,3 +205,40 @@ export async function updateNativeTelemetryToken(token: string): Promise<boolean
     return false;
   }
 }
+
+export interface DeviceLocationResult {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  ageMs?: number;
+  timestamp?: number;
+}
+
+export async function getCurrentDeviceLocation(timeoutMs = 10000): Promise<DeviceLocationResult | null> {
+  if (Platform.OS !== 'android' || !TrackerLocationModule?.getCurrentLocation) {
+    return null;
+  }
+
+  const permissions = await ensureTrackingPermissions();
+  if (!permissions.foreground) {
+    console.warn('[TrackerLocation] Permission not granted for getCurrentLocation');
+    return null;
+  }
+
+  try {
+    const loc = await TrackerLocationModule.getCurrentLocation({ timeoutMs });
+    if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
+      return {
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        accuracy: typeof loc.accuracy === 'number' ? loc.accuracy : undefined,
+        ageMs: typeof loc.ageMs === 'number' ? loc.ageMs : undefined,
+        timestamp: typeof loc.timestamp === 'number' ? loc.timestamp : undefined,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.warn('[TrackerLocation] getCurrentLocation failed:', error);
+    return null;
+  }
+}

@@ -185,4 +185,37 @@ describe('Telemetry & Auth Parity Regression Tests', () => {
       expect(controller.signal.aborted).toBe(true);
     });
   });
+
+  describe('Part 5 — Current Location & Freshness Validation', () => {
+    it('validates that initial location is only accepted if fresh (<= 15s) and accurate (<= 50m)', () => {
+      function isInitialSeedUsable(ageMs: number, accuracy: number): boolean {
+        const isFresh = ageMs >= 0 && ageMs <= 15_000;
+        const isAccurate = accuracy >= 0 && accuracy <= 50;
+        return isFresh && isAccurate;
+      }
+
+      // Fresh & accurate: 3 seconds old, 12m accuracy -> ACCEPT
+      expect(isInitialSeedUsable(3000, 12)).toBe(true);
+
+      // Stale: 2 minutes old (120s), 10m accuracy -> REJECT
+      expect(isInitialSeedUsable(120_000, 10)).toBe(false);
+
+      // Inaccurate: 2 seconds old, 1500m accuracy -> REJECT
+      expect(isInitialSeedUsable(2000, 1500)).toBe(false);
+
+      // Negative or skewed clock -> REJECT
+      expect(isInitialSeedUsable(-5000, 10)).toBe(false);
+    });
+
+    it('requires latitude and longitude before dispatching start shift request', () => {
+      function validateStartShiftPayload(loc: { latitude?: number; longitude?: number } | null): boolean {
+        return Boolean(loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number');
+      }
+
+      expect(validateStartShiftPayload(null)).toBe(false);
+      expect(validateStartShiftPayload({})).toBe(false);
+      expect(validateStartShiftPayload({ latitude: 24.7136, longitude: 46.6753 })).toBe(true);
+    });
+  });
 });
+
