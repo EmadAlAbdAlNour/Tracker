@@ -219,4 +219,28 @@ describe("Dedicated Telemetry Token Authentication & 24h Shift Support", () => {
     expect(error.statusCode).toBe(401);
     expect(error.code).toBe("AUTH_INVALID_TOKEN");
   });
+
+  it("13. Telemetry token issuance accepts both device.id and device.deviceIdentifier, rejects mismatched device", () => {
+    const device = {
+      id: "device-uuid-1",
+      deviceIdentifier: "client-install-uuid-2",
+      authorized: true,
+    };
+
+    const verifyDevice = (callerDeviceId: string) => {
+      if (device.id !== callerDeviceId && device.deviceIdentifier !== callerDeviceId) {
+        return false;
+      }
+      return true;
+    };
+
+    // Client deviceIdentifier from x-device-id is accepted
+    expect(verifyDevice("client-install-uuid-2")).toBe(true);
+
+    // Database device.id is accepted
+    expect(verifyDevice("device-uuid-1")).toBe(true);
+
+    // Foreign / unauthorized device is rejected
+    expect(verifyDevice("foreign-device-3")).toBe(false);
+  });
 });

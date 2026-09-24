@@ -103,14 +103,14 @@ router.post("/:id/device/assign", requireAuth, requireRole("ADMIN"), async (req:
 
 router.post("/me/shifts/start", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
-    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
+    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string);
     const bodyLocation =
       req.body && typeof req.body === "object" && req.body.latitude != null && req.body.longitude != null
         ? { latitude: Number(req.body.latitude), longitude: Number(req.body.longitude) }
         : null;
     const shift = await startDriverShift(req.user!.id, callerDeviceId, bodyLocation);
     const device = await getDriverDevice(req.user!.id);
-    const deviceId = callerDeviceId || device?.id || "";
+    const deviceId = device?.id || callerDeviceId || "";
     const telemetryToken = signTelemetryToken(req.user!.id, "DRIVER", deviceId, shift.id);
     res.status(201).json({ shift, telemetryToken, expiresIn: TELEMETRY_TOKEN_EXPIRY_SECONDS });
   } catch (error) {
@@ -151,8 +151,8 @@ router.post("/me/telemetry-token", requireAuth, requireRole("DRIVER"), async (re
       throw createError(403, "DEVICE_UNAUTHORIZED", "Device is not authorized or has been revoked");
     }
 
-    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId || device.id;
-    if (device.id !== callerDeviceId) {
+    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string) || device.id;
+    if (device.id !== callerDeviceId && device.deviceIdentifier !== callerDeviceId) {
       throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
     }
 
@@ -181,7 +181,7 @@ router.post("/me/shifts/end", requireAuth, requireRole("DRIVER"), async (req: Au
 router.post("/me/location", requireAuthOrTelemetry, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = locationPointSchema.parse(req.body);
-    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
+    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string);
     const expectedShiftId = req.user?.isTelemetryToken ? req.user?.shiftId : null;
     const point = await submitDriverLocation(req.user!.id, body, callerDeviceId, expectedShiftId);
     res.status(201).json({ location: point });
@@ -198,7 +198,7 @@ router.post("/me/location", requireAuthOrTelemetry, requireRole("DRIVER"), async
 router.post("/me/location/batch", requireAuthOrTelemetry, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = locationBatchSchema.parse(req.body);
-    const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
+    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string);
     const expectedShiftId = req.user?.isTelemetryToken ? req.user?.shiftId : null;
     const result = await submitDriverLocationBatch(req.user!.id, body, callerDeviceId, expectedShiftId);
     res.status(201).json(result);

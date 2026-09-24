@@ -720,7 +720,11 @@ export async function submitDriverLocation(
     throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
   }
 
-  if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
+  if (
+    requestDeviceId &&
+    authorizedDevice[0].id !== requestDeviceId &&
+    authorizedDevice[0].deviceIdentifier !== requestDeviceId
+  ) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
   }
 
@@ -860,7 +864,11 @@ export async function submitDriverLocationBatch(
     throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
   }
 
-  if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
+  if (
+    requestDeviceId &&
+    authorizedDevice[0].id !== requestDeviceId &&
+    authorizedDevice[0].deviceIdentifier !== requestDeviceId
+  ) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
   }
 
@@ -1082,7 +1090,11 @@ export async function startDriverShift(
     throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
   }
 
-  if (requestDeviceId && authorizedDevice[0].id !== requestDeviceId) {
+  if (
+    requestDeviceId &&
+    authorizedDevice[0].id !== requestDeviceId &&
+    authorizedDevice[0].deviceIdentifier !== requestDeviceId
+  ) {
     throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
   }
 

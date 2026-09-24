@@ -3,6 +3,8 @@ import * as authService from './services/authService';
 import * as dbModule from '@workspace/db';
 import { shiftsTable } from '@workspace/db';
 import { computeOperationalStatus } from './services/fleetService';
+import * as libAuth from './lib/auth';
+import * as settingsService from './services/settingsService';
 
 function makeUser(id: string) {
   return { id, role: 'DRIVER', active: true } as any;
@@ -366,3 +368,209 @@ describe('Operational status & delayed telemetry evaluation', () => {
     expect(status).toBe('STOPPED');
   });
 });
+
+describe('Telemetry device-authorization fix regression suite', () => {
+  const user = makeUser('u-telemetry');
+  const driver = makeDriver(user.id, 'd-telemetry');
+  const authorizedDevice = {
+    id: '05a65299-277d-47d3-a7e9-3493fda3267d', // DB primary key (devices.id)
+    driverId: driver.id,
+    deviceIdentifier: 'a67b29cb-53c4-4913-bc0d-439bf22c70c4', // Client installation UUID (devices.deviceIdentifier)
+    authorized: true,
+  };
+  const activeShift = makeShift('shift-telemetry-1', driver.id);
+
+  function setupMocks(deviceRow: any = authorizedDevice) {
+    vi.spyOn(authService as any, 'getDriverByUserId').mockResolvedValue(driver as any);
+    vi.spyOn(libAuth, 'getUserById').mockResolvedValue(user as any);
+
+    dbModule.db.select = (() => ({
+      from: (table: any) => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: async () => {
+              if (table === dbModule.shiftsTable || table?.name === 'shifts') return [activeShift];
+              if (table === dbModule.devicesTable || table?.name === 'devices') return deviceRow ? [deviceRow] : [];
+              return [driver];
+            },
+          }),
+          limit: async () => {
+            if (table === dbModule.shiftsTable || table?.name === 'shifts') return [activeShift];
+            if (table === dbModule.devicesTable || table?.name === 'devices') return deviceRow ? [deviceRow] : [];
+            return [driver];
+          },
+        }),
+      }),
+    })) as any;
+
+    const pool = (dbModule as any).pool;
+    vi.spyOn(pool, 'query').mockResolvedValue({ rows: [{ client_location_id: 'c-test-1' }] } as any);
+  }
+
+  const sampleInputs = [
+    { clientLocationId: 'c-test-1', latitude: 30.418, longitude: 31.562, recordedAt: new Date().toISOString() },
+  ];
+
+  it('Case A: Existing production mobile compatibility - accepts client deviceIdentifier (from x-device-id)', async () => {
+    setupMocks(authorizedDevice);
+
+    // Mobile sends x-device-id = client installation UUID (authorizedDevice.deviceIdentifier)
+    const clientInstallationId = authorizedDevice.deviceIdentifier;
+    const res = await authService.submitDriverLocationBatch(
+      user.id,
+      sampleInputs as any,
+      clientInstallationId,
+      activeShift.id,
+    );
+    expect(res.accepted).toBe(1);
+    expect(res.acceptedClientIds).toContain('c-test-1');
+  });
+
+  it('Case B: JWT authority - accepts verified devices.id from telemetry JWT even when x-device-id is absent', async () => {
+    setupMocks(authorizedDevice);
+
+    // Telemetry JWT contains authorizedDevice.id in payload.deviceId
+    const jwtDeviceId = authorizedDevice.id;
+    const res = await authService.submitDriverLocationBatch(
+      user.id,
+      sampleInputs as any,
+      jwtDeviceId,
+      activeShift.id,
+    );
+    expect(res.accepted).toBe(1);
+    expect(res.acceptedClientIds).toContain('c-test-1');
+  });
+
+  it('Case C: Wrong device rejection - rejects device identifier matching neither id nor deviceIdentifier with 403 DEVICE_UNAUTHORIZED', async () => {
+    setupMocks(authorizedDevice);
+
+    await expect(
+      authService.submitDriverLocationBatch(
+        user.id,
+        sampleInputs as any,
+        'unrelated-different-device-uuid',
+        activeShift.id,
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'DEVICE_UNAUTHORIZED',
+      message: 'Device authorization has been revoked or replaced',
+    });
+  });
+
+  it('Case D: Header cannot override JWT - verified JWT deviceId retains precedence over x-device-id header', async () => {
+    setupMocks(authorizedDevice);
+
+    // Route resolution logic:
+    // const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string);
+    const resolveCallerDeviceId = (req: { user?: { deviceId?: string }; headers: Record<string, string | undefined> }) =>
+      req.user?.deviceId || (req.headers['x-device-id'] as string);
+
+    // D1: Valid JWT deviceId with an unrelated x-device-id header -> callerDeviceId resolves to verified JWT deviceId
+    const reqWithUnrelatedHeader = {
+      user: { deviceId: authorizedDevice.id },
+      headers: { 'x-device-id': 'unrelated-rogue-device' },
+    };
+    const resolvedId1 = resolveCallerDeviceId(reqWithUnrelatedHeader);
+    expect(resolvedId1).toBe(authorizedDevice.id);
+    expect(resolvedId1).not.toBe('unrelated-rogue-device');
+
+    // Request succeeds because verified JWT deviceId is the authorized device
+    const res1 = await authService.submitDriverLocationBatch(
+      user.id,
+      sampleInputs as any,
+      resolvedId1,
+      activeShift.id,
+    );
+    expect(res1.accepted).toBe(1);
+
+    // D2: Invalid/rogue JWT deviceId with authorized x-device-id header -> header cannot override JWT
+    const reqWithInvalidJwt = {
+      user: { deviceId: 'unauthorized-jwt-device' },
+      headers: { 'x-device-id': authorizedDevice.deviceIdentifier },
+    };
+    const resolvedId2 = resolveCallerDeviceId(reqWithInvalidJwt);
+    expect(resolvedId2).toBe('unauthorized-jwt-device');
+
+    // Request fails with 403 because untrusted header was not allowed to override the JWT
+    await expect(
+      authService.submitDriverLocationBatch(
+        user.id,
+        sampleInputs as any,
+        resolvedId2,
+        activeShift.id,
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'DEVICE_UNAUTHORIZED',
+    });
+  });
+
+  it('Case E: Existing authorization behavior - rejects when authorized device is revoked or missing', async () => {
+    setupMocks(null); // No authorized device returned from DB
+
+    await expect(
+      authService.submitDriverLocationBatch(
+        user.id,
+        sampleInputs as any,
+        authorizedDevice.deviceIdentifier,
+        activeShift.id,
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'DEVICE_UNAUTHORIZED',
+      message: 'Driver device is not authorized or has been revoked',
+    });
+  });
+
+  it('Consistency: startDriverShift accepts both device.id and device.deviceIdentifier, rejects foreign device', async () => {
+    vi.spyOn(authService as any, 'getDriverByUserId').mockResolvedValue(driver as any);
+    vi.spyOn(libAuth, 'getUserById').mockResolvedValue(user as any);
+    vi.spyOn(settingsService, 'getRestaurantSettings').mockResolvedValue({ enabled: false } as any);
+
+    // Mock DB select: for devices return authorizedDevice, for shifts return empty (no existing shift)
+    dbModule.db.select = (() => ({
+      from: (table: any) => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: async () => {
+              if (table === dbModule.shiftsTable || table?.name === 'shifts') return [];
+              if (table === dbModule.devicesTable || table?.name === 'devices') return [authorizedDevice];
+              return [driver];
+            },
+          }),
+          limit: async () => {
+            if (table === dbModule.shiftsTable || table?.name === 'shifts') return [];
+            if (table === dbModule.devicesTable || table?.name === 'devices') return [authorizedDevice];
+            return [driver];
+          },
+        }),
+      }),
+    })) as any;
+
+    dbModule.db.insert = (() => ({
+      values: () => ({
+        returning: async () => [{ id: 'new-shift-test-1', driverId: driver.id, status: 'ACTIVE' }],
+      }),
+    })) as any;
+
+    // Accepts client deviceIdentifier
+    const shift1 = await authService.startDriverShift(user.id, authorizedDevice.deviceIdentifier);
+    expect(shift1).toBeDefined();
+    expect(shift1.id).toBe('new-shift-test-1');
+
+    // Accepts device.id
+    const shift2 = await authService.startDriverShift(user.id, authorizedDevice.id);
+    expect(shift2).toBeDefined();
+    expect(shift2.id).toBe('new-shift-test-1');
+
+    // Rejects foreign device
+    await expect(
+      authService.startDriverShift(user.id, 'foreign-device-uuid'),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'DEVICE_UNAUTHORIZED',
+    });
+  });
+});
+
