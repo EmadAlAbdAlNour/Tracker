@@ -76,3 +76,14 @@ export const shiftListQuerySchema = z.object({
   from: z.coerce.string().optional(),
   to: z.coerce.string().optional(),
 });
+
+export const heartbeatSchema = z.object({
+  shiftId: z.string().uuid().optional(),
+  batteryPercentage: z.number().int().min(0).max(100).nullable().optional(),
+  isCharging: z.boolean().nullable().optional(),
+  locationServicesEnabled: z.boolean().nullable().optional(),
+  networkStatus: z.string().trim().max(50).nullable().optional(),
+});
+
+export type HeartbeatInput = z.infer<typeof heartbeatSchema>;
+

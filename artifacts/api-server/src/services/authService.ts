@@ -986,6 +986,112 @@ export async function submitDriverLocationBatch(
   };
 }
 
+export async function submitDriverHeartbeat(
+  userId: string,
+  input: {
+    shiftId?: string | null;
+    batteryPercentage?: number | null;
+    isCharging?: boolean | null;
+    locationServicesEnabled?: boolean | null;
+    networkStatus?: string | null;
+  },
+  requestDeviceId?: string | null,
+  expectedShiftId?: string | null,
+): Promise<{ ok: boolean; serverTime: string }> {
+  const driver = await getDriverByUserId(userId);
+  if (!driver) {
+    throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+  }
+
+  if (!driver.active) {
+    throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
+  }
+
+  const authorizedDevice = await db
+    .select()
+    .from(devicesTable)
+    .where(and(eq(devicesTable.driverId, driver.id), eq((devicesTable as any).authorized, true)))
+    .limit(1);
+
+  if (!authorizedDevice[0]) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Driver device is not authorized or has been revoked");
+  }
+
+  if (
+    requestDeviceId &&
+    authorizedDevice[0].id !== requestDeviceId &&
+    authorizedDevice[0].deviceIdentifier !== requestDeviceId
+  ) {
+    throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
+  }
+
+  const activeShift = await db
+    .select()
+    .from(shiftsTable)
+    .where(and(eq(shiftsTable.driverId, driver.id), eq(shiftsTable.status, "ACTIVE")))
+    .orderBy(desc(shiftsTable.startedAt))
+    .limit(1);
+
+  if (!activeShift[0]) {
+    throw createError(409, "SHIFT_NOT_ACTIVE", "Driver is not on an active shift");
+  }
+
+  const targetShiftId = expectedShiftId || input.shiftId;
+  if (targetShiftId && activeShift[0].id !== targetShiftId) {
+    throw createError(409, "SHIFT_NOT_ACTIVE", "Telemetry credential shift does not match active shift");
+  }
+
+  const now = new Date();
+  const deviceUpdates: Record<string, unknown> = {
+    lastSeen: now,
+    updatedAt: now,
+  };
+
+  if (input.batteryPercentage !== undefined) deviceUpdates.batteryPercentage = input.batteryPercentage;
+  if (input.isCharging !== undefined) deviceUpdates.isCharging = input.isCharging;
+  if (input.locationServicesEnabled !== undefined) deviceUpdates.locationServicesEnabled = input.locationServicesEnabled;
+  if (input.networkStatus !== undefined) deviceUpdates.networkStatus = input.networkStatus;
+
+  await db
+    .update(devicesTable)
+    .set(deviceUpdates as any)
+    .where(eq(devicesTable.id, authorizedDevice[0].id));
+
+  // Non-blocking alert evaluation on latest location point (evaluates STOP_EXTENDED while driver is stationary outside)
+  import("./alertService").then(async ({ evaluateDriverAlerts }) => {
+    try {
+      const latestLoc = await db
+        .select()
+        .from(locationPointsTable)
+        .where(eq(locationPointsTable.driverId, driver.id))
+        .orderBy(desc(locationPointsTable.recordedAt))
+        .limit(1);
+
+      if (latestLoc[0]) {
+        const user = await getUserById(userId);
+        evaluateDriverAlerts({
+          driverId: driver.id,
+          driverName: user?.name,
+          shiftId: activeShift[0].id,
+          latitude: Number(latestLoc[0].latitude),
+          longitude: Number(latestLoc[0].longitude),
+          speed: latestLoc[0].speed !== null ? Number(latestLoc[0].speed) : 0,
+          recordedAt: new Date(latestLoc[0].recordedAt),
+          batteryPercentage: input.batteryPercentage,
+          locationServicesEnabled: input.locationServicesEnabled,
+        }).catch((err) => console.error("Heartbeat alert evaluation error:", err));
+      }
+    } catch (e) {
+      console.error("Error evaluating heartbeat alerts:", e);
+    }
+  }).catch((err) => console.error("Alert service module load error in heartbeat:", err));
+
+  return {
+    ok: true,
+    serverTime: now.toISOString(),
+  };
+}
+
 export async function getLatestDriverLocation(driverId: string) {
   const rows = await db
     .select()

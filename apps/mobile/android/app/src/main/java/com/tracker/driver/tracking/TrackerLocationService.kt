@@ -61,6 +61,7 @@ class TrackerLocationService : Service() {
         private const val KEY_DEVICE_ID = "device_id"
 
         private const val QUEUE_CHECK_INTERVAL_MS = 30_000L
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L
 
         @Volatile
         var isServiceRunning: Boolean = false
@@ -83,6 +84,7 @@ class TrackerLocationService : Service() {
     private var locationHandlerThread: HandlerThread? = null
 
     private var queueCheckHandler: Handler? = null
+    private var heartbeatHandler: Handler? = null
 
     private val isoDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -255,9 +257,47 @@ class TrackerLocationService : Service() {
         queueCheckHandler = null
     }
 
+    private fun startHeartbeat(looper: Looper) {
+        stopHeartbeat()
+        val handler = Handler(looper)
+        heartbeatHandler = handler
+        val heartbeatRunnable = object : Runnable {
+            override fun run() {
+                if (!isServiceRunning || !isLocationUpdatesActive) return
+                try {
+                    val battery = getBatteryPercentage()
+                    val isCharging = getIsCharging()
+                    val locEnabled = isLocationEnabled()
+                    val netStatus = getNetworkStatus()
+                    val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
+                    Log.d(TAG, "TRACKER_HEARTBEAT_RUNNER shiftId=$shiftSuffix battery=$battery charging=$isCharging locEnabled=$locEnabled netStatus=$netStatus")
+                    uploader.triggerHeartbeat(
+                        batteryPercentage = battery,
+                        isCharging = isCharging,
+                        locationServicesEnabled = locEnabled,
+                        networkStatus = netStatus
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Periodic heartbeat runner error: ${e.message}")
+                }
+                if (isServiceRunning && isLocationUpdatesActive) {
+                    heartbeatHandler?.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+                }
+            }
+        }
+        // Send initial heartbeat 5 seconds after service starts, then every 60 seconds
+        handler.postDelayed(heartbeatRunnable, 5_000L)
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatHandler?.removeCallbacksAndMessages(null)
+        heartbeatHandler = null
+    }
+
     fun stopLocationUpdates() {
         if (!isLocationUpdatesActive) return
         stopPeriodicQueueCheck()
+        stopHeartbeat()
         try {
             fusedLocationClient.removeLocationUpdates(locationCallback)
             Log.i(TAG, "FusedLocation updates stopped")
@@ -276,6 +316,7 @@ class TrackerLocationService : Service() {
     fun stopForegroundAndSelf() {
         isServiceRunning = false
         prefs.edit().putBoolean(KEY_IS_ACTIVE, false).apply()
+        stopHeartbeat()
         stopLocationUpdates()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -355,6 +396,9 @@ class TrackerLocationService : Service() {
 
             // Start periodic queue check on dedicated looper
             startPeriodicQueueCheck(looper)
+
+            // Start independent device heartbeat on dedicated looper
+            startHeartbeat(looper)
         } catch (securityEx: SecurityException) {
             Log.e(TAG, "Missing location permissions for FusedLocationProvider", securityEx)
             stopSelf()
@@ -478,6 +522,7 @@ class TrackerLocationService : Service() {
         if (activeService === this) {
             activeService = null
         }
+        stopHeartbeat()
         stopLocationUpdates()
         super.onDestroy()
     }

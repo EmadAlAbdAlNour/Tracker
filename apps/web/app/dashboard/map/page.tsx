@@ -235,19 +235,31 @@ const LeafletMap = dynamic(
           <Popup>
             <div className="p-1.5 space-y-2 text-xs min-w-[200px]">
               <div className="border-b border-slate-100 pb-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 text-sm">{driver.driverName}</span>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    style={{
-                      backgroundColor: `${visuals.fillColor}22`,
-                      color: visuals.color,
-                    }}
-                  >
-                    {driver.operationalStatus === 'OFFLINE'
-                      ? (isRtl() ? 'آخر موقع معروف' : 'Last Known Location')
-                      : visuals.statusLabel}
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 text-sm truncate">{driver.driverName}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                        driver.isOnline
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${driver.isOnline ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      {driver.isOnline ? (isRtl() ? 'متصل' : 'Online') : (isRtl() ? 'غير متصل' : 'Offline')}
+                    </span>
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                      style={{
+                        backgroundColor: `${visuals.fillColor}22`,
+                        color: visuals.color,
+                      }}
+                    >
+                      {driver.operationalStatus === 'OFFLINE'
+                        ? (isRtl() ? 'آخر موقع معروف' : 'Last Known Location')
+                        : visuals.statusLabel}
+                    </span>
+                  </div>
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                   {t('drivers.employeeId')}: {formatWesternNumber(driver.employeeId)}
@@ -265,10 +277,12 @@ const LeafletMap = dynamic(
                 )}
 
                 {driver.distanceToRestaurantMeters != null && (
-                  <div className="flex justify-between">
-                    <span>{t('map.distance')}:</span>
-                    <span className="font-mono text-slate-800">
-                      {formatWesternNumber(driver.distanceToRestaurantMeters)} {t('map.meters')}
+                  <div className="flex justify-between items-center">
+                    <span>{isRtl() ? 'النطاق الجغرافي:' : 'Geofence:'}</span>
+                    <span className={`font-semibold ${driver.isInsideGeofence ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {driver.isInsideGeofence
+                        ? (isRtl() ? 'داخل المطعم' : 'Inside Restaurant')
+                        : (isRtl() ? 'خارج المطعم' : 'Outside Restaurant')}
                     </span>
                   </div>
                 )}
@@ -286,7 +300,11 @@ const LeafletMap = dynamic(
                 )}
 
                 <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
-                  <span>{t('map.lastUpdate')}:</span>
+                  <span>
+                    {driver.operationalStatus === 'OFFLINE'
+                      ? (isRtl() ? 'آخر موقع معروف منذ:' : 'Last known location:')
+                      : (isRtl() ? 'آخر موقع منذ:' : 'Last location:')}
+                  </span>
                   <span className="font-medium text-slate-600">
                     {formatTimeAgo(driver.location?.recordedAt)}
                   </span>
@@ -736,20 +754,32 @@ export default function MapPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-900 text-xs truncate max-w-[120px]">
+                        <span className="font-bold text-slate-900 text-xs truncate max-w-[100px]">
                           {driver.driverName}
                         </span>
-                        <span
-                          className="rounded-full px-2 py-0.5 text-[9px] font-bold"
-                          style={{
-                            backgroundColor: `${visuals.fillColor}25`,
-                            color: visuals.color,
-                          }}
-                        >
-                          {driver.operationalStatus === 'OFFLINE'
-                            ? (isRtl() ? 'آخر موقع معروف' : 'Last Known')
-                            : visuals.statusLabel}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold ${
+                              driver.isOnline
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${driver.isOnline ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                            {driver.isOnline ? (isRtl() ? 'متصل' : 'Online') : (isRtl() ? 'غير متصل' : 'Offline')}
+                          </span>
+                          <span
+                            className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                            style={{
+                              backgroundColor: `${visuals.fillColor}25`,
+                              color: visuals.color,
+                            }}
+                          >
+                            {driver.operationalStatus === 'OFFLINE'
+                              ? (isRtl() ? 'آخر موقع معروف' : 'Last Known')
+                              : visuals.statusLabel}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="text-[10px] text-slate-500 font-mono mb-2 flex items-center justify-between">
@@ -760,7 +790,7 @@ export default function MapPage() {
                           </span>
                         ) : driver.operationalStatus === 'OFFLINE' ? (
                           <span className="text-slate-400">
-                            {t('overview.offline')}
+                            {isRtl() ? 'آخر موقع معروف' : t('overview.offline')}
                           </span>
                         ) : null}
                       </div>

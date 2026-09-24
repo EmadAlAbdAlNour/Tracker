@@ -212,6 +212,88 @@ class TrackerLocationUploader(
         }
     }
 
+    /**
+     * Triggers an asynchronous, non-blocking heartbeat request.
+     * Does NOT alter the durable location queue, does not insert location points.
+     */
+    fun triggerHeartbeat(
+        batteryPercentage: Int? = null,
+        isCharging: Boolean? = null,
+        locationServicesEnabled: Boolean? = null,
+        networkStatus: String? = null
+    ) {
+        executor.submit {
+            try {
+                sendHeartbeat(batteryPercentage, isCharging, locationServicesEnabled, networkStatus)
+            } catch (e: Exception) {
+                Log.w(TAG, "TRACKER_HEARTBEAT_EXCEPTION: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Sends an independent device heartbeat to POST /api/drivers/me/heartbeat.
+     * Updates devices.lastSeen without creating or modifying location points.
+     */
+    fun sendHeartbeat(
+        batteryPercentage: Int? = null,
+        isCharging: Boolean? = null,
+        locationServicesEnabled: Boolean? = null,
+        networkStatus: String? = null
+    ): Boolean {
+        val token = telemetryToken
+        if (token.isNullOrBlank()) {
+            Log.w(TAG, "TRACKER_HEARTBEAT_SKIPPED: telemetryToken is null or empty")
+            return false
+        }
+
+        var connection: HttpURLConnection? = null
+        try {
+            val url = URL("$apiBaseUrl/api/drivers/me/heartbeat")
+            connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer $token")
+                deviceId?.let { setRequestProperty("x-device-id", it) }
+            }
+
+            val body = JSONObject().apply {
+                if (shiftId != null) put("shiftId", shiftId)
+                if (batteryPercentage != null) put("batteryPercentage", batteryPercentage)
+                if (isCharging != null) put("isCharging", isCharging)
+                if (locationServicesEnabled != null) put("locationServicesEnabled", locationServicesEnabled)
+                if (networkStatus != null) put("networkStatus", networkStatus)
+            }
+
+            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                writer.write(body.toString())
+                writer.flush()
+            }
+
+            val responseCode = connection.responseCode
+            val responseBody = readResponse(connection, responseCode)
+
+            if (responseCode in 200..299) {
+                Log.d(TAG, "TRACKER_HEARTBEAT_SUCCESS statusCode=$responseCode shiftId=${shiftId?.takeLast(8)}")
+                return true
+            } else {
+                Log.w(TAG, "TRACKER_HEARTBEAT_FAILURE statusCode=$responseCode message=${responseBody.take(100)}")
+                if (responseCode == 401) {
+                    listener?.onTokenExpired()
+                }
+                return false
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "TRACKER_HEARTBEAT_FAILURE network error=${e.message}")
+            return false
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
     private fun buildBatchPayload(batch: List<LocationPointRecord>): JSONArray {
         val array = JSONArray()
         for (item in batch) {

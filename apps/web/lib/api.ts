@@ -117,6 +117,7 @@ export type FleetDriverLiveStatus = {
   employeeId: string;
   driverActive: boolean;
   userId: string;
+  isOnline?: boolean;
   shift: {
     id: string;
     status: 'ACTIVE' | 'COMPLETED';

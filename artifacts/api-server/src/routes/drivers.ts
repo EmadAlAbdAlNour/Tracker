@@ -19,13 +19,14 @@ import {
   startDriverShift,
   submitDriverLocation,
   submitDriverLocationBatch,
+  submitDriverHeartbeat,
   updateDriverProfile,
   resetDriverDeviceByDriverId,
   assignDriverDevice,
 } from "../services/authService";
 import { type AuthenticatedRequest, requireAuth, requireAuthOrTelemetry, requireRole } from "../middleware/auth";
 import { signTelemetryToken, TELEMETRY_TOKEN_EXPIRY_SECONDS } from "../lib/auth";
-import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, locationBatchSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
+import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, heartbeatSchema, locationBatchSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
 
 const router = Router();
 
@@ -205,6 +206,23 @@ router.post("/me/location/batch", requireAuthOrTelemetry, requireRole("DRIVER"),
   } catch (error) {
     if (error instanceof z.ZodError) {
       next(createError(400, "VALIDATION_ERROR", "Invalid batch payload", error.flatten()));
+      return;
+    }
+    next(error);
+  }
+});
+
+// Periodic heartbeat: lightweight device keep-alive
+router.post("/me/heartbeat", requireAuthOrTelemetry, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const body = heartbeatSchema.parse(req.body || {});
+    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string);
+    const expectedShiftId = req.user?.isTelemetryToken ? req.user?.shiftId : null;
+    const result = await submitDriverHeartbeat(req.user!.id, body, callerDeviceId, expectedShiftId);
+    res.status(200).json(result);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(createError(400, "VALIDATION_ERROR", "Invalid heartbeat payload", error.flatten()));
       return;
     }
     next(error);

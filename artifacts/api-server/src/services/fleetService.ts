@@ -12,6 +12,7 @@ export interface FleetDriverLiveStatus {
   employeeId: string;
   driverActive: boolean;
   userId: string;
+  isOnline?: boolean;
   // Shift info
   shift: {
     id: string;
@@ -337,6 +338,7 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
       employeeId: row.employeeId,
       driverActive: row.driverActive && row.userActive,
       userId: row.userId,
+      isOnline,
       shift: shiftData,
       location: locData,
       device: devData,
