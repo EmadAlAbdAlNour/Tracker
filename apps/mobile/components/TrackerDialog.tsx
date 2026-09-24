@@ -100,6 +100,7 @@ export function TrackerDialog({
                   {
                     backgroundColor: theme.iconBg,
                     borderColor: theme.iconBorder,
+                    alignSelf: rtl ? 'flex-end' : 'flex-start',
                   },
                 ]}
               >

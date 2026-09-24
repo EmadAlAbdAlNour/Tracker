@@ -4,8 +4,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
+  BackHandler,
+  Modal,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -22,6 +23,7 @@ import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import { RealGeographicMapView, type MapDriverPoint, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
+import { TrackerDialog } from '../components/TrackerDialog';
 import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
 import { NotificationService } from '../notificationService';
@@ -78,6 +80,52 @@ export function AdminHomeScreen({
   // Users Data
   const [users, setUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
+
+  // Dialog State
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'error' | 'warning' | 'notice' | 'success';
+    primaryButtonText?: string;
+    onPrimaryPress?: () => void;
+    secondaryButtonText?: string;
+    onSecondaryPress?: () => void;
+    isDestructive?: boolean;
+    loading?: boolean;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+
+  const showDialog = (
+    title: string,
+    message: string,
+    type: 'error' | 'warning' | 'notice' | 'success' = 'notice',
+    primaryButtonText: string = t('app.ok'),
+    onPrimaryPress?: () => void,
+  ) => {
+    setDialogConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      primaryButtonText,
+      onPrimaryPress: onPrimaryPress || (() => setDialogConfig((prev) => ({ ...prev, visible: false }))),
+    });
+  };
+
+  // User Management State
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editUserModalVisible, setEditUserModalVisible] = useState(false);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserPhone, setEditUserPhone] = useState('');
+  const [editUserRole, setEditUserRole] = useState<'ADMIN' | 'CALL_CENTER' | 'DRIVER'>('DRIVER');
+  const [editUserPassword, setEditUserPassword] = useState('');
+  const [editUserActive, setEditUserActive] = useState(true);
+  const [savingUser, setSavingUser] = useState(false);
 
   // Notifications Data
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -268,6 +316,36 @@ export function AdminHomeScreen({
     }
   }, [activeTab, moreSection, loadDevices, loadSettings, loadUsers, loadNotifications]);
 
+  // Android hardware back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      if (editUserModalVisible) {
+        setEditUserModalVisible(false);
+        return true;
+      }
+      if (dialogConfig.visible) {
+        setDialogConfig((prev) => ({ ...prev, visible: false }));
+        return true;
+      }
+      if (driverModalVisible) {
+        setDriverModalVisible(false);
+        return true;
+      }
+      if (activeTab === 'more' && moreSection !== 'menu') {
+        setMoreSection('menu');
+        return true;
+      }
+      if (activeTab !== 'dashboard') {
+        setActiveTab('dashboard');
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [editUserModalVisible, dialogConfig.visible, driverModalVisible, activeTab, moreSection]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
@@ -284,7 +362,7 @@ export function AdminHomeScreen({
   const handleDeviceReset = async (driverId: string) => {
     try {
       await apiRequest(`/api/drivers/${driverId}/device/reset`, { method: 'POST' });
-      Alert.alert(t('app.notice'), t('admin.resetSuccess'));
+      showDialog(t('app.notice'), t('admin.resetSuccess'), 'success');
       await loadFleet();
       if (moreSection === 'devices') await loadDevices();
       if (selectedDriver && selectedDriver.driverId === driverId) {
@@ -293,15 +371,137 @@ export function AdminHomeScreen({
         );
       }
     } catch (err: any) {
-      Alert.alert(t('app.error'), err?.message || t('admin.resetFailed'));
+      showDialog(t('app.error'), err?.message || t('admin.resetFailed'), 'error');
     }
+  };
+
+  // Force End Driver Shift
+  const handleForceEndShift = async (driverId: string) => {
+    await apiRequest(`/api/drivers/${driverId}/shifts/force-end`, { method: 'POST' });
+    await loadFleet();
+    if (selectedDriver && selectedDriver.driverId === driverId) {
+      setSelectedDriver((prev: any) =>
+        prev ? { ...prev, shift: null, operationalStatus: 'OFFLINE' } : null
+      );
+    }
+  };
+
+  // User Management Handlers
+  const handleStartEditUser = (user: any) => {
+    setEditingUser(user);
+    setEditUserName(user.name || '');
+    setEditUserEmail(user.email || '');
+    setEditUserPhone(user.phone || '');
+    setEditUserRole(user.role || 'DRIVER');
+    setEditUserPassword('');
+    setEditUserActive(user.active !== false);
+    setEditUserModalVisible(true);
+  };
+
+  const handleSaveEditUser = async () => {
+    if (!editingUser) return;
+    const name = editUserName.trim();
+    const email = editUserEmail.trim();
+    if (!name) {
+      showDialog(t('app.error'), rtl ? 'اسم المستخدم مطلوب' : 'User name is required', 'error');
+      return;
+    }
+    if (!email) {
+      showDialog(t('app.error'), rtl ? 'البريد الإلكتروني مطلوب' : 'Email is required', 'error');
+      return;
+    }
+
+    setSavingUser(true);
+    try {
+      const payload: any = {
+        name,
+        email,
+        phone: editUserPhone.trim(),
+        role: editUserRole,
+        active: editUserActive,
+      };
+      if (editUserPassword.trim().length > 0) {
+        if (editUserPassword.trim().length < 8) {
+          showDialog(
+            t('app.error'),
+            rtl ? 'كلمة المرور يجب ألا تقل عن 8 أحرف' : 'Password must be at least 8 characters',
+            'error'
+          );
+          setSavingUser(false);
+          return;
+        }
+        payload.password = editUserPassword.trim();
+      }
+
+      await apiRequest(`/api/users/${editingUser.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+
+      setEditUserModalVisible(false);
+      setEditingUser(null);
+      await loadUsers();
+      showDialog(t('app.notice'), rtl ? 'تم تحديث بيانات المستخدم بنجاح' : 'User updated successfully', 'success');
+    } catch (err: any) {
+      showDialog(t('app.error'), err?.message || (rtl ? 'فشل تحديث المستخدم' : 'Failed to update user'), 'error');
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const handleDeleteUser = (user: any) => {
+    if (user.id === session.user.id) {
+      showDialog(
+        t('app.warning'),
+        rtl ? 'لا يمكنك حذف حسابك الحالي الذي تستخدمه لتسجيل الدخول' : 'You cannot delete your own active account',
+        'warning'
+      );
+      return;
+    }
+
+    setDialogConfig({
+      visible: true,
+      title: rtl ? 'حذف المستخدم نهائياً' : 'Delete User Permanently',
+      message: rtl
+        ? `هل أنت متأكد من حذف المستخدم "${user.name}" نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`
+        : `Are you sure you want to permanently delete user "${user.name}"? This action cannot be undone.`,
+      type: 'warning',
+      isDestructive: true,
+      primaryButtonText: rtl ? 'حذف نهائي' : 'Delete Permanently',
+      secondaryButtonText: t('app.cancel'),
+      onSecondaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+      onPrimaryPress: async () => {
+        setDialogConfig((prev) => ({ ...prev, loading: true }));
+        try {
+          await apiRequest(`/api/users/${user.id}/permanent`, { method: 'DELETE' });
+          setDialogConfig({
+            visible: true,
+            title: t('app.notice'),
+            message: rtl ? 'تم حذف المستخدم بنجاح' : 'User deleted successfully',
+            type: 'success',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+          await loadUsers();
+        } catch (err: any) {
+          setDialogConfig({
+            visible: true,
+            title: t('app.error'),
+            message: err?.message || (rtl ? 'تعذر حذف المستخدم' : 'Failed to delete user'),
+            type: 'error',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+        }
+      },
+    });
   };
 
   // Save Settings with strict numeric validation
   const handleSaveSettings = async () => {
     const restName = settingsRestaurant.name?.trim();
     if (!restName) {
-      Alert.alert(t('app.error'), rtl ? 'اسم المطعم مطلوب' : 'Restaurant name is required');
+      showDialog(t('app.error'), rtl ? 'اسم المطعم مطلوب' : 'Restaurant name is required', 'error');
       return;
     }
 
@@ -310,15 +510,15 @@ export function AdminHomeScreen({
     const radiusM = Number(settingsRestaurant.radiusMeters);
 
     if (Number.isNaN(lat) || lat < -90 || lat > 90) {
-      Alert.alert(t('app.error'), rtl ? 'خط العرض غير صالح (-90 إلى 90)' : 'Invalid latitude (-90 to 90)');
+      showDialog(t('app.error'), rtl ? 'خط العرض غير صالح (-90 إلى 90)' : 'Invalid latitude (-90 to 90)', 'error');
       return;
     }
     if (Number.isNaN(lng) || lng < -180 || lng > 180) {
-      Alert.alert(t('app.error'), rtl ? 'خط الطول غير صالح (-180 إلى 180)' : 'Invalid longitude (-180 to 180)');
+      showDialog(t('app.error'), rtl ? 'خط الطول غير صالح (-180 إلى 180)' : 'Invalid longitude (-180 to 180)', 'error');
       return;
     }
     if (Number.isNaN(radiusM) || radiusM < 10 || radiusM > 50000) {
-      Alert.alert(t('app.error'), rtl ? 'نصف القطر يجب أن يكون بين 10 و 50000 متر' : 'Radius must be 10-50,000m');
+      showDialog(t('app.error'), rtl ? 'نصف القطر يجب أن يكون بين 10 و 50000 متر' : 'Radius must be 10-50,000m', 'error');
       return;
     }
 
@@ -327,15 +527,15 @@ export function AdminHomeScreen({
     const lowBatt = Number(settingsAlerts.lowBatteryThreshold);
 
     if (Number.isNaN(maxStop) || maxStop < 1 || maxStop > 240) {
-      Alert.alert(t('app.error'), rtl ? 'مدة التوقف القصوى يجب أن تكون بين 1 و 240 دقيقة' : 'Max stop must be 1-240m');
+      showDialog(t('app.error'), rtl ? 'مدة التوقف القصوى يجب أن تكون بين 1 و 240 دقيقة' : 'Max stop must be 1-240m', 'error');
       return;
     }
     if (Number.isNaN(offlineGrace) || offlineGrace < 1 || offlineGrace > 120) {
-      Alert.alert(t('app.error'), rtl ? 'مهلة الانقطاع يجب أن تكون بين 1 و 120 دقيقة' : 'Offline grace must be 1-120m');
+      showDialog(t('app.error'), rtl ? 'مهلة الانقطاع يجب أن تكون بين 1 و 120 دقيقة' : 'Offline grace must be 1-120m', 'error');
       return;
     }
     if (Number.isNaN(lowBatt) || lowBatt < 5 || lowBatt > 50) {
-      Alert.alert(t('app.error'), rtl ? 'حد البطارية يجب أن يكون بين 5% و 50%' : 'Low battery must be 5-50%');
+      showDialog(t('app.error'), rtl ? 'حد البطارية يجب أن يكون بين 5% و 50%' : 'Low battery must be 5-50%', 'error');
       return;
     }
 
@@ -367,11 +567,11 @@ export function AdminHomeScreen({
           }),
         }),
       ]);
-      Alert.alert(t('app.notice'), t('admin.saveSettingsSuccess'));
+      showDialog(t('app.notice'), t('admin.saveSettingsSuccess'), 'success');
       await loadSettings();
       await loadFleet();
     } catch (err: any) {
-      Alert.alert(t('app.error'), err?.message || t('admin.saveSettingsFailed'));
+      showDialog(t('app.error'), err?.message || t('admin.saveSettingsFailed'), 'error');
     } finally {
       setSettingsSaving(false);
     }
@@ -412,9 +612,13 @@ export function AdminHomeScreen({
         });
       }
       await loadNotifications();
-      Alert.alert(t('app.notice'), rtl ? 'تم إرسال الإشعار لشريط إشعارات أندرويد بنجاح' : 'Notification posted to Android shade');
+      showDialog(
+        t('app.notice'),
+        rtl ? 'تم إرسال الإشعار لشريط إشعارات أندرويد بنجاح' : 'Notification posted to Android shade',
+        'success'
+      );
     } catch (err: any) {
-      Alert.alert(t('app.error'), err?.message || 'Failed to send test notification');
+      showDialog(t('app.error'), err?.message || 'Failed to send test notification', 'error');
     }
   };
 
@@ -422,7 +626,7 @@ export function AdminHomeScreen({
     try {
       await apiRequest('/api/notifications/read-all', { method: 'POST' });
       await loadNotifications();
-      Alert.alert(t('app.notice'), t('notifications.markReadSuccess'));
+      showDialog(t('app.notice'), t('notifications.markReadSuccess'), 'success');
     } catch {
       // ignore
     }
@@ -980,13 +1184,6 @@ export function AdminHomeScreen({
             {/* SUBVIEW: DEVICES LIST */}
             {moreSection === 'devices' && (
               <View style={{ flex: 1 }}>
-                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
-                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
-                  </TouchableOpacity>
-                  <Text style={styles.subviewTitle}>{t('admin.deviceManagement')}</Text>
-                </View>
-
                 <ScrollView contentContainerStyle={styles.subviewScroll}>
                   {devicesLoading ? (
                     <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 24 }} />
@@ -1049,13 +1246,6 @@ export function AdminHomeScreen({
             {/* SUBVIEW: USERS LIST */}
             {moreSection === 'users' && (
               <View style={{ flex: 1 }}>
-                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
-                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
-                  </TouchableOpacity>
-                  <Text style={styles.subviewTitle}>{t('admin.usersList')}</Text>
-                </View>
-
                 <ScrollView contentContainerStyle={styles.subviewScroll}>
                   {usersLoading ? (
                     <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 24 }} />
@@ -1066,34 +1256,50 @@ export function AdminHomeScreen({
                           <Text style={styles.userName}>{u.name}</Text>
                           <Text style={styles.userPhone}>{u.phone || u.email}</Text>
                         </View>
-                        <View
-                          style={[
-                            styles.userRoleBadge,
-                            {
-                              backgroundColor:
-                                u.role === 'ADMIN'
-                                  ? colors.status.onlineBg
-                                  : u.role === 'CALL_CENTER'
-                                  ? colors.status.atRestaurantBg
-                                  : colors.surfaceSubtle,
-                            },
-                          ]}
-                        >
-                          <Text
+                        <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8 }}>
+                          <View
                             style={[
-                              styles.userRoleBadgeText,
+                              styles.userRoleBadge,
                               {
-                                color:
+                                backgroundColor:
                                   u.role === 'ADMIN'
-                                    ? colors.status.online
+                                    ? colors.status.onlineBg
                                     : u.role === 'CALL_CENTER'
-                                    ? colors.status.atRestaurant
-                                    : colors.text.secondary,
+                                    ? colors.status.atRestaurantBg
+                                    : colors.surfaceSubtle,
                               },
                             ]}
                           >
-                            {u.role}
-                          </Text>
+                            <Text
+                              style={[
+                                styles.userRoleBadgeText,
+                                {
+                                  color:
+                                    u.role === 'ADMIN'
+                                      ? colors.status.online
+                                      : u.role === 'CALL_CENTER'
+                                      ? colors.status.atRestaurant
+                                      : colors.text.secondary,
+                                },
+                              ]}
+                            >
+                              {u.role}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => handleStartEditUser(u)}
+                            style={styles.userActionEditButton}
+                          >
+                            <Text style={styles.userActionEditText}>{rtl ? 'تعديل' : 'Edit'}</Text>
+                          </TouchableOpacity>
+                          {u.id !== session.user.id && (
+                            <TouchableOpacity
+                              onPress={() => handleDeleteUser(u)}
+                              style={styles.userActionDeleteButton}
+                            >
+                              <Text style={styles.userActionDeleteText}>{rtl ? 'حذف' : 'Delete'}</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       </View>
                     ))
@@ -1105,13 +1311,6 @@ export function AdminHomeScreen({
             {/* SUBVIEW: SETTINGS FORM */}
             {moreSection === 'settings' && (
               <View style={{ flex: 1 }}>
-                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
-                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
-                  </TouchableOpacity>
-                  <Text style={styles.subviewTitle}>{t('admin.settings')}</Text>
-                </View>
-
                 <ScrollView contentContainerStyle={styles.subviewScroll}>
                   {/* Restaurant Geofence Card */}
                   <View style={styles.settingsCard}>
@@ -1306,21 +1505,15 @@ export function AdminHomeScreen({
             {/* SUBVIEW: NOTIFICATIONS */}
             {moreSection === 'notifications' && (
               <View style={{ flex: 1 }}>
-                <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-                  <TouchableOpacity onPress={() => setMoreSection('menu')} style={styles.backButton}>
-                    <AppIcon name={rtl ? 'arrow-right' : 'arrow-left'} size={16} color={colors.text.primary} />
+                <View style={[styles.notificationsToolbar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <TouchableOpacity onPress={handleSendTestNotification} style={[styles.markAllReadButton, { backgroundColor: '#e0f2fe' }]}>
+                    <Text style={[styles.markAllReadText, { color: colors.accent }]}>
+                      {rtl ? 'إرسال تجريبي' : 'Send Test'}
+                    </Text>
                   </TouchableOpacity>
-                  <Text style={styles.subviewTitle}>{t('notifications.title')}</Text>
-                  <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 6, alignItems: 'center' }}>
-                    <TouchableOpacity onPress={handleSendTestNotification} style={[styles.markAllReadButton, { backgroundColor: '#e0f2fe' }]}>
-                      <Text style={[styles.markAllReadText, { color: colors.accent }]}>
-                        {rtl ? 'إرسال تجريبي' : 'Send Test'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleMarkAllNotificationsRead} style={styles.markAllReadButton}>
-                      <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity onPress={handleMarkAllNotificationsRead} style={styles.markAllReadButton}>
+                    <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
+                  </TouchableOpacity>
                 </View>
 
                 <ScrollView contentContainerStyle={styles.subviewScroll}>
@@ -1386,6 +1579,172 @@ export function AdminHomeScreen({
         isAdmin={true}
         onClose={() => setDriverModalVisible(false)}
         onDeviceReset={handleDeviceReset}
+        onForceEndShift={handleForceEndShift}
+      />
+
+      {/* Edit User Modal */}
+      <Modal
+        visible={editUserModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditUserModalVisible(false)}
+      >
+        <SafeAreaView style={styles.editModalContainer}>
+          <View style={styles.editModalContent}>
+            <View style={[styles.editModalHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.editModalTitle}>
+                {rtl ? 'تعديل بيانات المستخدم' : 'Edit User'}
+              </Text>
+              <TouchableOpacity onPress={() => setEditUserModalVisible(false)} style={styles.closeButton}>
+                <AppIcon name="close" size={16} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.editModalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                  {rtl ? 'اسم المستخدم *' : 'User Name *'}
+                </Text>
+                <TextInput
+                  value={editUserName}
+                  onChangeText={setEditUserName}
+                  style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                  {rtl ? 'البريد الإلكتروني *' : 'Email *'}
+                </Text>
+                <TextInput
+                  value={editUserEmail}
+                  onChangeText={setEditUserEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                  {rtl ? 'رقم الهاتف' : 'Phone'}
+                </Text>
+                <TextInput
+                  value={editUserPhone}
+                  onChangeText={setEditUserPhone}
+                  keyboardType="phone-pad"
+                  style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                  {rtl ? 'الدور الوظيفي' : 'Role'}
+                </Text>
+                <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 8 }}>
+                  {(['DRIVER', 'CALL_CENTER', 'ADMIN'] as const).map((r) => {
+                    const isSelected = editUserRole === r;
+                    return (
+                      <TouchableOpacity
+                        key={r}
+                        onPress={() => setEditUserRole(r)}
+                        style={[
+                          styles.roleSelectChip,
+                          isSelected && styles.roleSelectChipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.roleSelectChipText,
+                            isSelected && styles.roleSelectChipTextActive,
+                          ]}
+                        >
+                          {r}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                  {rtl ? 'تغيير كلمة المرور (اختياري - 8 أحرف على الأقل)' : 'New Password (Optional - min 8 chars)'}
+                </Text>
+                <TextInput
+                  value={editUserPassword}
+                  onChangeText={setEditUserPassword}
+                  secureTextEntry
+                  placeholder={rtl ? 'اتركه فارغاً للاحتفاظ بالقديمة' : 'Leave blank to keep unchanged'}
+                  placeholderTextColor={colors.text.muted}
+                  style={[styles.textInput, { textAlign: rtl ? 'right' : 'left' }]}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <TouchableOpacity
+                  onPress={() => setEditUserActive(!editUserActive)}
+                  style={[
+                    styles.activeToggleRow,
+                    { flexDirection: rtl ? 'row-reverse' : 'row' },
+                  ]}
+                >
+                  <Text style={styles.inputLabel}>
+                    {rtl ? 'حساب نشط' : 'Active Account'}
+                  </Text>
+                  <View
+                    style={[
+                      styles.toggleTrack,
+                      { backgroundColor: editUserActive ? colors.primary : '#cbd5e1' },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.toggleThumb,
+                        { alignSelf: editUserActive ? 'flex-end' : 'flex-start' },
+                      ]}
+                    />
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 10, marginTop: 16 }}>
+                <TouchableOpacity
+                  onPress={() => setEditUserModalVisible(false)}
+                  style={styles.cancelEditBtn}
+                >
+                  <Text style={styles.cancelEditBtnText}>{t('app.cancel')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveEditUser}
+                  disabled={savingUser}
+                  style={[styles.saveEditBtn, savingUser && styles.disabledButton]}
+                >
+                  {savingUser ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <Text style={styles.saveEditBtnText}>{t('app.save')}</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Unified TrackerDialog */}
+      <TrackerDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        primaryButtonText={dialogConfig.primaryButtonText}
+        secondaryButtonText={dialogConfig.secondaryButtonText}
+        onPrimaryPress={dialogConfig.onPrimaryPress}
+        onSecondaryPress={dialogConfig.onSecondaryPress}
+        isDestructive={dialogConfig.isDestructive}
+        loading={dialogConfig.loading}
+        onClose={() => setDialogConfig((prev) => ({ ...prev, visible: false }))}
       />
     </SafeAreaView>
   );
@@ -2001,5 +2360,149 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: typography.body.fontSize,
     fontWeight: '600',
+  },
+  notificationsToolbar: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+  },
+  userActionEditButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.xs,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userActionEditText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  userActionDeleteButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.xs,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userActionDeleteText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#dc2626',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  editModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  editModalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    maxHeight: '85%',
+    paddingBottom: 24,
+  },
+  editModalHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  editModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  editModalBody: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  roleSelectChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleSelectChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  roleSelectChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  roleSelectChipTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  activeToggleRow: {
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  toggleTrack: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+  },
+  cancelEditBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelEditBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  saveEditBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveEditBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

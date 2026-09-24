@@ -4,6 +4,7 @@ import { createError } from "../lib/errors";
 import {
   createDriverRecord,
   endDriverShift,
+  forceEndDriverShift,
   getCurrentDriverProfile,
   getDriverById,
   getDriverByUserId,
@@ -103,11 +104,37 @@ router.post("/:id/device/assign", requireAuth, requireRole("ADMIN"), async (req:
 router.post("/me/shifts/start", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const callerDeviceId = (req.headers["x-device-id"] as string) || req.user?.deviceId;
-    const shift = await startDriverShift(req.user!.id, callerDeviceId);
+    const bodyLocation =
+      req.body && typeof req.body === "object" && req.body.latitude != null && req.body.longitude != null
+        ? { latitude: Number(req.body.latitude), longitude: Number(req.body.longitude) }
+        : null;
+    const shift = await startDriverShift(req.user!.id, callerDeviceId, bodyLocation);
     const device = await getDriverDevice(req.user!.id);
     const deviceId = callerDeviceId || device?.id || "";
     const telemetryToken = signTelemetryToken(req.user!.id, "DRIVER", deviceId, shift.id);
     res.status(201).json({ shift, telemetryToken, expiresIn: TELEMETRY_TOKEN_EXPIRY_SECONDS });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ADMIN-only: Force end an active driver shift (even if driver is outside geofence)
+router.post("/:id/shifts/force-end", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const shift = await forceEndDriverShift(driverId);
+    res.status(200).json({ success: true, shift });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Also support POST /:id/shifts/end for ADMIN
+router.post("/:id/shifts/end", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const shift = await forceEndDriverShift(driverId);
+    res.status(200).json({ success: true, shift });
   } catch (error) {
     next(error);
   }

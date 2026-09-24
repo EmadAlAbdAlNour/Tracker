@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   ActivityIndicator,
   AppState,
+  BackHandler,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -208,6 +209,24 @@ export function CallCenterHomeScreen({
       appStateSub.remove();
     };
   }, [loadFleet, loadNotifications, activeTab]);
+
+  // Android hardware back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      if (driverModalVisible) {
+        setDriverModalVisible(false);
+        return true;
+      }
+      if (activeTab !== 'dashboard') {
+        setActiveTab('dashboard');
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [driverModalVisible, activeTab]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -601,9 +620,8 @@ export function CallCenterHomeScreen({
         {/* TAB 4: NOTIFICATIONS & INCIDENTS */}
         {activeTab === 'notifications' && (
           <View style={{ flex: 1 }}>
-            <View style={[styles.subviewHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.subviewTitle}>{t('notifications.title')}</Text>
-              {notifications.length > 0 && unreadCount > 0 && (
+            {notifications.length > 0 && unreadCount > 0 && (
+              <View style={[styles.notificationsActionBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
                 <TouchableOpacity
                   onPress={handleMarkAllNotificationsRead}
                   style={styles.markAllReadButton}
@@ -616,8 +634,8 @@ export function CallCenterHomeScreen({
                     <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
                   )}
                 </TouchableOpacity>
-              )}
-            </View>
+              </View>
+            )}
 
             <ScrollView
               contentContainerStyle={styles.notificationsScroll}
@@ -996,6 +1014,15 @@ const styles = StyleSheet.create({
   notificationTime: {
     fontSize: 10,
     color: colors.text.muted,
+  },
+  notificationsActionBar: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   subviewHeader: {
     paddingHorizontal: spacing.md,

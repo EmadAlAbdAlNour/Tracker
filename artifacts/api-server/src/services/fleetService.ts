@@ -99,7 +99,7 @@ export function computeOperationalStatus(params: {
   return "STOPPED";
 }
 
-export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
+export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Promise<LiveFleetResponse> {
   const [restaurantSettings, alertSettings] = await Promise.all([
     getRestaurantSettings(),
     getAlertSettings(),
@@ -359,7 +359,9 @@ export async function getLiveFleetStatus(): Promise<LiveFleetResponse> {
       radiusMeters: restaurantSettings.radiusMeters,
       enabled: restaurantSettings.enabled,
     },
-    drivers: fleetDrivers,
+    drivers: options?.activeOnly
+      ? fleetDrivers.filter((d) => Boolean(d.shift && d.shift.status === "ACTIVE"))
+      : fleetDrivers,
   };
 }
 

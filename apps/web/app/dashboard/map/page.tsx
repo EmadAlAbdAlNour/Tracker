@@ -89,7 +89,8 @@ function getDriverVisuals(driver: FleetDriverLiveStatus): VisualInfo {
 
 const LeafletMap = dynamic(
   async () => {
-    const { Circle, CircleMarker, MapContainer, Popup, TileLayer, useMap } = await import('react-leaflet');
+    const { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } = await import('react-leaflet');
+    const L = (await import('leaflet')).default || (await import('leaflet'));
 
     // Controls map pan/zoom without resetting every poll interval
     function MapController({
@@ -148,18 +149,87 @@ const LeafletMap = dynamic(
       const lng = driver.location!.longitude;
       const visuals = getDriverVisuals(driver);
 
+      const speedKmh = driver.location?.speed != null ? Math.round(Number(driver.location.speed) * 3.6) : null;
+      const speedText = driver.operationalStatus === 'OFFLINE' ? '—' : speedKmh != null ? formatWesternNumber(speedKmh) : '0';
+
+      const customIcon = useMemo(() => {
+        const escapedName = (driver.driverName || 'Driver').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return L.divIcon({
+          className: 'custom-web-driver-icon',
+          html: `
+            <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer; user-select: none;">
+              <!-- Speed Badge with Pointer -->
+              <div style="
+                background-color: ${visuals.color};
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 800;
+                font-family: ui-monospace, monospace;
+                padding: 1px 6px;
+                border-radius: 5px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                position: relative;
+                white-space: nowrap;
+                line-height: 14px;
+                border: 1px solid rgba(255,255,255,0.4);
+              ">
+                ${speedText}
+                <div style="
+                  position: absolute;
+                  bottom: -4px;
+                  left: 50%;
+                  transform: translateX(-50%);
+                  width: 0;
+                  height: 0;
+                  border-left: 4px solid transparent;
+                  border-right: 4px solid transparent;
+                  border-top: 4px solid ${visuals.color};
+                "></div>
+              </div>
+
+              <!-- Center Dot -->
+              <div style="
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                background-color: ${visuals.fillColor};
+                border: 2.5px solid ${isSelected ? '#0f172a' : '#ffffff'};
+                box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+                margin-top: 4px;
+                margin-bottom: 2px;
+              "></div>
+
+              <!-- Driver Name Label -->
+              <div style="
+                background: rgba(15, 23, 42, 0.88);
+                color: #ffffff;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 1px 6px;
+                border-radius: 4px;
+                white-space: nowrap;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+                text-align: center;
+                max-width: 120px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              ">
+                ${escapedName}
+              </div>
+            </div>
+          `,
+          iconSize: [80, 56],
+          iconAnchor: [40, 26],
+          popupAnchor: [0, -28],
+        });
+      }, [visuals.color, visuals.fillColor, speedText, isSelected, driver.driverName]);
+
       return (
-        <CircleMarker
-          center={[lat, lng]}
-          radius={isSelected ? visuals.radius + 3 : visuals.radius}
+        <Marker
+          position={[lat, lng]}
+          icon={customIcon}
           eventHandlers={{
             click: () => onSelectDriver(driver.driverId),
-          }}
-          pathOptions={{
-            color: isSelected ? '#1e293b' : '#ffffff',
-            fillColor: visuals.fillColor,
-            fillOpacity: visuals.opacity,
-            weight: isSelected ? 3.5 : visuals.weight,
           }}
         >
           <Popup>
@@ -233,7 +303,7 @@ const LeafletMap = dynamic(
               </div>
             </div>
           </Popup>
-        </CircleMarker>
+        </Marker>
       );
     });
 
@@ -260,6 +330,8 @@ const LeafletMap = dynamic(
       const filteredDrivers = useMemo(() => {
         return fleet.drivers.filter((d) => {
           if (!d.location?.latitude || !d.location?.longitude) return false;
+          // Must have an active shift to be visible on live map
+          if (!d.shift || d.shift.status !== 'ACTIVE') return false;
           if (statusFilter === 'ALL') return true;
           return d.operationalStatus === statusFilter;
         });
@@ -488,6 +560,15 @@ export default function MapPage() {
 
     return () => clearInterval(intervalId);
   }, [isAuthenticated, isTabVisible, fleet?.summary?.activeShifts, loadData]);
+
+  // Gracefully deselect driver if their shift ends or driver is no longer active in the fleet
+  useEffect(() => {
+    if (!selectedDriverId || !fleet) return;
+    const current = fleet.drivers.find((d) => d.driverId === selectedDriverId);
+    if (!current || !current.shift || current.shift.status !== 'ACTIVE') {
+      setSelectedDriverId(null);
+    }
+  }, [fleet, selectedDriverId]);
 
   // Filter drivers for the drawer list
   const visibleDrivers = useMemo(() => {

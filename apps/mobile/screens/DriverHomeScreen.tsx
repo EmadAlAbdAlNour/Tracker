@@ -4,8 +4,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
+  BackHandler,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -72,6 +72,57 @@ export function DriverHomeScreen({
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'error' | 'warning' | 'notice' | 'success';
+    primaryButtonText?: string;
+    onPrimaryPress?: () => void;
+    secondaryButtonText?: string;
+    onSecondaryPress?: () => void;
+    isDestructive?: boolean;
+    loading?: boolean;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+
+  const showDialog = (
+    title: string,
+    message: string,
+    type: 'error' | 'warning' | 'notice' | 'success' = 'notice',
+    primaryButtonText: string = t('app.ok'),
+    onPrimaryPress?: () => void,
+  ) => {
+    setDialogConfig({
+      visible: true,
+      title,
+      message,
+      type,
+      primaryButtonText,
+      onPrimaryPress: onPrimaryPress || (() => setDialogConfig((prev) => ({ ...prev, visible: false }))),
+    });
+  };
+
+  useEffect(() => {
+    const onBackPress = () => {
+      if (dialogConfig.visible) {
+        setDialogConfig((prev) => ({ ...prev, visible: false }));
+        return true;
+      }
+      if (activeTab !== 'cockpit') {
+        setActiveTab('cockpit');
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [activeTab, dialogConfig.visible]);
 
   const rtl = isRtl();
 
@@ -206,24 +257,26 @@ export function DriverHomeScreen({
         setTrackingActive(Boolean(started));
         await refreshState();
         if (started) {
-          Alert.alert(t('shift.started'), t('shift.activeTrackingNotice'));
+          showDialog(t('shift.started'), t('shift.activeTrackingNotice'), 'success');
         } else {
-          Alert.alert(
+          showDialog(
             t('shift.bgPermissionRequiredTitle'),
-            t('shift.bgPermissionRequiredMessage')
+            t('shift.bgPermissionRequiredMessage'),
+            'warning'
           );
         }
       }
     } catch (err: any) {
       if (err?.message?.includes('DEVICE_UNAUTHORIZED') || err?.code === 'DEVICE_UNAUTHORIZED') {
-        Alert.alert(
+        showDialog(
           rtl ? 'الجهاز غير مصرح' : 'Device Unauthorized',
           rtl
             ? 'تمت إعادة تعيين الجهاز من قِبل الإدارة. يرجى تسجيل الدخول مجدداً أو مراجعة المشرف.'
-            : 'Device authorization revoked. Please re-login.'
+            : 'Device authorization revoked. Please re-login.',
+          'error'
         );
       } else {
-        Alert.alert(t('app.error'), err?.message || 'Unable to start shift');
+        showDialog(t('app.error'), err?.message || 'Unable to start shift', 'error');
       }
     } finally {
       setLoading(false);
@@ -246,9 +299,9 @@ export function DriverHomeScreen({
 
       setActiveShift(null);
       await refreshState();
-      Alert.alert(t('shift.ended'), t('shift.offDuty'));
+      showDialog(t('shift.ended'), t('shift.offDuty'), 'success');
     } catch (err: any) {
-      Alert.alert(t('app.error'), err?.message || 'Unable to end shift');
+      showDialog(t('app.error'), err?.message || 'Unable to end shift', 'error');
     } finally {
       setLoading(false);
     }
@@ -259,9 +312,9 @@ export function DriverHomeScreen({
     try {
       const count = await getQueuedLocationCount();
       setQueuedCount(count);
-      Alert.alert(t('app.notice'), t('app.synced'));
+      showDialog(t('app.notice'), t('app.synced'), 'success');
     } catch {
-      Alert.alert(t('app.notice'), t('app.syncError'));
+      showDialog(t('app.notice'), t('app.syncError'), 'error');
     } finally {
       setSyncing(false);
     }
@@ -269,7 +322,7 @@ export function DriverHomeScreen({
 
   const handleLogoutPress = () => {
     if (activeShift || trackingActive) {
-      Alert.alert(t('app.warning'), t('shift.endShiftFirst'));
+      showDialog(t('app.warning'), t('shift.endShiftFirst'), 'warning');
       return;
     }
     onLogout();
@@ -625,6 +678,20 @@ export function DriverHomeScreen({
         tabs={bottomTabs}
         activeTab={activeTab}
         onTabChange={(id) => setActiveTab(id as DriverTab)}
+      />
+
+      <TrackerDialog
+        visible={dialogConfig.visible}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+        primaryButtonText={dialogConfig.primaryButtonText}
+        secondaryButtonText={dialogConfig.secondaryButtonText}
+        onPrimaryPress={dialogConfig.onPrimaryPress}
+        onSecondaryPress={dialogConfig.onSecondaryPress}
+        isDestructive={dialogConfig.isDestructive}
+        loading={dialogConfig.loading}
+        onClose={() => setDialogConfig((prev) => ({ ...prev, visible: false }))}
       />
     </SafeAreaView>
   );

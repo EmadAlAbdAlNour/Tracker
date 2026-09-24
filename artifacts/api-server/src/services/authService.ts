@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
-import { db, devicesTable, driversTable, locationPointsTable, refreshTokensTable, shiftsTable, usersTable } from "@workspace/db";
+import { db, alertStateTable, devicesTable, driversTable, locationPointsTable, refreshTokensTable, shiftsTable, usersTable } from "@workspace/db";
 import { getEnv } from "../config/env";
+import { getRestaurantSettings } from "./settingsService";
+import { calculateDistanceMeters } from "./alertService";
 import {
   findValidRefreshToken,
   getTokenPayload,
@@ -1018,7 +1020,11 @@ export async function getDriverTrackingStatus(driverId: string) {
   };
 }
 
-export async function startDriverShift(userId: string, requestDeviceId?: string | null) {
+export async function startDriverShift(
+  userId: string,
+  requestDeviceId?: string | null,
+  locationCoords?: { latitude: number; longitude: number } | null
+) {
   const driver = await getDriverByUserId(userId);
   if (!driver) {
     throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
@@ -1031,6 +1037,23 @@ export async function startDriverShift(userId: string, requestDeviceId?: string 
 
   if (!driver.active) {
     throw createError(403, "DRIVER_INACTIVE", "Driver account is inactive");
+  }
+
+  // Geofence check:
+  // Validate driver is within configured restaurant radius (authoritative default: 150m)
+  if (locationCoords?.latitude != null && locationCoords?.longitude != null) {
+    const restaurantSettings = await getRestaurantSettings();
+    if (restaurantSettings.enabled) {
+      const distance = calculateDistanceMeters(
+        locationCoords.latitude,
+        locationCoords.longitude,
+        restaurantSettings.latitude,
+        restaurantSettings.longitude
+      );
+      if (distance > restaurantSettings.radiusMeters) {
+        throw createError(403, "OUTSIDE_GEOFENCE", "Driver must be inside restaurant geofence to start shift");
+      }
+    }
   }
 
   const authorizedDevice = await db
@@ -1116,6 +1139,61 @@ export async function endDriverShift(userId: string) {
 
   if (!shift) {
     throw createError(500, "SHIFT_END_FAILED", "Could not end shift");
+  }
+
+  // Resolve all active alert states for this driver upon shift termination
+  try {
+    await db
+      .update(alertStateTable)
+      .set({ resolvedAt: new Date() })
+      .where(and(eq(alertStateTable.driverId, driver.id), isNull(alertStateTable.resolvedAt)));
+  } catch (err) {
+    console.error("Failed to resolve alert states on shift end:", err);
+  }
+
+  return shift;
+}
+
+// ADMIN-only: Force end an active driver shift (even if driver is outside geofence)
+export async function forceEndDriverShift(driverId: string) {
+  const driver = await getDriverById(driverId);
+  if (!driver) {
+    throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+  }
+
+  const activeShift = await db
+    .select()
+    .from(shiftsTable)
+    .where(and(eq(shiftsTable.driverId, driver.id), eq(shiftsTable.status, "ACTIVE")))
+    .orderBy(desc(shiftsTable.startedAt))
+    .limit(1);
+
+  if (!activeShift[0]) {
+    throw createError(404, "NO_ACTIVE_SHIFT", "No active shift found for this driver");
+  }
+
+  const [shift] = await db
+    .update(shiftsTable)
+    .set({
+      endedAt: new Date(),
+      status: "COMPLETED",
+      updatedAt: new Date(),
+    })
+    .where(eq(shiftsTable.id, activeShift[0].id))
+    .returning();
+
+  if (!shift) {
+    throw createError(500, "SHIFT_END_FAILED", "Could not end shift");
+  }
+
+  // Resolve all active alert states for this driver upon shift termination
+  try {
+    await db
+      .update(alertStateTable)
+      .set({ resolvedAt: new Date() })
+      .where(and(eq(alertStateTable.driverId, driver.id), isNull(alertStateTable.resolvedAt)));
+  } catch (err) {
+    console.error("Failed to resolve alert states on force end shift:", err);
   }
 
   return shift;

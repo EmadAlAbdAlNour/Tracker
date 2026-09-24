@@ -4,7 +4,6 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   SafeAreaView,
   ScrollView,
@@ -15,6 +14,7 @@ import {
 } from 'react-native';
 import { colors, radius, spacing, typography, shadows } from '../designSystem';
 import { AppIcon } from './AppIcon';
+import { TrackerDialog } from './TrackerDialog';
 import { formatWesternNumber, isRtl, t } from '../i18n';
 
 interface DriverDetailModalProps {
@@ -23,6 +23,7 @@ interface DriverDetailModalProps {
   isAdmin: boolean;
   onClose: () => void;
   onDeviceReset?: (driverId: string) => Promise<void>;
+  onForceEndShift?: (driverId: string) => Promise<void>;
 }
 
 export function DriverDetailModal({
@@ -31,8 +32,26 @@ export function DriverDetailModal({
   isAdmin,
   onClose,
   onDeviceReset,
+  onForceEndShift,
 }: DriverDetailModalProps): React.JSX.Element {
   const [resetting, setResetting] = useState(false);
+  const [forceEnding, setForceEnding] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'error' | 'warning' | 'notice' | 'success';
+    primaryButtonText?: string;
+    onPrimaryPress?: () => void;
+    secondaryButtonText?: string;
+    onSecondaryPress?: () => void;
+    isDestructive?: boolean;
+    loading?: boolean;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
   if (!driver) return <></>;
 
@@ -87,29 +106,88 @@ export function DriverDetailModal({
   const movBadge = getMovementBadge();
 
   const handleResetPress = () => {
-    Alert.alert(
-      t('admin.confirmResetTitle'),
-      t('admin.confirmResetMessage'),
-      [
-        { text: t('app.cancel'), style: 'cancel' },
-        {
-          text: t('admin.resetDevice'),
-          style: 'destructive',
-          onPress: async () => {
-            if (!onDeviceReset) return;
-            setResetting(true);
-            try {
-              await onDeviceReset(driver.driverId);
-              Alert.alert(t('app.notice'), t('admin.resetSuccess'));
-            } catch (err: any) {
-              Alert.alert(t('app.error'), err?.message || t('admin.resetFailed'));
-            } finally {
-              setResetting(false);
-            }
-          },
-        },
-      ]
-    );
+    setDialogConfig({
+      visible: true,
+      title: t('admin.confirmResetTitle'),
+      message: t('admin.confirmResetMessage'),
+      type: 'warning',
+      isDestructive: true,
+      primaryButtonText: t('admin.resetDevice'),
+      secondaryButtonText: t('app.cancel'),
+      onSecondaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+      onPrimaryPress: async () => {
+        if (!onDeviceReset) return;
+        setResetting(true);
+        setDialogConfig((prev) => ({ ...prev, loading: true }));
+        try {
+          await onDeviceReset(driver.driverId);
+          setDialogConfig({
+            visible: true,
+            title: t('app.notice'),
+            message: t('admin.resetSuccess'),
+            type: 'success',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+        } catch (err: any) {
+          setDialogConfig({
+            visible: true,
+            title: t('app.error'),
+            message: err?.message || t('admin.resetFailed'),
+            type: 'error',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+        } finally {
+          setResetting(false);
+        }
+      },
+    });
+  };
+
+  const handleForceEndPress = () => {
+    setDialogConfig({
+      visible: true,
+      title: rtl ? 'إنهاء وردية السائق إجبارياً' : 'Force End Driver Shift',
+      message: rtl
+        ? 'هل أنت متأكد من إنهاء وردية هذا السائق قسراً؟ سيتم إيقاف تتبع الوردية وحل كافة التنبيهات المرتبطة به.'
+        : "Are you sure you want to force end this driver's shift? Active tracking will stop and any ongoing alerts will be resolved.",
+      type: 'warning',
+      isDestructive: true,
+      primaryButtonText: rtl ? 'إنهاء الوردية' : 'Force End Shift',
+      secondaryButtonText: t('app.cancel'),
+      onSecondaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+      onPrimaryPress: async () => {
+        if (!onForceEndShift) return;
+        setForceEnding(true);
+        setDialogConfig((prev) => ({ ...prev, loading: true }));
+        try {
+          await onForceEndShift(driver.driverId);
+          setDialogConfig({
+            visible: true,
+            title: t('app.notice'),
+            message: rtl ? 'تم إنهاء وردية السائق بنجاح' : 'Driver shift ended successfully',
+            type: 'success',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => {
+              setDialogConfig((prev) => ({ ...prev, visible: false }));
+              onClose();
+            },
+          });
+        } catch (err: any) {
+          setDialogConfig({
+            visible: true,
+            title: t('app.error'),
+            message: err?.message || (rtl ? 'تعذر إنهاء الوردية' : 'Failed to end shift'),
+            type: 'error',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+        } finally {
+          setForceEnding(false);
+        }
+      },
+    });
   };
 
   return (
@@ -255,12 +333,29 @@ export function DriverDetailModal({
               </Text>
             </View>
 
+            {/* Admin Destructive Action: Force End Active Shift */}
+            {isAdmin && driver.shift && (driver.shift.status === 'ACTIVE' || !driver.shift.status) && (
+              <TouchableOpacity
+                style={[styles.destructiveForceEndButton, (forceEnding || resetting) && styles.disabledButton]}
+                onPress={handleForceEndPress}
+                disabled={forceEnding || resetting}
+              >
+                {forceEnding ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.destructiveForceEndText}>
+                    {rtl ? 'إنهاء وردية السائق إجبارياً' : 'Force End Driver Shift'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+
             {/* Admin Destructive Action: Reset Device */}
             {isAdmin && (
               <TouchableOpacity
-                style={[styles.destructiveResetButton, resetting && styles.disabledButton]}
+                style={[styles.destructiveResetButton, (resetting || forceEnding) && styles.disabledButton]}
                 onPress={handleResetPress}
-                disabled={resetting}
+                disabled={resetting || forceEnding}
               >
                 {resetting ? (
                   <ActivityIndicator color="#ffffff" size="small" />
@@ -271,6 +366,20 @@ export function DriverDetailModal({
             )}
           </View>
         </ScrollView>
+
+        <TrackerDialog
+          visible={dialogConfig.visible}
+          title={dialogConfig.title}
+          message={dialogConfig.message}
+          type={dialogConfig.type}
+          primaryButtonText={dialogConfig.primaryButtonText}
+          secondaryButtonText={dialogConfig.secondaryButtonText}
+          onPrimaryPress={dialogConfig.onPrimaryPress}
+          onSecondaryPress={dialogConfig.onSecondaryPress}
+          isDestructive={dialogConfig.isDestructive}
+          loading={dialogConfig.loading}
+          onClose={() => setDialogConfig((prev) => ({ ...prev, visible: false }))}
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -398,6 +507,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
+  },
+  destructiveForceEndButton: {
+    backgroundColor: '#d97706',
+    borderRadius: radius.sm,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  destructiveForceEndText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   destructiveResetButton: {
     backgroundColor: '#dc2626',

@@ -59,6 +59,18 @@ export async function evaluateDriverAlerts(ctx: EvaluateAlertContext) {
       return;
     }
 
+    // Verify driver has an active shift before evaluating operational alerts
+    if (!ctx.shiftId) {
+      const activeShiftRow = await db
+        .select({ id: shiftsTable.id })
+        .from(shiftsTable)
+        .where(and(eq(shiftsTable.driverId, ctx.driverId), eq(shiftsTable.status, "ACTIVE")))
+        .limit(1);
+      if (!activeShiftRow[0]) {
+        return;
+      }
+    }
+
     const driverName = ctx.driverName ?? "السائق";
     const now = new Date();
 
@@ -261,6 +273,18 @@ export async function evaluateDriverOfflineAlert(params: {
   try {
     const alertSettings = await getAlertSettings();
     if (!alertSettings.offlineAlertEnabled) return;
+
+    // Verify driver has an active shift before evaluating offline alert
+    if (!params.shiftId) {
+      const activeShiftRow = await db
+        .select({ id: shiftsTable.id })
+        .from(shiftsTable)
+        .where(and(eq(shiftsTable.driverId, params.driverId), eq(shiftsTable.status, "ACTIVE")))
+        .limit(1);
+      if (!activeShiftRow[0]) {
+        return;
+      }
+    }
 
     const now = new Date();
     const offlineState = await getAlertState(params.driverId, "DRIVER_OFFLINE");
