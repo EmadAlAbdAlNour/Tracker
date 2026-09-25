@@ -1,4 +1,5 @@
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import { list, del } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 
@@ -61,6 +62,22 @@ export async function POST(request: Request): Promise<NextResponse> {
           allowOverwrite: true,
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB max
         };
+      },
+      onUploadCompleted: async ({ blob }) => {
+        try {
+          if (blob.pathname.endsWith('.apk')) {
+            const { blobs } = await list({ prefix: 'releases/android/', limit: 50 });
+            const apkBlobs = blobs.filter((b) => b.pathname.endsWith('.apk'));
+            if (apkBlobs.length > 2) {
+              apkBlobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+              const toDelete = apkBlobs.slice(2).map((b) => b.url);
+              await del(toDelete);
+              console.log(`CI Upload: pruned ${toDelete.length} old APK blobs to enforce storage quota`);
+            }
+          }
+        } catch (pruneErr) {
+          console.warn('Failed to prune old APKs after CI upload:', pruneErr);
+        }
       }
     });
 
