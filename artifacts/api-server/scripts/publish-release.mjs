@@ -27,11 +27,27 @@ async function publishRelease() {
   const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1) + ' MB';
 
   // Read version config from the monorepo root
-  const versionPath = path.resolve(process.cwd(), '../../version.json');
+  const candidatePaths = [
+    path.resolve(process.cwd(), 'version.json'),
+    path.resolve(process.cwd(), '../../version.json'),
+    path.resolve(process.cwd(), '../version.json'),
+  ];
+  const versionPath = candidatePaths.find((p) => fs.existsSync(p));
+  if (!versionPath) {
+    throw new Error('Could not locate version.json in candidate locations');
+  }
   const versionConfig = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
   
-  const version = versionConfig.version || '1.0.0';
-  const versionCode = versionConfig.versionCode || 1;
+  const version = versionConfig.version;
+  if (!version || typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`Invalid release version: expected semver string, got ${version}`);
+  }
+
+  const versionCode = versionConfig.versionCode;
+  if (typeof versionCode !== 'number' || !Number.isInteger(versionCode) || versionCode <= 0) {
+    throw new Error(`Invalid release versionCode: expected positive integer, got ${versionCode}`);
+  }
+
   const minSupportedVersion = versionConfig.minSupportedVersion || '1.0.0';
 
   const filename = `Tracker-${version}-${versionCode}.apk`;

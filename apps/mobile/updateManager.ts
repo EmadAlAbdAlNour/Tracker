@@ -59,7 +59,9 @@ export function isUpdateAvailable(
     remoteCode > 0 &&
     installedCode > 0
   ) {
-    return remoteCode > installedCode;
+    if (remoteCode !== installedCode) {
+      return remoteCode > installedCode;
+    }
   }
   return compareSemver(remoteVersion, installedVersion) > 0;
 }

@@ -69,10 +69,24 @@ export async function POST(request: Request): Promise<NextResponse> {
             const { blobs } = await list({ prefix: 'releases/android/', limit: 50 });
             const apkBlobs = blobs.filter((b) => b.pathname.endsWith('.apk'));
             if (apkBlobs.length > 2) {
-              apkBlobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-              const toDelete = apkBlobs.slice(2).map((b) => b.url);
-              await del(toDelete);
-              console.log(`CI Upload: pruned ${toDelete.length} old APK blobs to enforce storage quota`);
+              apkBlobs.sort((a, b) => {
+                const timeDiff = new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+                if (timeDiff !== 0) return timeDiff;
+                return b.pathname.localeCompare(a.pathname);
+              });
+              const toDelete = apkBlobs
+                .slice(2)
+                .filter(
+                  (b) =>
+                    b.pathname.endsWith('.apk') &&
+                    b.url !== blob.url &&
+                    !b.pathname.endsWith('latest.json')
+                )
+                .map((b) => b.url);
+              if (toDelete.length > 0) {
+                await del(toDelete);
+                console.log(`CI Upload: pruned ${toDelete.length} old APK blobs to enforce storage quota`);
+              }
             }
           }
         } catch (pruneErr) {

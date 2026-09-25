@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { Readable } from 'stream';
-import { list, get } from '@vercel/blob';
+import { list } from '@vercel/blob';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +29,6 @@ function getCanonicalVersion(): { version: string; versionCode: number } {
 
 export async function GET() {
   const { version } = getCanonicalVersion();
-  const defaultFilename = `Tracker-${version}.apk`;
 
   // 1. If explicit CDN / Blob URL is configured in environment
   const cdnUrl = process.env.TRACKER_APK_DOWNLOAD_URL || process.env.TRACKER_BLOB_APK_URL;
@@ -50,26 +48,6 @@ export async function GET() {
       if (apkBlobs.length > 0) {
         apkBlobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
         const newestApk = apkBlobs[0];
-        const apkFilename = newestApk.pathname.split('/').pop() || defaultFilename;
-
-        // Stream via authenticated get() to provide resilient APK delivery
-        try {
-          const getRes = await get(newestApk.pathname, { access: 'public' });
-          if (getRes?.statusCode === 200 && getRes.stream) {
-            return new Response(getRes.stream as any, {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/vnd.android.package-archive',
-                'Content-Disposition': `attachment; filename="${apkFilename}"`,
-                'Content-Length': String(getRes.blob?.size || newestApk.size || ''),
-                'Cache-Control': 'public, max-age=3600, immutable',
-              },
-            });
-          }
-        } catch (streamErr) {
-          console.warn('Vercel Blob authenticated get() failed in download route, falling back to redirect:', streamErr);
-        }
-
         const targetUrl = newestApk.downloadUrl || newestApk.url;
         return NextResponse.redirect(targetUrl, 302);
       }
@@ -81,9 +59,8 @@ export async function GET() {
   return NextResponse.json(
     {
       error: 'Release not found',
-      message: 'Direct APK streaming requires persistent cloud storage.',
+      message: 'Direct APK download requires active cloud storage.',
     },
     { status: 404 }
   );
 }
-

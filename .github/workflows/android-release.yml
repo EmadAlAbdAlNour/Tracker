@@ -47,12 +47,20 @@ jobs:
           # Read current version from version.json
           VERSION_NAME=$(node -p "require('./version.json').version")
           
-          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
-          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           
           # Update version.json to reflect the new versionCode for this run
-          # (We do not strictly need to commit it back, but we update the file so the build and metadata read the right code)
-          node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('version.json')); v.versionCode=parseInt(process.env.VERSION_CODE); fs.writeFileSync('version.json', JSON.stringify(v, null, 2));"
+          VERSION_CODE="$VERSION_CODE" node -e "
+            const fs = require('fs');
+            const v = JSON.parse(fs.readFileSync('version.json', 'utf8'));
+            const code = Number(process.env.VERSION_CODE);
+            if (!Number.isInteger(code) || code <= 0) {
+              throw new Error('Invalid VERSION_CODE: ' + process.env.VERSION_CODE);
+            }
+            v.versionCode = code;
+            fs.writeFileSync('version.json', JSON.stringify(v, null, 2) + '\n');
+          "
 
       - name: Setup Production Keystore
         run: |
@@ -102,6 +110,13 @@ jobs:
           APK_SIZE=$(stat -c%s "$APK_PATH")
           echo "APK_SHA=$APK_SHA" >> $GITHUB_ENV
           echo "APK_SIZE=$APK_SIZE" >> $GITHUB_ENV
+
+      - name: Verify APK Version Code Integrity
+        working-directory: artifacts/api-server
+        env:
+          APK_PATH: ../../apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+        run: |
+          node scripts/verify-apk.mjs
 
       - name: Upload to Vercel Blob and Publish Metadata
         working-directory: artifacts/api-server

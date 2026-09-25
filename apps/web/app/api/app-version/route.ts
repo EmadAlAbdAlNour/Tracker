@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { list, del, get } from '@vercel/blob';
+import { list, get } from '@vercel/blob';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
@@ -26,17 +26,6 @@ export async function GET() {
 
     const apkBlobs = blobs.filter((b) => b.pathname.endsWith('.apk'));
     apkBlobs.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-
-    // Retention: prune historical APKs older than the 2 most recent to keep Blob store size safely under the 1GB Hobby limit
-    if (apkBlobs.length > 2) {
-      const staleApks = apkBlobs.slice(2).map((b) => b.url);
-      try {
-        await del(staleApks);
-        console.log(`Pruned ${staleApks.length} historical APK blobs to enforce storage quota`);
-      } catch (delErr) {
-        console.warn('Vercel Blob retention pruning warning:', delErr);
-      }
-    }
 
     // 1. Prefer latest.json metadata if published
     const metadataBlob = blobs.find((b) => b.pathname.endsWith('latest.json'));

@@ -202,7 +202,7 @@ export default function DownloadPage() {
               </div>
 
               <a
-                href={releaseData.downloadUrl}
+                href="/api/download/latest"
                 download={`Tracker-${releaseData.version}.apk`}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-2xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-emerald-600/25 hover:bg-emerald-700 transition"
               >
