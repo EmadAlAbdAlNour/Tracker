@@ -74,7 +74,8 @@
     "accuracy": "Accuracy",
     "recordedTime": "Recorded At",
     "noLocations": "No recent location points found",
-    "awaitingTelemetry": "On shift — awaiting location data"
+    "awaitingTelemetry": "On shift — awaiting location data",
+    "shiftStarted": "Shift Started"
   },
   "devices": {
     "title": "Driver Devices",
@@ -119,6 +120,10 @@
     "filterRestaurant": "At Restaurant",
     "filterOffline": "Offline",
     "speed": "Speed",
+    "currentSpeed": "Current Speed",
+    "lastRecordedSpeed": "Last Recorded Speed",
+    "lastGpsLocation": "Last GPS Location",
+    "lastConnection": "Last Connection",
     "distance": "Distance to Restaurant",
     "kmh": "km/h",
     "meters": "meters",

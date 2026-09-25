@@ -16,6 +16,7 @@ import { colors, radius, spacing, typography, shadows } from '../designSystem';
 import { AppIcon } from './AppIcon';
 import { TrackerDialog } from './TrackerDialog';
 import { formatWesternNumber, isRtl, t } from '../i18n';
+import { resolveConnectionState, resolveOperationalState, resolveSpeedSemantics } from '../telemetry';
 
 interface DriverDetailModalProps {
   visible: boolean;
@@ -62,27 +63,28 @@ export function DriverDetailModal({
   const hasLocation = Boolean(driver.location && (driver.location.latitude != null || driver.location.longitude != null));
   const isAwaitingTelemetry = hasActiveShift && !hasLocation;
 
-  const isOnline = driver.operationalStatus !== 'OFFLINE';
+  // Authoritative Connection State strictly from devices.lastSeen
+  const connectionState = resolveConnectionState(driver);
+  const isOnline = connectionState === 'online';
+
+  // Last Connection Time (from devices.lastSeen)
+  const lastSeenMs = driver.device?.lastSeen ? new Date(driver.device.lastSeen).getTime() : 0;
+  const lastSeenMinutes = lastSeenMs > 0 ? Math.max(0, Math.round((Date.now() - lastSeenMs) / 60000)) : null;
+
+  // Last GPS Location Time (from location.recordedAt)
   const recordedAtMs = driver.location?.recordedAt ? new Date(driver.location.recordedAt).getTime() : 0;
-  const elapsedMinutes = recordedAtMs > 0 ? Math.max(0, Math.round((Date.now() - recordedAtMs) / 60000)) : null;
+  const locationAgeMinutes = recordedAtMs > 0 ? Math.max(0, Math.round((Date.now() - recordedAtMs) / 60000)) : null;
 
-  // Connection State: Online / Delayed / Offline / Awaiting
-  const connectionState = isAwaitingTelemetry
-    ? 'awaiting'
-    : !isOnline
-    ? 'offline'
-    : elapsedMinutes != null && elapsedMinutes > 5
-    ? 'delayed'
-    : 'online';
+  // Authoritative Movement / Operational State from backend
+  const opStatus = resolveOperationalState(driver);
 
-  // Movement State: Moving / Stopped / Unknown
-  const speedKmh =
-    driver.location?.speed != null ? Math.round(Number(driver.location.speed) * 3.6) : null;
-  const movementState = isAwaitingTelemetry || !isOnline
-    ? 'unknown'
-    : speedKmh != null && speedKmh > 3
-    ? 'moving'
-    : 'stopped';
+  // Authoritative Speed Semantics
+  const speedSemantics = resolveSpeedSemantics({
+    speedMs: driver.location?.speed,
+    operationalStatus: driver.operationalStatus,
+    isOnline: driver.isOnline,
+    recordedAt: driver.location?.recordedAt,
+  });
 
   const getConnectionBadge = () => {
     switch (connectionState) {
@@ -95,8 +97,6 @@ export function DriverDetailModal({
         };
       case 'online':
         return { label: rtl ? 'متصل الآن' : 'ONLINE', bg: colors.status.onlineBg, text: colors.status.online, border: colors.status.onlineBorder };
-      case 'delayed':
-        return { label: rtl ? 'اتصال متأخر' : 'DELAYED', bg: colors.status.warningBg, text: colors.status.warning, border: colors.status.warningBorder };
       case 'offline':
       default:
         return { label: rtl ? 'غير متصل' : 'OFFLINE', bg: colors.status.offlineBg, text: colors.status.offline, border: colors.status.offlineBorder };
@@ -104,14 +104,16 @@ export function DriverDetailModal({
   };
 
   const getMovementBadge = () => {
-    switch (movementState) {
-      case 'moving':
+    switch (opStatus) {
+      case 'MOVING':
         return { label: rtl ? 'في حركة' : 'MOVING', color: colors.status.moving };
-      case 'stopped':
+      case 'AT_RESTAURANT':
+        return { label: rtl ? 'في المطعم' : 'AT RESTAURANT', color: colors.status.online };
+      case 'STOPPED':
         return { label: rtl ? 'متوقف' : 'STOPPED', color: colors.status.stopped };
-      case 'unknown':
+      case 'OFFLINE':
       default:
-        return { label: rtl ? 'غير معروف' : 'UNKNOWN', color: colors.text.muted };
+        return { label: rtl ? 'غير متصل' : 'OFFLINE', color: colors.text.muted };
     }
   };
 
@@ -235,23 +237,37 @@ export function DriverDetailModal({
               </View>
             </View>
 
-            {/* Freshness Timestamp */}
+            {/* Connection Freshness (lastSeen) */}
             <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Contact:'}</Text>
+              <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Connection:'}</Text>
               <Text style={styles.metaValue}>
                 {isAwaitingTelemetry
-                  ? rtl ? 'لا توجد بيانات موقع مسجلة' : 'No telemetry recorded'
-                  : elapsedMinutes != null
-                  ? elapsedMinutes === 0
-                    ? rtl ? 'منذ ثوانٍ' : 'seconds ago'
-                    : rtl ? `منذ ${formatWesternNumber(elapsedMinutes)} دقيقة` : `${formatWesternNumber(elapsedMinutes)}m ago`
-                  : rtl ? 'لا توجد بيانات' : 'No telemetry'}
+                  ? (rtl ? 'بانتظار بدء الإرسال' : 'Awaiting signal')
+                  : lastSeenMinutes != null
+                  ? lastSeenMinutes === 0
+                    ? (rtl ? 'منذ ثوانٍ' : 'seconds ago')
+                    : (rtl ? `منذ ${formatWesternNumber(lastSeenMinutes)} دقيقة` : `${formatWesternNumber(lastSeenMinutes)}m ago`)
+                  : (rtl ? 'غير متوفر' : 'Unavailable')}
               </Text>
             </View>
 
-            {/* Movement Status */}
+            {/* GPS Location Freshness (recordedAt) */}
             <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'حالة الحركة الحالية:' : 'Movement State:'}</Text>
+              <Text style={styles.metaLabel}>{rtl ? 'آخر موقع مسجل:' : 'Last GPS Location:'}</Text>
+              <Text style={styles.metaValue}>
+                {isAwaitingTelemetry || !hasLocation
+                  ? (rtl ? 'لا توجد بيانات موقع' : 'No GPS coordinates')
+                  : locationAgeMinutes != null
+                  ? locationAgeMinutes === 0
+                    ? (rtl ? 'منذ ثوانٍ' : 'seconds ago')
+                    : (rtl ? `منذ ${formatWesternNumber(locationAgeMinutes)} دقيقة` : `${formatWesternNumber(locationAgeMinutes)}m ago`)
+                  : '—'}
+              </Text>
+            </View>
+
+            {/* Operational Status */}
+            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <Text style={styles.metaLabel}>{rtl ? 'الحالة التشغيلية:' : 'Operational Status:'}</Text>
               <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700' }]}>
                 {movBadge.label}
               </Text>
@@ -263,10 +279,10 @@ export function DriverDetailModal({
             <View style={[styles.telemetryHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
               <Text style={styles.cardSectionTitle}>
                 {isAwaitingTelemetry
-                  ? rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal'
+                  ? (rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal')
                   : isOnline
-                  ? rtl ? 'بيانات التتبع المباشرة' : 'Live Telemetry'
-                  : rtl ? 'آخر بيانات معروفة (تاريخية)' : 'Last Known Telemetry'}
+                  ? (rtl ? 'بيانات التتبع المباشرة' : 'Live Telemetry')
+                  : (rtl ? 'آخر بيانات معروفة (تاريخية)' : 'Last Known Telemetry')}
               </Text>
               {isAwaitingTelemetry ? (
                 <View style={styles.staleNoticePill}>
@@ -283,11 +299,22 @@ export function DriverDetailModal({
               {/* Speed */}
               <View style={styles.gridCell}>
                 <Text style={styles.gridCellLabel}>
-                  {isOnline ? rtl ? 'السرعة الحالية' : 'Speed' : rtl ? 'السرعة وقت آخر تحديث' : 'Speed at last update'}
+                  {speedSemantics.isCurrent
+                    ? (rtl ? 'السرعة الحالية' : 'Current Speed')
+                    : speedSemantics.isHistorical
+                    ? (rtl ? 'آخر سرعة مسجلة' : 'Last Recorded Speed')
+                    : (rtl ? 'السرعة' : 'Speed')}
                 </Text>
                 <Text style={styles.gridCellValue}>
-                  {speedKmh != null ? `${formatWesternNumber(speedKmh)} ${t('driverDetail.speedUnit')}` : '—'}
+                  {speedSemantics.speedKmh != null
+                    ? `${formatWesternNumber(speedSemantics.speedKmh)} ${t('driverDetail.speedUnit')}`
+                    : '—'}
                 </Text>
+                {speedSemantics.isHistorical && speedSemantics.ageMinutes != null ? (
+                  <Text style={styles.gridCellSublabel}>
+                    {rtl ? `منذ ${formatWesternNumber(speedSemantics.ageMinutes)} دقيقة` : `${formatWesternNumber(speedSemantics.ageMinutes)}m ago`}
+                  </Text>
+                ) : null}
               </View>
 
               {/* Heading */}
@@ -538,6 +565,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
+  },
+  gridCellSublabel: {
+    fontSize: 10,
+    color: colors.text.muted,
+    marginTop: 2,
   },
   destructiveForceEndButton: {
     backgroundColor: '#d97706',

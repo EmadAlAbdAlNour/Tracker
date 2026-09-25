@@ -331,16 +331,20 @@ export default function DashboardOverviewPage() {
                       )}
                     </td>
                     <td className="px-5 py-3.5">
-                      {driver.location?.speed != null ? (
-                        <span>
+                      {driver.operationalStatus === 'MOVING' && driver.location?.speed != null ? (
+                        <span className="font-semibold text-slate-800">
                           {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
                         </span>
+                      ) : driver.location?.speed != null && driver.operationalStatus !== 'OFFLINE' ? (
+                        <span className="text-slate-500 text-[11px]">
+                          {t('map.lastRecordedSpeed')}: {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
+                        </span>
                       ) : (
-                        <span className="text-slate-400">0 {t('map.kmh')}</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-slate-500 text-[11px]">
-                      {formatTimeAgo(driver.device?.lastSeen || driver.location?.recordedAt)}
+                      {formatTimeAgo(driver.device?.lastSeen)}
                     </td>
                     <td className="px-5 py-3.5">
                       <Link

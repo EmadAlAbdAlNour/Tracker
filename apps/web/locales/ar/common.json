@@ -74,7 +74,8 @@
     "accuracy": "الدقة",
     "recordedTime": "الوقت المسجل",
     "noLocations": "لا توجد نقاط موقع مسجلة حديثاً",
-    "awaitingTelemetry": "في الوردية — بانتظار بيانات الموقع"
+    "awaitingTelemetry": "في الوردية — بانتظار بيانات الموقع",
+    "shiftStarted": "بدء الوردية"
   },
   "devices": {
     "title": "أجهزة السائقين",
@@ -119,6 +120,10 @@
     "filterRestaurant": "بالمطعم",
     "filterOffline": "غير متصل",
     "speed": "السرعة",
+    "currentSpeed": "السرعة الحالية",
+    "lastRecordedSpeed": "آخر سرعة مسجلة",
+    "lastGpsLocation": "آخر موقع مسجل",
+    "lastConnection": "آخر اتصال",
     "distance": "المسافة عن المطعم",
     "kmh": "كم/س",
     "meters": "متر",

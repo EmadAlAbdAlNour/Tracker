@@ -221,9 +221,10 @@ export function RealGeographicMapView({
         borderStyle = 'border: 2px dashed #cbd5e1;';
       }
 
+      const isMoving = d.status === 'MOVING';
       const circleContent = isOffline
         ? '⊘'
-        : (d.speed != null && d.speed > 0 ? Math.round(d.speed * 3.6) : '●');
+        : (isMoving && d.speed != null && d.speed > 0 ? Math.round(d.speed * 3.6) : '●');
 
       const circleClass = isOffline ? 'pin-circle offline' : 'pin-circle';
       const labelClass = isOffline ? 'pin-label offline' : 'pin-label';
@@ -485,15 +486,27 @@ export function RealGeographicMapView({
           </View>
 
           <View style={[styles.driverMetricsRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-            {selectedDriver.operationalStatus !== 'OFFLINE' && selectedDriver.location?.speed != null && (
+            {selectedDriver.operationalStatus === 'MOVING' && selectedDriver.location?.speed != null && (
               <Text style={styles.metricItem}>
                 {formatWesternNumber(Math.round(Number(selectedDriver.location.speed) * 3.6))} {t('driverDetail.speedUnit')}
               </Text>
             )}
 
+            {selectedDriver.operationalStatus === 'AT_RESTAURANT' && (
+              <Text style={[styles.metricItem, { color: colors.status.online }]}>
+                {rtl ? 'في المطعم' : 'At Restaurant'}
+              </Text>
+            )}
+
+            {selectedDriver.operationalStatus === 'STOPPED' && (
+              <Text style={[styles.metricItem, { color: colors.status.stopped }]}>
+                {rtl ? 'متوقف' : 'Stopped'}
+              </Text>
+            )}
+
             {selectedDriver.operationalStatus === 'OFFLINE' && (
               <Text style={[styles.metricItem, { color: colors.text.muted }]}>
-                {rtl ? 'غير متصل (متوقف)' : 'Offline (Stopped)'}
+                {rtl ? 'غير متصل' : 'Offline'}
               </Text>
             )}
 

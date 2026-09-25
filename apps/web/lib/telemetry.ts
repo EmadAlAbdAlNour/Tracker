@@ -1,25 +1,4 @@
-export function normalizeNetworkStatus(type?: string | null, isConnected?: boolean | null): string {
-  if (!isConnected) return 'offline';
-
-  switch (type) {
-    case 'wifi':
-      return 'wifi';
-    case 'cellular':
-      return 'cellular';
-    case 'ethernet':
-      return 'ethernet';
-    case 'bluetooth':
-      return 'bluetooth';
-    case 'vpn':
-      return 'vpn';
-    case 'none':
-      return 'none';
-    default:
-      return 'unknown';
-  }
-}
-
-export interface DriverStateContext {
+export interface WebDriverStateContext {
   isOnline?: boolean | null;
   operationalStatus?: string | null;
   shift?: {
@@ -41,7 +20,7 @@ export interface DriverStateContext {
  * Rule: GPS age or missing location does NOT determine connection state.
  */
 export function resolveConnectionState(
-  driver: DriverStateContext | null | undefined
+  driver: WebDriverStateContext | null | undefined
 ): 'awaiting' | 'online' | 'offline' {
   if (!driver) return 'offline';
   const hasActiveShift = Boolean(driver.shift && (driver.shift.status === 'ACTIVE' || !driver.shift.status));
@@ -50,7 +29,6 @@ export function resolveConnectionState(
 
   if (isAwaitingTelemetry) return 'awaiting';
 
-  // Authoritative: isOnline is determined by backend based on devices.lastSeen <= offlineGraceMinutes
   const isOnline = driver.isOnline != null ? driver.isOnline : (driver.operationalStatus !== 'OFFLINE');
   return isOnline ? 'online' : 'offline';
 }
@@ -60,7 +38,7 @@ export function resolveConnectionState(
  * Rule: Client must NEVER recompute movement from speed > 0 or coordinate deltas.
  */
 export function resolveOperationalState(
-  driver: DriverStateContext | null | undefined
+  driver: WebDriverStateContext | null | undefined
 ): 'MOVING' | 'STOPPED' | 'AT_RESTAURANT' | 'OFFLINE' | 'AWAITING' {
   if (!driver) return 'OFFLINE';
   const hasActiveShift = Boolean(driver.shift && (driver.shift.status === 'ACTIVE' || !driver.shift.status));
@@ -77,7 +55,7 @@ export function resolveOperationalState(
   return 'STOPPED';
 }
 
-export interface SpeedSemantics {
+export interface WebSpeedSemantics {
   speedKmh: number | null;
   isCurrent: boolean;
   isHistorical: boolean;
@@ -95,7 +73,7 @@ export function resolveSpeedSemantics(params: {
   isOnline?: boolean | null;
   recordedAt?: string | null;
   now?: number;
-}): SpeedSemantics {
+}): WebSpeedSemantics {
   const { speedMs, operationalStatus, isOnline, recordedAt, now = Date.now() } = params;
   const speedKmh = speedMs != null && !isNaN(Number(speedMs)) ? Math.round(Number(speedMs) * 3.6) : null;
   const recordedAtMs = recordedAt ? new Date(recordedAt).getTime() : 0;

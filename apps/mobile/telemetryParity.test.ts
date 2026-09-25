@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readTelemetryToken, saveTelemetryToken, clearTelemetryToken, TELEMETRY_TOKEN_KEY } from './session';
+import {
+  resolveConnectionState,
+  resolveOperationalState,
+  resolveSpeedSemantics,
+} from './telemetry';
+import { t, isRtl, formatTimeAgo, formatWesternNumber } from './i18n';
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', Version: 34, constants: { Model: 'TestModel', Brand: 'TestBrand', Release: '14' } },
@@ -113,60 +119,308 @@ describe('Telemetry & Auth Parity Regression Tests', () => {
     });
   });
 
-  describe('Part 6 — Driver on Active Shift with Awaiting Telemetry', () => {
-    function computeConnectionState(params: {
-      hasActiveShift: boolean;
-      hasLocation: boolean;
-      isOnline: boolean;
-      elapsedMinutes: number | null;
-    }): 'awaiting' | 'online' | 'delayed' | 'offline' {
-      const { hasActiveShift, hasLocation, isOnline, elapsedMinutes } = params;
-      const isAwaitingTelemetry = hasActiveShift && !hasLocation;
-
-      if (isAwaitingTelemetry) return 'awaiting';
-      if (!isOnline) return 'offline';
-      if (elapsedMinutes != null && elapsedMinutes > 5) return 'delayed';
-      return 'online';
-    }
-
-    it('reports awaiting state when driver is on active shift but zero location points exist (e.g. Vivo fresh shift)', () => {
-      const state = computeConnectionState({
-        hasActiveShift: true,
-        hasLocation: false,
-        isOnline: false,
-        elapsedMinutes: null,
-      });
-      expect(state).toBe('awaiting');
-    });
-
-    it('reports online state when driver is on active shift with fresh location', () => {
-      const state = computeConnectionState({
-        hasActiveShift: true,
-        hasLocation: true,
+  describe('Authoritative UI Semantics — Phase 1 Hardening', () => {
+    it('1. Online + fresh MOVING: resolves online, MOVING, and current speed', () => {
+      const now = Date.now();
+      const driver = {
         isOnline: true,
-        elapsedMinutes: 1,
+        operationalStatus: 'MOVING',
+        location: {
+          latitude: 24.7,
+          longitude: 46.7,
+          speed: 15, // 54 km/h
+          recordedAt: new Date(now - 10 * 1000).toISOString(),
+        },
+        device: { lastSeen: new Date(now - 5 * 1000).toISOString() },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('online');
+      expect(resolveOperationalState(driver)).toBe('MOVING');
+      const speed = resolveSpeedSemantics({
+        speedMs: driver.location.speed,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: driver.location.recordedAt,
+        now,
       });
-      expect(state).toBe('online');
+      expect(speed.isCurrent).toBe(true);
+      expect(speed.isHistorical).toBe(false);
+      expect(speed.speedKmh).toBe(54);
     });
 
-    it('reports delayed state when driver is online but location is older than 5 minutes', () => {
-      const state = computeConnectionState({
-        hasActiveShift: true,
-        hasLocation: true,
+    it('2. Online + stale GPS + MOVING backend status: remains online and MOVING, but speed is historical because GPS is stale', () => {
+      const now = Date.now();
+      const driver = {
         isOnline: true,
-        elapsedMinutes: 8,
+        operationalStatus: 'MOVING',
+        location: {
+          latitude: 24.7,
+          longitude: 46.7,
+          speed: 15,
+          recordedAt: new Date(now - 25 * 60 * 1000).toISOString(), // 25m old
+        },
+        device: { lastSeen: new Date(now - 10 * 1000).toISOString() },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('online');
+      expect(resolveOperationalState(driver)).toBe('MOVING');
+      const speed = resolveSpeedSemantics({
+        speedMs: driver.location.speed,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: driver.location.recordedAt,
+        now,
       });
-      expect(state).toBe('delayed');
+      expect(speed.isCurrent).toBe(false);
+      expect(speed.isHistorical).toBe(true);
+      expect(speed.ageMinutes).toBe(25);
     });
 
-    it('reports offline state when driver is off shift or offline with stale location', () => {
-      const state = computeConnectionState({
-        hasActiveShift: false,
-        hasLocation: true,
-        isOnline: false,
-        elapsedMinutes: 30,
+    it('3. Online + stale GPS + STOPPED: remains online, STOPPED, speed is historical', () => {
+      const now = Date.now();
+      const driver = {
+        isOnline: true,
+        operationalStatus: 'STOPPED',
+        location: {
+          latitude: 24.7,
+          longitude: 46.7,
+          speed: 3.33, // 12 km/h
+          recordedAt: new Date(now - 20 * 60 * 1000).toISOString(),
+        },
+        device: { lastSeen: new Date(now - 5 * 1000).toISOString() },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('online');
+      expect(resolveOperationalState(driver)).toBe('STOPPED');
+      const speed = resolveSpeedSemantics({
+        speedMs: driver.location.speed,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: driver.location.recordedAt,
+        now,
       });
-      expect(state).toBe('offline');
+      expect(speed.isCurrent).toBe(false);
+      expect(speed.isHistorical).toBe(true);
+      expect(speed.speedKmh).toBe(12);
+    });
+
+    it('4. Online + stale GPS + AT_RESTAURANT: remains online, AT_RESTAURANT, speed is historical', () => {
+      const now = Date.now();
+      const driver = {
+        isOnline: true,
+        operationalStatus: 'AT_RESTAURANT',
+        location: {
+          latitude: 24.71,
+          longitude: 46.68,
+          speed: 15,
+          recordedAt: new Date(now - 45 * 60 * 1000).toISOString(),
+        },
+        device: { lastSeen: new Date(now - 15 * 1000).toISOString() },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('online');
+      expect(resolveOperationalState(driver)).toBe('AT_RESTAURANT');
+      const speed = resolveSpeedSemantics({
+        speedMs: driver.location.speed,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: driver.location.recordedAt,
+        now,
+      });
+      expect(speed.isCurrent).toBe(false);
+      expect(speed.isHistorical).toBe(true);
+    });
+
+    it('5. Offline + recent GPS: remains offline, operationalStatus OFFLINE takes precedence', () => {
+      const now = Date.now();
+      const driver = {
+        isOnline: false,
+        operationalStatus: 'OFFLINE',
+        location: {
+          latitude: 24.7,
+          longitude: 46.7,
+          speed: 15,
+          recordedAt: new Date(now - 10 * 1000).toISOString(),
+        },
+        device: { lastSeen: new Date(now - 10 * 60 * 1000).toISOString() },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('offline');
+      expect(resolveOperationalState(driver)).toBe('OFFLINE');
+      const speed = resolveSpeedSemantics({
+        speedMs: driver.location.speed,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: driver.location.recordedAt,
+        now,
+      });
+      expect(speed.isCurrent).toBe(false);
+      expect(speed.isHistorical).toBe(false);
+    });
+
+    it('6. Online + no location: reports awaiting when on shift, handles null location without crashing', () => {
+      const driver = {
+        isOnline: true,
+        operationalStatus: 'STOPPED',
+        shift: { status: 'ACTIVE' },
+        location: null,
+        device: { lastSeen: new Date().toISOString() },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('awaiting');
+      expect(resolveOperationalState(driver)).toBe('AWAITING');
+      const speed = resolveSpeedSemantics({
+        speedMs: null,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: null,
+      });
+      expect(speed.speedKmh).toBeNull();
+      expect(speed.isCurrent).toBe(false);
+      expect(speed.isHistorical).toBe(false);
+    });
+
+    it('7. Offline + no location: reports offline without crash', () => {
+      const driver = {
+        isOnline: false,
+        operationalStatus: 'OFFLINE',
+        location: null,
+        device: { lastSeen: null },
+      };
+
+      expect(resolveConnectionState(driver)).toBe('offline');
+      expect(resolveOperationalState(driver)).toBe('OFFLINE');
+    });
+
+    it('8. Recent lastSeen + old recordedAt: connection is online, GPS age is old', () => {
+      const now = Date.now();
+      const driver = {
+        isOnline: true,
+        operationalStatus: 'STOPPED',
+        location: {
+          latitude: 24.7,
+          longitude: 46.7,
+          recordedAt: new Date(now - 60 * 60 * 1000).toISOString(), // 1 hour old
+        },
+        device: { lastSeen: new Date(now - 15 * 1000).toISOString() }, // 15s ago
+      };
+
+      expect(resolveConnectionState(driver)).toBe('online');
+      const recordedAtMs = new Date(driver.location.recordedAt).getTime();
+      const gpsAgeMinutes = Math.round((now - recordedAtMs) / 60000);
+      expect(gpsAgeMinutes).toBe(60);
+    });
+
+    it('9. Old lastSeen + recent recordedAt: connection is offline, does not get promoted by queued/recent GPS', () => {
+      const now = Date.now();
+      const driver = {
+        isOnline: false,
+        operationalStatus: 'OFFLINE',
+        location: {
+          latitude: 24.7,
+          longitude: 46.7,
+          recordedAt: new Date(now - 10 * 1000).toISOString(), // 10s ago
+        },
+        device: { lastSeen: new Date(now - 12 * 60 * 1000).toISOString() }, // 12m ago
+      };
+
+      expect(resolveConnectionState(driver)).toBe('offline');
+      expect(resolveOperationalState(driver)).toBe('OFFLINE');
+    });
+
+    it('10. Stale speed is labeled historical, never current', () => {
+      const now = Date.now();
+      const speed = resolveSpeedSemantics({
+        speedMs: 15,
+        operationalStatus: 'AT_RESTAURANT',
+        isOnline: true,
+        recordedAt: new Date(now - 78 * 60 * 1000).toISOString(),
+        now,
+      });
+
+      expect(speed.isCurrent).toBe(false);
+      expect(speed.isHistorical).toBe(true);
+      expect(speed.speedKmh).toBe(54);
+      expect(speed.ageMinutes).toBe(78);
+    });
+
+    it('11. Fresh speed can be displayed as current', () => {
+      const now = Date.now();
+      const speed = resolveSpeedSemantics({
+        speedMs: 20, // 72 km/h
+        operationalStatus: 'MOVING',
+        isOnline: true,
+        recordedAt: new Date(now - 30 * 1000).toISOString(), // 30s ago
+        now,
+      });
+
+      expect(speed.isCurrent).toBe(true);
+      expect(speed.isHistorical).toBe(false);
+      expect(speed.speedKmh).toBe(72);
+    });
+
+    it('12. Arabic and English labels correctly map status strings', () => {
+      expect(formatTimeAgo(new Date().toISOString(), true)).toContain('ثوان');
+      expect(formatTimeAgo(new Date().toISOString(), false)).toBe('Just now');
+      expect(formatWesternNumber(54)).toBe('54');
+    });
+
+    it('13. No crash when driver or location is null or undefined', () => {
+      expect(resolveConnectionState(null)).toBe('offline');
+      expect(resolveConnectionState(undefined)).toBe('offline');
+      expect(resolveOperationalState(null)).toBe('OFFLINE');
+      expect(resolveOperationalState(undefined)).toBe('OFFLINE');
+      expect(resolveSpeedSemantics({})).toEqual({
+        speedKmh: null,
+        isCurrent: false,
+        isHistorical: false,
+        ageMinutes: null,
+      });
+    });
+
+    it('14. REGRESSION TEST: staleGpsDoesNotLookLikeCurrentConnectionOrSpeed', () => {
+      // EXACT BUG SCENARIO:
+      // Backend:
+      //   isOnline = true
+      //   operationalStatus = AT_RESTAURANT
+      //   lastSeen = 10 seconds ago
+      //   location.recordedAt = 78 minutes ago
+      //   location.speed = 15 m/s (54 km/h)
+      const now = Date.now();
+      const driver = {
+        isOnline: true,
+        operationalStatus: 'AT_RESTAURANT',
+        location: {
+          latitude: 24.7136,
+          longitude: 46.6753,
+          speed: 15,
+          recordedAt: new Date(now - 78 * 60 * 1000).toISOString(),
+        },
+        device: {
+          lastSeen: new Date(now - 10 * 1000).toISOString(),
+        },
+      };
+
+      // 1. Connection MUST be online (not delayed, not offline)
+      const connectionState = resolveConnectionState(driver);
+      expect(connectionState).toBe('online');
+
+      // 2. Operational state MUST be AT_RESTAURANT (never derived from speed > 0)
+      const operationalState = resolveOperationalState(driver);
+      expect(operationalState).toBe('AT_RESTAURANT');
+
+      // 3. Speed semantics: MUST NOT be current, MUST be historical
+      const speedSemantics = resolveSpeedSemantics({
+        speedMs: driver.location.speed,
+        operationalStatus: driver.operationalStatus,
+        isOnline: driver.isOnline,
+        recordedAt: driver.location.recordedAt,
+        now,
+      });
+      expect(speedSemantics.isCurrent).toBe(false);
+      expect(speedSemantics.isHistorical).toBe(true);
+      expect(speedSemantics.speedKmh).toBe(54);
+      expect(speedSemantics.ageMinutes).toBe(78);
     });
   });
 

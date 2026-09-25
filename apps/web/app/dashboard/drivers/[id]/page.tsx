@@ -288,7 +288,7 @@ export default function DriverDetailsPage() {
             </div>
             {driver.currentShiftStartedAt && (
               <div className="flex justify-between items-center py-1">
-                <dt className="font-medium text-slate-500">{t('drivers.lastSeen')}</dt>
+                <dt className="font-medium text-slate-500">{t('drivers.shiftStarted')}</dt>
                 <dd className="text-slate-600">{formatTimeAgo(driver.currentShiftStartedAt)}</dd>
               </div>
             )}
@@ -467,7 +467,7 @@ export default function DriverDetailsPage() {
                       {formatWesternNumber(loc.latitude.toFixed(5))}, {formatWesternNumber(loc.longitude.toFixed(5))}
                     </td>
                     <td className="px-5 py-3">
-                      {loc.speed != null ? `${formatWesternNumber(Math.round(loc.speed * 3.6))} ${t('map.kmh')}` : '0'}
+                      {loc.speed != null ? `${formatWesternNumber(Math.round(loc.speed * 3.6))} ${t('map.kmh')}` : '—'}
                     </td>
                     <td className="px-5 py-3 text-slate-500">
                       {loc.accuracy != null ? `±${formatWesternNumber(Math.round(loc.accuracy))} ${t('map.meters')}` : '—'}

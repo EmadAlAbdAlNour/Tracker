@@ -148,9 +148,9 @@ const LeafletMap = dynamic(
       const lat = driver.location!.latitude;
       const lng = driver.location!.longitude;
       const visuals = getDriverVisuals(driver);
-
+      const isMoving = driver.operationalStatus === 'MOVING';
       const speedKmh = driver.location?.speed != null ? Math.round(Number(driver.location.speed) * 3.6) : null;
-      const speedText = driver.operationalStatus === 'OFFLINE' ? '—' : speedKmh != null ? formatWesternNumber(speedKmh) : '0';
+      const speedText = isMoving && speedKmh != null ? formatWesternNumber(speedKmh) : '—';
 
       const customIcon = useMemo(() => {
         const escapedName = (driver.driverName || 'Driver').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -267,14 +267,21 @@ const LeafletMap = dynamic(
               </div>
 
               <div className="space-y-1 text-slate-600">
-                {driver.operationalStatus !== 'OFFLINE' && driver.location?.speed != null && (
+                {driver.operationalStatus === 'MOVING' && driver.location?.speed != null ? (
                   <div className="flex justify-between">
-                    <span>{t('map.speed')}:</span>
+                    <span>{t('map.currentSpeed')}:</span>
                     <span className="font-mono font-semibold text-slate-800">
                       {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
                     </span>
                   </div>
-                )}
+                ) : driver.location?.speed != null && driver.operationalStatus !== 'OFFLINE' ? (
+                  <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>{t('map.lastRecordedSpeed')}:</span>
+                    <span className="font-mono font-medium text-slate-600">
+                      {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
+                    </span>
+                  </div>
+                ) : null}
 
                 {driver.distanceToRestaurantMeters != null && (
                   <div className="flex justify-between items-center">
@@ -299,11 +306,20 @@ const LeafletMap = dynamic(
                   </div>
                 )}
 
-                <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                {driver.device?.lastSeen && (
+                  <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                    <span>{t('map.lastConnection')}:</span>
+                    <span className="font-medium text-slate-600">
+                      {formatTimeAgo(driver.device.lastSeen)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
                   <span>
                     {driver.operationalStatus === 'OFFLINE'
                       ? (isRtl() ? 'آخر موقع معروف منذ:' : 'Last known location:')
-                      : (isRtl() ? 'آخر موقع منذ:' : 'Last location:')}
+                      : (isRtl() ? 'آخر موقع مسجل:' : 'Last GPS location:')}
                   </span>
                   <span className="font-medium text-slate-600">
                     {formatTimeAgo(driver.location?.recordedAt)}
@@ -784,13 +800,17 @@ export default function MapPage() {
 
                       <div className="text-[10px] text-slate-500 font-mono mb-2 flex items-center justify-between">
                         <span>{formatWesternNumber(driver.employeeId)}</span>
-                        {driver.operationalStatus !== 'OFFLINE' && driver.location?.speed != null ? (
+                        {driver.operationalStatus === 'MOVING' && driver.location?.speed != null ? (
                           <span className="font-bold text-slate-700">
                             {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
                           </span>
                         ) : driver.operationalStatus === 'OFFLINE' ? (
                           <span className="text-slate-400">
                             {isRtl() ? 'آخر موقع معروف' : t('overview.offline')}
+                          </span>
+                        ) : driver.location?.speed != null ? (
+                          <span className="text-slate-400 text-[9px]">
+                            {t('map.lastRecordedSpeed')}: {formatWesternNumber(Math.round(driver.location.speed * 3.6))} {t('map.kmh')}
                           </span>
                         ) : null}
                       </div>

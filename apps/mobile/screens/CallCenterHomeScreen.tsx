@@ -266,8 +266,8 @@ export function CallCenterHomeScreen({
     const driversList = fleet?.drivers ?? [];
     const total = driversList.length;
     const inShift = driversList.filter((d: any) => Boolean(d.shift)).length;
-    const tracking = driversList.filter((d: any) => d.operationalStatus !== 'OFFLINE' && d.location).length;
-    const online = driversList.filter((d: any) => d.operationalStatus !== 'OFFLINE').length;
+    const online = driversList.filter((d: any) => d.isOnline ?? (d.operationalStatus !== 'OFFLINE')).length;
+    const tracking = driversList.filter((d: any) => (d.isOnline ?? (d.operationalStatus !== 'OFFLINE')) && d.location).length;
     const offline = total - online;
     const activeAlerts = (fleet?.alerts ?? []).length;
 
@@ -419,7 +419,8 @@ export function CallCenterHomeScreen({
               </View>
 
               {(fleet?.drivers ?? []).slice(0, 4).map((d: any) => {
-                const isDOnline = d.operationalStatus !== 'OFFLINE';
+                const isDOnline = d.isOnline ?? (d.operationalStatus !== 'OFFLINE');
+                const isMoving = d.operationalStatus === 'MOVING';
                 return (
                   <TouchableOpacity
                     key={d.driverId}
@@ -441,8 +442,10 @@ export function CallCenterHomeScreen({
 
                     <View style={[styles.driverTelemetryCol, { alignItems: rtl ? 'flex-start' : 'flex-end' }]}>
                       <Text style={styles.driverSpeedText}>
-                        {d.location?.speed != null && isDOnline
+                        {isMoving && d.location?.speed != null
                           ? `${formatWesternNumber(Math.round(Number(d.location.speed) * 3.6))} ${t('driverDetail.speedUnit')}`
+                          : d.operationalStatus === 'AT_RESTAURANT'
+                          ? (rtl ? 'بالمطعم' : 'At Restaurant')
                           : isDOnline ? t('operator.stopped') : t('operator.offline')}
                       </Text>
                       <Text style={styles.driverBatteryText}>
@@ -553,8 +556,9 @@ export function CallCenterHomeScreen({
                   </View>
                 ) : (
                   filteredDrivers.map((d: any) => {
-                const isDOnline = d.operationalStatus !== 'OFFLINE';
-                const speed = d.location?.speed != null ? Math.round(Number(d.location.speed) * 3.6) : null;
+                const isDOnline = d.isOnline ?? (d.operationalStatus !== 'OFFLINE');
+                const isMoving = d.operationalStatus === 'MOVING';
+                const speed = isMoving && d.location?.speed != null ? Math.round(Number(d.location.speed) * 3.6) : null;
                 return (
                   <TouchableOpacity
                     key={d.driverId}
@@ -592,7 +596,13 @@ export function CallCenterHomeScreen({
                     <View style={[styles.driverMainCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
                       <Text style={styles.cardDriverName}>{d.driverName}</Text>
                       <Text style={styles.cardDriverFreshness}>
-                        {isDOnline ? (rtl ? 'متصل الآن' : 'Live') : (rtl ? 'آخر بيانات معروفة' : 'Last known state')}
+                        {d.operationalStatus === 'MOVING'
+                          ? (rtl ? 'في حركة' : 'Moving')
+                          : d.operationalStatus === 'AT_RESTAURANT'
+                          ? (rtl ? 'في المطعم' : 'At Restaurant')
+                          : d.operationalStatus === 'STOPPED'
+                          ? (rtl ? 'متوقف' : 'Stopped')
+                          : (rtl ? 'غير متصل' : 'Offline')}
                       </Text>
                     </View>
 
