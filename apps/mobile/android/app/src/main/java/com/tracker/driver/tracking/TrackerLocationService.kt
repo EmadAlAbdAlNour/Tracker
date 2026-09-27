@@ -168,6 +168,11 @@ class TrackerLocationService : Service() {
         uploader.shiftId = shiftId
         uploader.deviceId = deviceId
 
+        // Shift queue isolation: purge any uncommitted points belonging to older shifts
+        if (!shiftId.isNullOrBlank()) {
+            store.purgeStaleShiftRecords(shiftId)
+        }
+
         prefs.edit()
             .putBoolean(KEY_IS_ACTIVE, true)
             .putString(KEY_API_URL, apiUrl)
@@ -408,19 +413,27 @@ class TrackerLocationService : Service() {
     }
 
     private fun handleNewLocation(location: Location) {
+        // Severe-accuracy filtering: discard fixes with accuracy > 150m or invalid accuracy at native intake
+        if (!location.hasAccuracy() || location.accuracy < 0f || location.accuracy > 150f) {
+            Log.d(TAG, "TRACKER_DISCARD_SEVERE_ACCURACY acc=${if (location.hasAccuracy()) location.accuracy else -1f}")
+            return
+        }
+
         val isoTimestamp = synchronized(isoDateFormat) {
             isoDateFormat.format(Date(location.time))
         }
         val clientLocationId = "${System.currentTimeMillis()}-${UUID.randomUUID().toString().substring(0, 8)}"
 
         // Sanitize values to strictly conform to backend schema (e.g. accuracy >= 0, speed >= 0, heading 0..360)
-        val accuracy = if (location.hasAccuracy() && location.accuracy >= 0f) location.accuracy.toDouble() else null
+        val accuracy = location.accuracy.toDouble()
         val altitude = if (location.hasAltitude()) location.altitude else null
         val speed = if (location.hasSpeed() && location.speed >= 0f) location.speed.toDouble() else null
         val heading = if (location.hasBearing() && location.bearing in 0.0f..360.0f) location.bearing.toDouble() else null
+        val currentShiftId = if (::uploader.isInitialized) uploader.shiftId else null
 
         val point = LocationPointRecord(
             clientLocationId = clientLocationId,
+            shiftId = currentShiftId,
             latitude = location.latitude,
             longitude = location.longitude,
             accuracy = accuracy,
@@ -435,8 +448,8 @@ class TrackerLocationService : Service() {
         )
 
         store.enqueue(point)
-        val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
-        Log.d(TAG, "TRACKER_QUEUE_INSERTED lat=${point.latitude} lng=${point.longitude} acc=${point.accuracy} queueSize=${store.getQueueSize()} shiftId=$shiftSuffix")
+        val shiftSuffix = currentShiftId?.takeLast(8)
+        Log.d(TAG, "TRACKER_QUEUE_INSERTED lat=${point.latitude} lng=${point.longitude} acc=${point.accuracy} queueSize=${store.getQueueSize(currentShiftId)} shiftId=$shiftSuffix")
 
         // Immediately trigger uploader (does not wait for 20 points)
         uploader.triggerUpload()

@@ -12,13 +12,14 @@ class TrackerLocationStore(context: Context) :
     companion object {
         private const val TAG = "TrackerLocationStore"
         private const val DATABASE_NAME = "tracker_telemetry_queue.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         private const val TABLE_QUEUE = "location_queue"
         const val MAX_QUEUE_SIZE = 1000
 
         // Column names
         private const val COL_ID = "id"
         private const val COL_CLIENT_LOCATION_ID = "client_location_id"
+        private const val COL_SHIFT_ID = "shift_id"
         private const val COL_LATITUDE = "latitude"
         private const val COL_LONGITUDE = "longitude"
         private const val COL_ACCURACY = "accuracy"
@@ -50,6 +51,7 @@ class TrackerLocationStore(context: Context) :
             CREATE TABLE $TABLE_QUEUE (
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_CLIENT_LOCATION_ID TEXT UNIQUE NOT NULL,
+                $COL_SHIFT_ID TEXT,
                 $COL_LATITUDE REAL NOT NULL,
                 $COL_LONGITUDE REAL NOT NULL,
                 $COL_ACCURACY REAL,
@@ -74,12 +76,18 @@ class TrackerLocationStore(context: Context) :
             ON $TABLE_QUEUE ($COL_NEXT_RETRY_AT, $COL_ID);
         """.trimIndent()
         db.execSQL(indexSql)
-        Log.i(TAG, "Initialized SQLite queue database: $DATABASE_NAME")
+        Log.i(TAG, "Initialized SQLite queue database: $DATABASE_NAME (version $DATABASE_VERSION)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_QUEUE")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_QUEUE ADD COLUMN $COL_SHIFT_ID TEXT")
+                Log.i(TAG, "Successfully migrated SQLite database to version 2 (added $COL_SHIFT_ID)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding $COL_SHIFT_ID column during upgrade: ${e.message}")
+            }
+        }
     }
 
     @Synchronized
@@ -87,6 +95,7 @@ class TrackerLocationStore(context: Context) :
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_CLIENT_LOCATION_ID, point.clientLocationId)
+            if (point.shiftId != null) put(COL_SHIFT_ID, point.shiftId) else putNull(COL_SHIFT_ID)
             put(COL_LATITUDE, point.latitude)
             put(COL_LONGITUDE, point.longitude)
             if (point.accuracy != null) put(COL_ACCURACY, point.accuracy) else putNull(COL_ACCURACY)
@@ -134,11 +143,22 @@ class TrackerLocationStore(context: Context) :
     }
 
     @Synchronized
-    fun getPendingBatch(limit: Int = 20, nowMs: Long = System.currentTimeMillis()): List<LocationPointRecord> {
+    fun getPendingBatch(
+        limit: Int = 20,
+        nowMs: Long = System.currentTimeMillis(),
+        forShiftId: String? = null
+    ): List<LocationPointRecord> {
         val db = readableDatabase
         val result = mutableListOf<LocationPointRecord>()
-        val selection = "$COL_NEXT_RETRY_AT <= ?"
-        val selectionArgs = arrayOf(nowMs.toString())
+        val selection: String
+        val selectionArgs: Array<String>
+        if (!forShiftId.isNullOrBlank()) {
+            selection = "$COL_NEXT_RETRY_AT <= ? AND ($COL_SHIFT_ID = ? OR $COL_SHIFT_ID IS NULL)"
+            selectionArgs = arrayOf(nowMs.toString(), forShiftId)
+        } else {
+            selection = "$COL_NEXT_RETRY_AT <= ?"
+            selectionArgs = arrayOf(nowMs.toString())
+        }
         val orderBy = "$COL_ID ASC"
 
         val cursor = db.query(
@@ -153,10 +173,12 @@ class TrackerLocationStore(context: Context) :
         )
 
         cursor.use {
+            val shiftIdCol = it.getColumnIndex(COL_SHIFT_ID)
             while (it.moveToNext()) {
                 val point = LocationPointRecord(
                     id = it.getLong(it.getColumnIndexOrThrow(COL_ID)),
                     clientLocationId = it.getString(it.getColumnIndexOrThrow(COL_CLIENT_LOCATION_ID)),
+                    shiftId = if (shiftIdCol != -1 && !it.isNull(shiftIdCol)) it.getString(shiftIdCol) else null,
                     latitude = it.getDouble(it.getColumnIndexOrThrow(COL_LATITUDE)),
                     longitude = it.getDouble(it.getColumnIndexOrThrow(COL_LONGITUDE)),
                     accuracy = if (it.isNull(it.getColumnIndexOrThrow(COL_ACCURACY))) null else it.getDouble(it.getColumnIndexOrThrow(COL_ACCURACY)),
@@ -177,6 +199,20 @@ class TrackerLocationStore(context: Context) :
             }
         }
         return result
+    }
+
+    @Synchronized
+    fun purgeStaleShiftRecords(activeShiftId: String): Int {
+        val db = writableDatabase
+        val deleted = db.delete(
+            TABLE_QUEUE,
+            "$COL_SHIFT_ID IS NOT NULL AND $COL_SHIFT_ID != ?",
+            arrayOf(activeShiftId)
+        )
+        if (deleted > 0) {
+            Log.i(TAG, "TRACKER_PURGED_STALE_SHIFTS deleted=$deleted activeShiftId=$activeShiftId")
+        }
+        return deleted
     }
 
     @Synchronized
@@ -237,13 +273,17 @@ class TrackerLocationStore(context: Context) :
     }
 
     @Synchronized
-    fun getQueueSize(): Int {
+    fun getQueueSize(forShiftId: String? = null): Int {
         val db = readableDatabase
-        return getQueueSizeInternal(db)
+        return getQueueSizeInternal(db, forShiftId)
     }
 
-    private fun getQueueSizeInternal(db: SQLiteDatabase): Int {
-        val cursor = db.rawQuery("SELECT COUNT(*) FROM $TABLE_QUEUE", null)
+    private fun getQueueSizeInternal(db: SQLiteDatabase, forShiftId: String? = null): Int {
+        val cursor = if (!forShiftId.isNullOrBlank()) {
+            db.rawQuery("SELECT COUNT(*) FROM $TABLE_QUEUE WHERE $COL_SHIFT_ID = ? OR $COL_SHIFT_ID IS NULL", arrayOf(forShiftId))
+        } else {
+            db.rawQuery("SELECT COUNT(*) FROM $TABLE_QUEUE", null)
+        }
         cursor.use {
             if (it.moveToFirst()) {
                 return it.getInt(0)

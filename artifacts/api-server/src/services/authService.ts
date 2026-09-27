@@ -743,9 +743,24 @@ export async function submitDriverLocation(
     throw createError(409, "SHIFT_NOT_ACTIVE", "Telemetry credential shift does not match active shift");
   }
 
+  // Shift queue isolation: reject telemetry points belonging to a different shift
+  if ((input as any).shiftId && (input as any).shiftId !== activeShift[0].id) {
+    throw createError(409, "SHIFT_MISMATCH", `Telemetry point belongs to shift ${(input as any).shiftId}, not active shift ${activeShift[0].id}`);
+  }
+
   const recordedAt = new Date(input.recordedAt);
   if (Number.isNaN(recordedAt.getTime())) {
     throw createError(400, "INVALID_TIMESTAMP", "recordedAt must be a valid timestamp");
+  }
+
+  const now = new Date();
+  const nowMs = now.getTime();
+  const recordedAtMs = recordedAt.getTime();
+  if (recordedAtMs > nowMs + 60 * 1000) {
+    throw createError(400, "INVALID_TIMESTAMP", "recordedAt cannot be more than 60 seconds in the future");
+  }
+  if (recordedAtMs < nowMs - 24 * 60 * 60 * 1000) {
+    throw createError(400, "INVALID_TIMESTAMP", "recordedAt cannot be older than 24 hours");
   }
 
   const normalizedClientId = input.clientLocationId?.trim() || null;
@@ -829,6 +844,7 @@ export async function submitDriverLocationBatch(
   userId: string,
   inputs: Array<{
     clientLocationId?: string | null;
+    shiftId?: string | null;
     latitude: number;
     longitude: number;
     accuracy?: number | null;
@@ -897,6 +913,7 @@ export async function submitDriverLocationBatch(
 
   // validate timestamps and coerce numbers
   const now = new Date();
+  const nowMs = now.getTime();
   const fullValues: any[] = [];
   const rowPlaceholders: string[] = [];
   let p = 1;
@@ -906,6 +923,19 @@ export async function submitDriverLocationBatch(
     if (Number.isNaN(recordedAt.getTime())) {
       throw createError(400, "INVALID_TIMESTAMP", "recordedAt must be a valid timestamp");
     }
+    const recordedAtMs = recordedAt.getTime();
+    if (recordedAtMs > nowMs + 60 * 1000) {
+      throw createError(400, "INVALID_TIMESTAMP", "recordedAt cannot be more than 60 seconds in the future");
+    }
+    if (recordedAtMs < nowMs - 24 * 60 * 60 * 1000) {
+      throw createError(400, "INVALID_TIMESTAMP", "recordedAt cannot be older than 24 hours");
+    }
+
+    // Shift queue isolation: Shift A queued points cannot upload as Shift B
+    if (it.shiftId && it.shiftId !== activeShift[0].id) {
+      throw createError(409, "SHIFT_MISMATCH", `Queued telemetry point belongs to shift ${it.shiftId}, not active shift ${activeShift[0].id}`);
+    }
+
     const receivedAt = new Date();
     const source = it.source?.trim() || 'mobile';
     const createdAt = receivedAt;

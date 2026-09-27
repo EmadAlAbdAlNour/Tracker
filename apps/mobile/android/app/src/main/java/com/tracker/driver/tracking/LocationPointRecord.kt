@@ -3,6 +3,7 @@ package com.tracker.driver.tracking
 data class LocationPointRecord(
     val id: Long = 0,
     val clientLocationId: String,
+    val shiftId: String? = null,
     val latitude: Double,
     val longitude: Double,
     val accuracy: Double? = null,

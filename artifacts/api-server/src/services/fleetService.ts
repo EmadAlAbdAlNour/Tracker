@@ -72,17 +72,203 @@ export interface LiveFleetResponse {
   drivers: FleetDriverLiveStatus[];
 }
 
+export const DEFAULT_RELIABLE_ACCURACY_METERS = 35;
+export const SEVERE_ACCURACY_THRESHOLD_METERS = 150;
+export const SPEED_ACCURACY_THRESHOLD_METERS = 25;
+export const MOVEMENT_SPEED_THRESHOLD_MPS = 1.5; // 5.4 km/h
+export const STOP_SPEED_THRESHOLD_MPS = 1.0;     // 3.6 km/h
+export const MOVEMENT_MIN_DISPLACEMENT_METERS = 10;
+export const GEOFENCE_EXIT_BUFFER_METERS = 30;
+export const CONSECUTIVE_ARRIVAL_SAMPLES = 2;
+export const CONSECUTIVE_DEPARTURE_SAMPLES = 2;
+export const CONSECUTIVE_MOVING_SAMPLES = 2;
+export const CONSECUTIVE_STOPPED_SAMPLES = 3;
+
+export interface OperationalPoint {
+  latitude: number | string;
+  longitude: number | string;
+  speed?: number | string | null;
+  accuracy?: number | string | null;
+  recorded_at?: string | Date | null;
+}
+
+export function evaluateOperationalHistory(params: {
+  points: OperationalPoint[];
+  restaurantSettings?: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    enabled: boolean;
+  } | null;
+  exitBufferMeters?: number;
+  initialRestaurantState?: "AT_RESTAURANT" | "OUTSIDE_RESTAURANT";
+  initialMovementState?: "MOVING" | "STOPPED";
+}): {
+  restaurantState: "AT_RESTAURANT" | "OUTSIDE_RESTAURANT";
+  movementState: "MOVING" | "STOPPED";
+  operationalStatus: "AT_RESTAURANT" | "MOVING" | "STOPPED";
+  isInsideGeofence: boolean;
+  distanceToRestaurantMeters: number | null;
+  reliablePointCount: number;
+} {
+  const {
+    points,
+    restaurantSettings,
+    exitBufferMeters = GEOFENCE_EXIT_BUFFER_METERS,
+    initialRestaurantState = "OUTSIDE_RESTAURANT",
+    initialMovementState = "STOPPED",
+  } = params;
+
+  let currentRestaurantState = initialRestaurantState;
+  let currentMovementState = initialMovementState;
+  let consecutiveInside = 0;
+  let consecutiveOutside = 0;
+  let consecutiveMoving = 0;
+  let consecutiveStopping = 0;
+  let lastReliablePoint: OperationalPoint | null = null;
+  let lastDistance: number | null = null;
+  let reliablePointCount = 0;
+
+  for (const p of points) {
+    const accuracy = p.accuracy != null ? Number(p.accuracy) : null;
+    const isReliable = accuracy == null || accuracy <= DEFAULT_RELIABLE_ACCURACY_METERS;
+
+    // Degraded points (accuracy > 35m) are not used to transition operational state
+    if (!isReliable) {
+      continue;
+    }
+
+    reliablePointCount++;
+    const speed = p.speed != null ? Number(p.speed) : 0;
+    const lat = Number(p.latitude);
+    const lon = Number(p.longitude);
+
+    // 1. Restaurant Geofence Evaluation (Independent of speed/movement)
+    if (restaurantSettings && restaurantSettings.enabled) {
+      const dist = calculateDistanceMeters(
+        lat,
+        lon,
+        restaurantSettings.latitude,
+        restaurantSettings.longitude,
+      );
+      lastDistance = Math.round(dist);
+
+      if (currentRestaurantState === "AT_RESTAURANT") {
+        // Departure requires 2 consecutive reliable samples outside (radius + 30m)
+        if (dist > restaurantSettings.radiusMeters + exitBufferMeters) {
+          consecutiveOutside++;
+          consecutiveInside = 0;
+          if (consecutiveOutside >= CONSECUTIVE_DEPARTURE_SAMPLES) {
+            currentRestaurantState = "OUTSIDE_RESTAURANT";
+          }
+        } else {
+          // Inside departure buffer or inside restaurant: retain AT_RESTAURANT
+          consecutiveOutside = 0;
+        }
+      } else {
+        // Arrival requires 2 consecutive reliable samples inside radius
+        if (dist <= restaurantSettings.radiusMeters) {
+          consecutiveInside++;
+          consecutiveOutside = 0;
+          if (consecutiveInside >= CONSECUTIVE_ARRIVAL_SAMPLES) {
+            currentRestaurantState = "AT_RESTAURANT";
+          }
+        } else {
+          consecutiveInside = 0;
+        }
+      }
+    }
+
+    // 2. Movement Evaluation (Independent of restaurant state)
+    let displacement = 0;
+    if (lastReliablePoint) {
+      displacement = calculateDistanceMeters(
+        Number(lastReliablePoint.latitude),
+        Number(lastReliablePoint.longitude),
+        lat,
+        lon,
+      );
+    }
+
+    if (currentMovementState === "STOPPED") {
+      // STOPPED -> MOVING requires 2 consecutive reliable samples with speed >= 1.5 m/s and displacement >= 10m
+      if (speed >= MOVEMENT_SPEED_THRESHOLD_MPS) {
+        consecutiveMoving++;
+        consecutiveStopping = 0;
+        if (
+          consecutiveMoving >= CONSECUTIVE_MOVING_SAMPLES &&
+          (displacement >= MOVEMENT_MIN_DISPLACEMENT_METERS || !lastReliablePoint)
+        ) {
+          currentMovementState = "MOVING";
+        }
+      } else {
+        consecutiveMoving = 0;
+      }
+    } else {
+      // MOVING -> STOPPED requires 3 consecutive reliable samples with speed < 1.0 m/s
+      if (speed < STOP_SPEED_THRESHOLD_MPS) {
+        consecutiveStopping++;
+        consecutiveMoving = 0;
+        if (consecutiveStopping >= CONSECUTIVE_STOPPED_SAMPLES) {
+          currentMovementState = "STOPPED";
+        }
+      } else {
+        consecutiveStopping = 0;
+      }
+    }
+
+    lastReliablePoint = p;
+  }
+
+  const isInsideGeofence = currentRestaurantState === "AT_RESTAURANT";
+  const operationalStatus: "AT_RESTAURANT" | "MOVING" | "STOPPED" =
+    isInsideGeofence ? "AT_RESTAURANT" : currentMovementState;
+
+  return {
+    restaurantState: currentRestaurantState,
+    movementState: currentMovementState,
+    operationalStatus,
+    isInsideGeofence,
+    distanceToRestaurantMeters: lastDistance,
+    reliablePointCount,
+  };
+}
+
 export function computeOperationalStatus(params: {
   hasActiveShift: boolean;
   isOnline: boolean;
-  isInsideGeofence: boolean;
-  location: { recorded_at?: string | Date | null; speed?: number | string | null } | null;
+  isInsideGeofence?: boolean;
+  location?: { recorded_at?: string | Date | null; speed?: number | string | null; accuracy?: number | string | null; latitude?: number | string; longitude?: number | string } | null;
+  recentLocations?: OperationalPoint[];
+  restaurantSettings?: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+    enabled: boolean;
+  } | null;
   now?: number;
 }): "AT_RESTAURANT" | "MOVING" | "STOPPED" | "OFFLINE" {
-  const { hasActiveShift, isOnline, isInsideGeofence, location, now = Date.now() } = params;
+  const {
+    hasActiveShift,
+    isOnline,
+    isInsideGeofence,
+    location,
+    recentLocations,
+    restaurantSettings,
+    now = Date.now(),
+  } = params;
 
   if (!hasActiveShift || !isOnline) {
     return "OFFLINE";
+  }
+
+  // If recent locations history is provided, run full history evaluation
+  if (recentLocations && recentLocations.length > 0) {
+    const historyResult = evaluateOperationalHistory({
+      points: recentLocations,
+      restaurantSettings,
+    });
+    return historyResult.operationalStatus;
   }
 
   if (!location) {
@@ -91,6 +277,12 @@ export function computeOperationalStatus(params: {
 
   if (isInsideGeofence) {
     return "AT_RESTAURANT";
+  }
+
+  const accuracy = location.accuracy != null ? Number(location.accuracy) : null;
+  // Degraded GPS (accuracy > 35m) cannot transition to MOVING
+  if (accuracy != null && accuracy > DEFAULT_RELIABLE_ACCURACY_METERS) {
+    return "STOPPED";
   }
 
   const locationAgeMs = location.recorded_at ? (now - new Date(location.recorded_at).getTime()) : Infinity;
@@ -177,24 +369,30 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
     deviceMap.set(dev.driverId, dev);
   }
 
-  // Fetch latest location per driver scoped strictly to active shifts
+  // Fetch up to 10 recent locations per driver scoped strictly to active shifts
   let latestLocations: any[] = [];
   try {
     const locResult = await db.execute(sql`
-      SELECT DISTINCT ON (lp.driver_id)
-        lp.id, lp.driver_id, lp.shift_id, lp.latitude, lp.longitude, lp.speed, lp.heading, lp.accuracy, lp.altitude, lp.recorded_at, lp.received_at
-      FROM location_points lp
-      INNER JOIN shifts s ON lp.driver_id = s.driver_id AND s.status = 'ACTIVE' AND (lp.shift_id = s.id OR (lp.shift_id IS NULL AND lp.recorded_at >= s.started_at))
-      ORDER BY lp.driver_id, lp.recorded_at DESC
+      SELECT lp.id, lp.driver_id, lp.shift_id, lp.latitude, lp.longitude, lp.speed, lp.heading, lp.accuracy, lp.altitude, lp.recorded_at, lp.received_at
+      FROM (
+        SELECT lp.id, lp.driver_id, lp.shift_id, lp.latitude, lp.longitude, lp.speed, lp.heading, lp.accuracy, lp.altitude, lp.recorded_at, lp.received_at,
+               ROW_NUMBER() OVER (PARTITION BY lp.driver_id ORDER BY lp.recorded_at DESC) as rn
+        FROM location_points lp
+        INNER JOIN shifts s ON lp.driver_id = s.driver_id AND s.status = 'ACTIVE' AND (lp.shift_id = s.id OR (lp.shift_id IS NULL AND lp.recorded_at >= s.started_at))
+      ) lp
+      WHERE lp.rn <= 10
+      ORDER BY lp.driver_id, lp.recorded_at ASC
     `);
     latestLocations = locResult.rows ?? [];
   } catch (e) {
     console.error("Error querying latest locations:", e);
   }
 
-  const locationMap = new Map<string, any>();
+  const driverRecentLocationsMap = new Map<string, any[]>();
   for (const loc of latestLocations) {
-    locationMap.set(loc.driver_id, loc);
+    const list = driverRecentLocationsMap.get(loc.driver_id) || [];
+    list.push(loc);
+    driverRecentLocationsMap.set(loc.driver_id, list);
   }
 
   const now = Date.now();
@@ -213,7 +411,8 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
   for (const row of driverRows) {
     const shift = shiftMap.get(row.driverId);
     const device = deviceMap.get(row.driverId);
-    const location = locationMap.get(row.driverId);
+    const recentLocations = driverRecentLocationsMap.get(row.driverId) || [];
+    const location = recentLocations.length > 0 ? recentLocations[recentLocations.length - 1] : null;
 
     const hasActiveShift = !!shift;
     if (hasActiveShift) activeShiftsCount++;
@@ -244,9 +443,7 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
       }).catch((err) => console.error("Fleet offline alert evaluation error:", err));
     }
 
-    let isInsideGeofence = false;
     let distanceToRestaurant: number | null = null;
-
     if (location && restaurantSettings.enabled) {
       distanceToRestaurant = Math.round(
         calculateDistanceMeters(
@@ -256,17 +453,19 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
           restaurantSettings.longitude,
         ),
       );
-      isInsideGeofence = distanceToRestaurant <= restaurantSettings.radiusMeters;
     }
 
-    // Operational status calculation with telemetry freshness check
+    // Operational status calculation with telemetry freshness and multi-sample history check
     const operationalStatus = computeOperationalStatus({
       hasActiveShift,
       isOnline,
-      isInsideGeofence,
       location,
+      recentLocations,
+      restaurantSettings,
       now,
     });
+
+    const isInsideGeofence = operationalStatus === "AT_RESTAURANT";
 
     if (operationalStatus === "OFFLINE") {
       offlineCount++;
@@ -301,12 +500,28 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
         }
       : null;
 
+    // Speed display suppression:
+    // Operational speed shown only when MOVING, fix is fresh, and accuracy <= 25m.
+    // Otherwise 0 km/h for STOPPED / AT_RESTAURANT or degraded GPS.
+    const locationAgeMs = location?.recorded_at ? (now - new Date(location.recorded_at).getTime()) : Infinity;
+    const isLocationFresh = locationAgeMs <= (5 * 60 * 1000);
+    const accuracy = location?.accuracy != null ? Number(location.accuracy) : null;
+    const isAccuracySpeedEligible = accuracy == null || accuracy <= SPEED_ACCURACY_THRESHOLD_METERS;
+
+    const isSpeedEligible =
+      operationalStatus === "MOVING" &&
+      isLocationFresh &&
+      isAccuracySpeedEligible &&
+      location?.speed != null;
+
+    const operationalSpeed = isSpeedEligible ? Number(location.speed) : 0;
+
     const locData = location
       ? {
           id: String(location.id),
           latitude: Number(location.latitude),
           longitude: Number(location.longitude),
-          speed: location.speed != null ? Number(location.speed) : null,
+          speed: (operationalStatus === "MOVING" && isSpeedEligible) ? operationalSpeed : 0,
           heading: location.heading != null ? Number(location.heading) : null,
           accuracy: location.accuracy != null ? Number(location.accuracy) : null,
           altitude: location.altitude != null ? Number(location.altitude) : null,

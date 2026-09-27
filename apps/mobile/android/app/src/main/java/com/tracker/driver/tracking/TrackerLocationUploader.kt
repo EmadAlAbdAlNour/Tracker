@@ -97,17 +97,17 @@ class TrackerLocationUploader(
     private fun processPendingQueue() {
         var keepGoing = true
         while (keepGoing) {
-            val batch = store.getPendingBatch(limit = MAX_BATCH_SIZE)
+            val batch = store.getPendingBatch(limit = MAX_BATCH_SIZE, forShiftId = shiftId)
             if (batch.isEmpty()) {
                 break
             }
             val success = sendBatch(batch)
-            keepGoing = success && store.getPendingBatch(limit = 1).isNotEmpty()
+            keepGoing = success && store.getPendingBatch(limit = 1, forShiftId = shiftId).isNotEmpty()
         }
     }
 
     private fun uploadSingleBatch(): Boolean {
-        val batch = store.getPendingBatch(limit = MAX_BATCH_SIZE)
+        val batch = store.getPendingBatch(limit = MAX_BATCH_SIZE, forShiftId = shiftId)
         if (batch.isEmpty()) return true
         return sendBatch(batch)
     }
@@ -122,7 +122,7 @@ class TrackerLocationUploader(
         val urlString = "${apiBaseUrl.trimEnd('/')}/api/drivers/me/location/batch"
         val batchIds = batch.map { it.clientLocationId }
 
-        Log.d(TAG, "TRACKER_UPLOAD_STARTED batchSize=${batch.size} shiftId=${shiftId?.takeLast(8)} queueSize=${store.getQueueSize()}")
+        Log.d(TAG, "TRACKER_UPLOAD_STARTED batchSize=${batch.size} shiftId=${shiftId?.takeLast(8)} queueSize=${store.getQueueSize(forShiftId = shiftId)}")
 
         var connection: HttpURLConnection? = null
         try {
@@ -161,7 +161,7 @@ class TrackerLocationUploader(
                     store.deleteConfirmed(batchIds)
                 }
 
-                val remaining = store.getQueueSize()
+                val remaining = store.getQueueSize(forShiftId = shiftId)
                 val acceptedCount = json.optInt("accepted", batch.size)
                 val dupCount = json.optInt("duplicates", 0)
 
@@ -299,6 +299,7 @@ class TrackerLocationUploader(
         for (item in batch) {
             val obj = JSONObject().apply {
                 put("clientLocationId", item.clientLocationId)
+                if (item.shiftId != null) put("shiftId", item.shiftId)
                 put("latitude", item.latitude)
                 put("longitude", item.longitude)
                 if (item.accuracy != null) put("accuracy", item.accuracy)

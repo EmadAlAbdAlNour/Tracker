@@ -51,6 +51,7 @@ export const deviceRegisterSchema = z.object({
 
 export const locationPointSchema = z.object({
   clientLocationId: z.string().trim().min(1).max(255).optional(),
+  shiftId: z.string().uuid().optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   accuracy: z.number().min(0).optional(),
