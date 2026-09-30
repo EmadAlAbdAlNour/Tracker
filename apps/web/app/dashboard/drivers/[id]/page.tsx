@@ -505,11 +505,28 @@ export default function DriverDetailsPage() {
                   ? 'bg-teal-500 border-teal-100'
                   : 'bg-amber-500 border-amber-100';
 
+                const getActivityTitle = (type: string, isRtlMode: boolean) => {
+                  switch (type) {
+                    case 'SHIFT_STARTED': return isRtlMode ? 'بدء الوردية' : 'Shift Started';
+                    case 'ARRIVED_AT_RESTAURANT': return isRtlMode ? 'الوصول إلى المطعم' : 'Arrived at Restaurant';
+                    case 'LEFT_RESTAURANT': return isRtlMode ? 'مغادرة المطعم' : 'Left Restaurant';
+                    case 'MOVING': return isRtlMode ? 'بدء الحركة' : 'Moving';
+                    case 'STOPPED': return isRtlMode ? 'توقف عن الحركة' : 'Stopped';
+                    case 'STOP_EXTENDED': return isRtlMode ? 'توقف مطول خارج المطعم' : 'Extended Stop';
+                    case 'GPS_DISABLED': return isRtlMode ? 'تعطيل GPS' : 'GPS Disabled';
+                    case 'BATTERY_CRITICAL': return isRtlMode ? 'بطارية حرجة' : 'Battery Critical';
+                    case 'SHIFT_ENDED': return isRtlMode ? 'انتهاء الوردية' : 'Shift Ended';
+                    default: return type;
+                  }
+                };
+
                 return (
                   <div key={event.id} className="relative ps-6">
                     <div className={`absolute -start-[9px] top-1 h-4 w-4 rounded-full border-2 ${dotColor}`} />
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                      <span className="text-xs font-bold text-slate-900">{event.title}</span>
+                      <span className="text-xs font-bold text-slate-900">
+                        {event.title || getActivityTitle(event.type, rtl)}
+                      </span>
                       <time className="text-[11px] font-mono text-slate-400">
                         {formatWesternNumber(new Date(event.timestamp).toLocaleTimeString('en-US'))} ({formatTimeAgo(event.timestamp)})
                       </time>

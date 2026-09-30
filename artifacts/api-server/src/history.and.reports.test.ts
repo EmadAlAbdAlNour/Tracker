@@ -191,9 +191,19 @@ describe("Historical Data Layer & Reporting", () => {
     expect(types).toContain("LEFT_RESTAURANT");
     expect(types).toContain("MOVING");
     expect(types).toContain("SHIFT_ENDED");
+
+    // F-04: Verify all activity events have non-empty title and description
+    for (const item of timeline.items) {
+      expect(item.title).toBeDefined();
+      expect(typeof item.title).toBe("string");
+      expect(item.title.length).toBeGreaterThan(0);
+      expect(item.description).toBeDefined();
+      expect(typeof item.description).toBe("string");
+      expect(item.description.length).toBeGreaterThan(0);
+    }
   });
 
-  it("generates operational reports aggregating shift durations and valid displacements", async () => {
+  it("generates operational reports aggregating shift durations and valid displacements without N+1 queries", async () => {
     vi.spyOn(settingsService, "getRestaurantSettings").mockResolvedValue(mockRestaurant as any);
 
     const shift = {
@@ -213,6 +223,7 @@ describe("Historical Data Layer & Reporting", () => {
 
     const points = [
       {
+        shiftId: "shift-100",
         latitude: 24.7136,
         longitude: 46.6753,
         accuracy: 10,
@@ -220,6 +231,7 @@ describe("Historical Data Layer & Reporting", () => {
         recordedAt: new Date("2026-09-30T08:00:00Z"),
       },
       {
+        shiftId: "shift-100",
         latitude: 24.7200,
         longitude: 46.6800,
         accuracy: 15,
@@ -228,8 +240,22 @@ describe("Historical Data Layer & Reporting", () => {
       },
     ];
 
+    let pointsQueryCount = 0;
     dbModule.db.select = ((fields: any) => ({
       from: (table: any) => {
+        if (table === dbModule.locationPointsTable) {
+          pointsQueryCount++;
+          return {
+            where: () => ({
+              orderBy: async () => points,
+            }),
+          };
+        }
+        if (table === dbModule.notificationsTable) {
+          return {
+            where: async () => [],
+          };
+        }
         const queryResult: any = Promise.resolve(
           table === dbModule.shiftsTable ? [shift] : [driverRow]
         );
@@ -250,5 +276,26 @@ describe("Historical Data Layer & Reporting", () => {
     expect(report).toBeDefined();
     expect(report.summary).toBeDefined();
     expect(report.summary.from).toBe("2026-09-30T00:00:00Z");
+
+    // F-06: Verify single batch points query executed
+    expect(pointsQueryCount).toBe(1);
+
+    // F-03: Verify canonical contract and compatibility aliases are both populated
+    expect(report.summary.movingDurationMinutes).toBeDefined();
+    expect(report.summary.totalMovingMinutes).toBeDefined();
+    expect(report.summary.stoppedDurationMinutes).toBeDefined();
+    expect(report.summary.totalStoppedMinutes).toBeDefined();
+    expect(report.summary.restaurantDurationMinutes).toBeDefined();
+    expect(report.summary.totalRestaurantMinutes).toBeDefined();
+    expect(report.summary.alertCount).toBeDefined();
+    expect(report.summary.totalAlerts).toBeDefined();
+    expect(report.drivers).toBeDefined();
+    expect(report.driverBreakdown).toBeDefined();
+    expect(report.drivers.length).toBe(1);
+    expect(report.drivers[0].driverName).toBe("Tariq Driver");
+    expect(report.drivers[0].movingDurationMinutes).toBeDefined();
+    expect(report.drivers[0].movingMinutes).toBeDefined();
+    expect(report.drivers[0].totalDurationMinutes).toBeDefined();
+    expect(report.drivers[0].durationMinutes).toBeDefined();
   });
 });

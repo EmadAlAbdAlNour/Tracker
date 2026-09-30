@@ -1778,19 +1778,19 @@ export function AdminHomeScreen({
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'وقت الحركة' : 'Moving'}</Text>
                             <Text style={[styles.metricVal, { color: colors.status.online }]}>
-                              {formatWesternNumber(Math.round((reportData.summary?.totalMovingMinutes ?? 0) / 60))}h
+                              {formatWesternNumber(Math.round(((reportData.summary?.movingDurationMinutes ?? reportData.summary?.totalMovingMinutes ?? 0)) / 60))}h
                             </Text>
                           </View>
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'وقت التوقف' : 'Stopped'}</Text>
                             <Text style={[styles.metricVal, { color: colors.status.warning }]}>
-                              {formatWesternNumber(Math.round((reportData.summary?.totalStoppedMinutes ?? 0) / 60))}h
+                              {formatWesternNumber(Math.round(((reportData.summary?.stoppedDurationMinutes ?? reportData.summary?.totalStoppedMinutes ?? 0)) / 60))}h
                             </Text>
                           </View>
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'التنبيهات' : 'Alerts'}</Text>
                             <Text style={[styles.metricVal, { color: colors.status.critical }]}>
-                              {formatWesternNumber(reportData.summary?.totalAlerts ?? 0)}
+                              {formatWesternNumber(reportData.summary?.alertCount ?? reportData.summary?.totalAlerts ?? 0)}
                             </Text>
                           </View>
                         </View>
@@ -1800,7 +1800,7 @@ export function AdminHomeScreen({
                           {rtl ? 'تفاصيل أداء السائقين' : 'Driver Breakdown'}
                         </Text>
 
-                        {(reportData.driverBreakdown ?? []).map((drv: any) => (
+                        {((reportData.drivers ?? reportData.driverBreakdown ?? [])).map((drv: any) => (
                           <View key={drv.driverId} style={styles.deviceCard}>
                             <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
                               <Text style={styles.deviceDriverName}>{drv.driverName}</Text>
@@ -1811,13 +1811,13 @@ export function AdminHomeScreen({
                                 {rtl ? 'الورديات:' : 'Shifts:'} {formatWesternNumber(drv.shiftCount)}
                               </Text>
                               <Text style={[styles.deviceMetaItem, { color: colors.primary, fontWeight: '700' }]}>
-                                {formatWesternNumber((drv.distanceMeters / 1000).toFixed(1))} km
+                                {formatWesternNumber((((drv.totalDistanceMeters ?? drv.distanceMeters ?? 0)) / 1000).toFixed(1))} km
                               </Text>
                               <Text style={styles.deviceMetaItem}>
-                                {rtl ? 'المدة:' : 'Duration:'} {formatWesternNumber(Math.round(drv.durationMinutes / 60))}h
+                                {rtl ? 'المدة:' : 'Duration:'} {formatWesternNumber(Math.round(((drv.totalDurationMinutes ?? drv.durationMinutes ?? 0)) / 60))}h
                               </Text>
                               <Text style={[styles.deviceMetaItem, { color: colors.status.critical }]}>
-                                {rtl ? 'التنبيهات:' : 'Alerts:'} {formatWesternNumber(drv.alertCount)}
+                                {rtl ? 'التنبيهات:' : 'Alerts:'} {formatWesternNumber(drv.alertCount ?? drv.alerts ?? 0)}
                               </Text>
                             </View>
                           </View>
@@ -1888,8 +1888,10 @@ export function AdminHomeScreen({
                               </Text>
                             </View>
                             <View style={[styles.deviceMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row', marginTop: 4 }]}>
-                              <Text style={styles.deviceDriverName}>{log.userName || 'System'}</Text>
-                              <Text style={styles.deviceIdText}>{log.entityType}</Text>
+                              <Text style={styles.deviceDriverName}>{log.actorEmail || log.userName || 'System'}</Text>
+                              <Text style={styles.deviceIdText}>
+                                {log.actorRole || log.userRole ? `${log.entityType} (${log.actorRole || log.userRole})` : log.entityType}
+                              </Text>
                             </View>
                             {log.details && (
                               <Text style={[styles.notificationMessage, { marginTop: 4, fontFamily: 'monospace', fontSize: 10 }]}>

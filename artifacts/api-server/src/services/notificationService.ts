@@ -210,6 +210,53 @@ export async function markNotificationAsRead(id: string, userId?: string) {
   return updated;
 }
 
+export async function resolveNotification(id: string, userId?: string) {
+  const [existing] = await db
+    .select()
+    .from(notificationsTable)
+    .where(eq(notificationsTable.id, id))
+    .limit(1);
+
+  if (!existing) {
+    return null;
+  }
+
+  const now = new Date();
+  let updatedRecord = existing;
+
+  if (!existing.resolved) {
+    const [updated] = await db
+      .update(notificationsTable)
+      .set({
+        resolved: true,
+        resolvedAt: now,
+        read: true,
+        readAt: existing.readAt ?? now,
+      })
+      .where(eq(notificationsTable.id, id))
+      .returning();
+    if (updated) {
+      updatedRecord = updated;
+    }
+  }
+
+  // Also sync alertStateTable if this alert is linked to a driver
+  if (existing.driverId && existing.type) {
+    try {
+      const { resolveAlertState } = await import("./alertService");
+      await resolveAlertState(existing.driverId, existing.type);
+    } catch (e) {
+      console.warn("Failed to sync resolveAlertState on notification resolution:", e);
+    }
+  }
+
+  return {
+    ...updatedRecord,
+    title: updatedRecord.titleAr || updatedRecord.titleEn || "System Alert",
+    message: updatedRecord.messageAr || updatedRecord.messageEn || "",
+  };
+}
+
 export async function markAllNotificationsAsRead(userId?: string) {
   if (userId) {
     try {

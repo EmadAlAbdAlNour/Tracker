@@ -63,3 +63,33 @@ All notable changes across the Tracker codebase during this final master pass ar
   - Added **Reports** subview: Date presets, summary metric cards, and driver performance breakdown.
   - Added **Audit Log** subview: Action badges, actor info, entity tags, timestamps, and payload inspection.
   - Enhanced **Notifications** subview: Added "Resolve" button for alerts.
+
+---
+
+## [Post-Audit Remediation Pass] — Forensic Audit Fixes (F-01 through F-07)
+
+### Finding F-01: Alert Resolution Endpoint
+- Mounted `PATCH /api/notifications/:id/resolve` in `artifacts/api-server/src/routes/notifications.ts`, guarded by `requireAuth` and `requireRole("ADMIN", "CALL_CENTER")`.
+- Implemented `resolveNotification(id, userId)` in `notificationService.ts` to set `resolved = true`, `resolvedAt = now`, `read = true`, `readAt = now`, and synchronize `alert_state` table resolution via `resolveAlertState()`.
+
+### Finding F-02: Web Force End Shift Route Mismatch
+- Fixed `apps/web/lib/api.ts` `forceEndDriverShift` path from `/shift/force-end` to canonical plural `/shifts/force-end`.
+- Aliased both `POST /:id/shifts/force-end` and `POST /:id/shift/force-end` in backend router `routes/drivers.ts` for total backward and forward compatibility.
+
+### Finding F-03 & F-06: Reports API Contract & N+1 Database Query Elimination
+- Replaced sequential per-shift location queries with a single batch `inArray(locationPointsTable.shiftId, shiftIds)` query in `reportService.ts`, grouping points in memory.
+- Standardized canonical response schema (`movingDurationMinutes`, `stoppedDurationMinutes`, `restaurantDurationMinutes`, `alertCount`, `drivers`) while populating backwards-compatibility aliases (`totalMovingMinutes`, `driverBreakdown`, etc.).
+- Updated `apps/web/lib/api.ts`, `apps/web/app/dashboard/reports/page.tsx`, and `apps/mobile/screens/AdminHomeScreen.tsx` to consume canonical schema with robust fallback.
+- Added telemetry gap threshold (`timeDiffSec <= 300`) to prevent gap interpolation.
+
+### Finding F-04: Driver Activity Timeline Event Titles and Descriptions
+- Updated `historyService.ts` (`getDriverActivityTimeline`) to populate localized `title` and `description` on all generated operational events (`SHIFT_STARTED`, `LEFT_RESTAURANT`, `ARRIVED_AT_RESTAURANT`, `MOVING`, `STOPPED`, `STOP_EXTENDED`, `GPS_DISABLED`, `BATTERY_CRITICAL`, `SHIFT_ENDED`).
+- Added client-side fallback title resolvers in `apps/web/app/dashboard/drivers/[id]/page.tsx` and `apps/mobile/components/DriverDetailModal.tsx`.
+
+### Finding F-05: Audit Log Actor Attribution in Clients
+- Updated `apps/web/lib/api.ts`, `apps/web/app/dashboard/audit/page.tsx`, and `apps/mobile/screens/AdminHomeScreen.tsx` to read `log.actorEmail` and `log.actorRole` (with fallback to `log.userName` and `log.userRole`).
+- Updated `auditService.ts` to return both `actorEmail`/`actorRole` and `userName`/`userRole` compatibility fields.
+
+### Finding F-07: Database Performance Indexes
+- Added `shifts_started_at_idx` index on `shifts(started_at)` and `notifications_resolved_idx` on `notifications(resolved)` in `lib/db/src/schema/index.ts`.
+- Generated Drizzle migration `0010_performance_indexes.sql` and registered entry in `_journal.json`.

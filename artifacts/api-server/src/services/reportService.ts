@@ -15,6 +15,12 @@ export interface DriverReportMetrics {
   stoppedDurationMinutes: number;
   restaurantDurationMinutes: number;
   alertCount: number;
+  durationMinutes?: number;
+  distanceMeters?: number;
+  movingMinutes?: number;
+  stoppedMinutes?: number;
+  restaurantMinutes?: number;
+  alerts?: number;
 }
 
 export interface OperationalReportResponse {
@@ -29,8 +35,13 @@ export interface OperationalReportResponse {
     stoppedDurationMinutes: number;
     restaurantDurationMinutes: number;
     alertCount: number;
+    totalMovingMinutes?: number;
+    totalStoppedMinutes?: number;
+    totalRestaurantMinutes?: number;
+    totalAlerts?: number;
   };
   drivers: DriverReportMetrics[];
+  driverBreakdown?: DriverReportMetrics[];
 }
 
 export async function generateOperationalReport(params: {
@@ -104,6 +115,46 @@ export async function generateOperationalReport(params: {
 
   // 4. Process each shift's duration, points, and metrics
   const shiftList = Array.isArray(shifts) ? shifts : [];
+  const shiftIds = shiftList.map((s) => s.id);
+
+  // Eliminate N+1 queries by batch-loading all location points for these shifts in a single query
+  const pointsByShiftId = new Map<
+    string,
+    Array<{
+      latitude: number;
+      longitude: number;
+      accuracy: number | null;
+      speed: number | null;
+      recordedAt: Date;
+    }>
+  >();
+
+  if (shiftIds.length > 0) {
+    const allPoints = await db
+      .select({
+        shiftId: locationPointsTable.shiftId,
+        latitude: locationPointsTable.latitude,
+        longitude: locationPointsTable.longitude,
+        accuracy: locationPointsTable.accuracy,
+        speed: locationPointsTable.speed,
+        recordedAt: locationPointsTable.recordedAt,
+      })
+      .from(locationPointsTable)
+      .where(inArray(locationPointsTable.shiftId, shiftIds))
+      .orderBy(asc(locationPointsTable.recordedAt));
+
+    const allPointsList = Array.isArray(allPoints) ? allPoints : [];
+    for (const pt of allPointsList) {
+      if (!pt.shiftId) continue;
+      let list = pointsByShiftId.get(pt.shiftId);
+      if (!list) {
+        list = [];
+        pointsByShiftId.set(pt.shiftId, list);
+      }
+      list.push(pt);
+    }
+  }
+
   for (const shift of shiftList) {
     const metrics = perDriver.get(shift.driverId);
     if (!metrics) continue;
@@ -115,18 +166,7 @@ export async function generateOperationalReport(params: {
     const durationMins = Math.max(0, Math.round((shiftEnd - shiftStart) / 60000));
     metrics.totalDurationMinutes += durationMins;
 
-    // Fetch reliable location points for this shift
-    const points = await db
-      .select({
-        latitude: locationPointsTable.latitude,
-        longitude: locationPointsTable.longitude,
-        accuracy: locationPointsTable.accuracy,
-        speed: locationPointsTable.speed,
-        recordedAt: locationPointsTable.recordedAt,
-      })
-      .from(locationPointsTable)
-      .where(eq(locationPointsTable.shiftId, shift.id))
-      .orderBy(asc(locationPointsTable.recordedAt));
+    const points = pointsByShiftId.get(shift.id) || [];
 
     let shiftDistance = 0;
     let prevReliable: (typeof points)[0] | null = null;
@@ -154,27 +194,30 @@ export async function generateOperationalReport(params: {
           shiftDistance += dist;
         }
 
-        const deltaMins = Math.min(10, Math.max(0, timeDiffSec / 60));
+        // Guard against telemetry gaps (> 5 min): do not interpolate fake durations across gaps
+        if (timeDiffSec > 0 && timeDiffSec <= 300) {
+          const deltaMins = timeDiffSec / 60;
 
-        // Evaluate location state
-        let isInsideRestaurant = false;
-        if (restaurantSettings && restaurantSettings.enabled) {
-          const restDist = calculateDistanceMeters(
-            p.latitude,
-            p.longitude,
-            restaurantSettings.latitude,
-            restaurantSettings.longitude,
-          );
-          isInsideRestaurant = restDist <= restaurantSettings.radiusMeters;
-        }
+          // Evaluate location state
+          let isInsideRestaurant = false;
+          if (restaurantSettings && restaurantSettings.enabled) {
+            const restDist = calculateDistanceMeters(
+              p.latitude,
+              p.longitude,
+              restaurantSettings.latitude,
+              restaurantSettings.longitude,
+            );
+            isInsideRestaurant = restDist <= restaurantSettings.radiusMeters;
+          }
 
-        const speed = p.speed != null ? Number(p.speed) : 0;
-        if (isInsideRestaurant) {
-          shiftRestaurantMins += deltaMins;
-        } else if (speed >= 1.5) {
-          shiftMovingMins += deltaMins;
-        } else {
-          shiftStoppedMins += deltaMins;
+          const speed = p.speed != null ? Number(p.speed) : 0;
+          if (isInsideRestaurant) {
+            shiftRestaurantMins += deltaMins;
+          } else if (speed >= 1.5) {
+            shiftMovingMins += deltaMins;
+          } else {
+            shiftStoppedMins += deltaMins;
+          }
         }
       }
 
@@ -211,8 +254,22 @@ export async function generateOperationalReport(params: {
     }
   }
 
-  // 6. Compute fleet summary
+  // 6. Compute fleet summary and populate compatibility aliases
   const driverMetricsArray = Array.from(perDriver.values());
+  for (const d of driverMetricsArray) {
+    d.durationMinutes = d.totalDurationMinutes;
+    d.distanceMeters = d.totalDistanceMeters;
+    d.movingMinutes = d.movingDurationMinutes;
+    d.stoppedMinutes = d.stoppedDurationMinutes;
+    d.restaurantMinutes = d.restaurantDurationMinutes;
+    d.alerts = d.alertCount;
+  }
+
+  const totalMoving = driverMetricsArray.reduce((acc, d) => acc + d.movingDurationMinutes, 0);
+  const totalStopped = driverMetricsArray.reduce((acc, d) => acc + d.stoppedDurationMinutes, 0);
+  const totalRestaurant = driverMetricsArray.reduce((acc, d) => acc + d.restaurantDurationMinutes, 0);
+  const totalAlerts = driverMetricsArray.reduce((acc, d) => acc + d.alertCount, 0);
+
   const summary = {
     from: params.from,
     to: params.to,
@@ -220,14 +277,20 @@ export async function generateOperationalReport(params: {
     totalShifts: shiftList.length,
     totalDurationMinutes: driverMetricsArray.reduce((acc, d) => acc + d.totalDurationMinutes, 0),
     totalDistanceMeters: driverMetricsArray.reduce((acc, d) => acc + d.totalDistanceMeters, 0),
-    movingDurationMinutes: driverMetricsArray.reduce((acc, d) => acc + d.movingDurationMinutes, 0),
-    stoppedDurationMinutes: driverMetricsArray.reduce((acc, d) => acc + d.stoppedDurationMinutes, 0),
-    restaurantDurationMinutes: driverMetricsArray.reduce((acc, d) => acc + d.restaurantDurationMinutes, 0),
-    alertCount: driverMetricsArray.reduce((acc, d) => acc + d.alertCount, 0),
+    movingDurationMinutes: totalMoving,
+    stoppedDurationMinutes: totalStopped,
+    restaurantDurationMinutes: totalRestaurant,
+    alertCount: totalAlerts,
+    // Backward compatibility aliases
+    totalMovingMinutes: totalMoving,
+    totalStoppedMinutes: totalStopped,
+    totalRestaurantMinutes: totalRestaurant,
+    totalAlerts: totalAlerts,
   };
 
   return {
     summary,
     drivers: driverMetricsArray,
+    driverBreakdown: driverMetricsArray,
   };
 }

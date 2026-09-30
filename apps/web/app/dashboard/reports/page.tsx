@@ -81,7 +81,7 @@ export default function ReportsPage() {
   }, [isAuthenticated, preset]);
 
   const summary = data?.summary;
-  const drivers = data?.driverBreakdown || [];
+  const drivers = data?.drivers || data?.driverBreakdown || [];
 
   const formatHours = (minutes: number) => {
     const hrs = Math.floor(minutes / 60);
@@ -216,7 +216,7 @@ export default function ReportsPage() {
                 <TrendingUp className="h-4 w-4 text-teal-600" />
               </div>
               <div className="text-2xl font-bold text-slate-900 font-mono">
-                {formatHours(summary.totalMovingMinutes)}
+                {formatHours(summary.movingDurationMinutes ?? summary.totalMovingMinutes ?? 0)}
               </div>
             </div>
 
@@ -226,7 +226,7 @@ export default function ReportsPage() {
                 <MapPin className="h-4 w-4 text-amber-600" />
               </div>
               <div className="text-2xl font-bold text-slate-900 font-mono">
-                {formatHours(summary.totalRestaurantMinutes)}
+                {formatHours(summary.restaurantDurationMinutes ?? summary.totalRestaurantMinutes ?? 0)}
               </div>
             </div>
 
@@ -236,7 +236,7 @@ export default function ReportsPage() {
                 <AlertTriangle className="h-4 w-4 text-rose-600" />
               </div>
               <div className="text-2xl font-bold text-slate-900 font-mono">
-                {formatWesternNumber(summary.totalAlerts)}
+                {formatWesternNumber(summary.alertCount ?? summary.totalAlerts ?? 0)}
               </div>
             </div>
           </div>
@@ -287,27 +287,27 @@ export default function ReportsPage() {
                         </td>
                         <td className="px-5 py-3 font-mono">{formatWesternNumber(drv.shiftCount)}</td>
                         <td className="px-5 py-3 font-mono font-semibold text-blue-700">
-                          {formatKm(drv.distanceMeters)}
+                          {formatKm(drv.totalDistanceMeters ?? drv.distanceMeters ?? 0)}
                         </td>
-                        <td className="px-5 py-3 font-mono">{formatHours(drv.durationMinutes)}</td>
+                        <td className="px-5 py-3 font-mono">{formatHours(drv.totalDurationMinutes ?? drv.durationMinutes ?? 0)}</td>
                         <td className="px-5 py-3 font-mono text-emerald-700">
-                          {formatHours(drv.movingMinutes)}
+                          {formatHours(drv.movingDurationMinutes ?? drv.movingMinutes ?? 0)}
                         </td>
                         <td className="px-5 py-3 font-mono text-amber-700">
-                          {formatHours(drv.stoppedMinutes)}
+                          {formatHours(drv.stoppedDurationMinutes ?? drv.stoppedMinutes ?? 0)}
                         </td>
                         <td className="px-5 py-3 font-mono text-slate-600">
-                          {formatHours(drv.restaurantMinutes)}
+                          {formatHours(drv.restaurantDurationMinutes ?? drv.restaurantMinutes ?? 0)}
                         </td>
                         <td className="px-5 py-3">
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              drv.alertCount > 0
+                              (drv.alertCount ?? drv.alerts ?? 0) > 0
                                 ? 'bg-rose-100 text-rose-800'
                                 : 'bg-slate-100 text-slate-600'
                             }`}
                           >
-                            {formatWesternNumber(drv.alertCount)}
+                            {formatWesternNumber(drv.alertCount ?? drv.alerts ?? 0)}
                           </span>
                         </td>
                         <td className="px-5 py-3 text-end">

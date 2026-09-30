@@ -507,11 +507,23 @@ export function DriverDetailModal({
                     const isEnd = act.type === 'SHIFT_ENDED';
                     const dotColor = isAlert ? colors.status.critical : isStart ? colors.status.online : isEnd ? colors.text.muted : colors.primary;
 
+                    const title = act.title || (
+                      act.type === 'SHIFT_STARTED' ? (rtl ? 'بدء الوردية' : 'Shift Started') :
+                      act.type === 'ARRIVED_AT_RESTAURANT' ? (rtl ? 'الوصول إلى المطعم' : 'Arrived at Restaurant') :
+                      act.type === 'LEFT_RESTAURANT' ? (rtl ? 'مغادرة المطعم' : 'Left Restaurant') :
+                      act.type === 'MOVING' ? (rtl ? 'بدء الحركة' : 'Moving') :
+                      act.type === 'STOPPED' ? (rtl ? 'توقف عن الحركة' : 'Stopped') :
+                      act.type === 'STOP_EXTENDED' ? (rtl ? 'توقف مطول خارج المطعم' : 'Extended Stop') :
+                      act.type === 'GPS_DISABLED' ? (rtl ? 'تعطيل GPS' : 'GPS Disabled') :
+                      act.type === 'BATTERY_CRITICAL' ? (rtl ? 'بطارية حرجة' : 'Battery Critical') :
+                      act.type === 'SHIFT_ENDED' ? (rtl ? 'انتهاء الوردية' : 'Shift Ended') : act.type
+                    );
+
                     return (
                       <View key={act.id} style={[styles.activityItem, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
                         <View style={[styles.activityDot, { backgroundColor: dotColor }]} />
                         <View style={{ flex: 1, marginHorizontal: 8, alignItems: rtl ? 'flex-end' : 'flex-start' }}>
-                          <Text style={styles.activityTitle}>{act.title}</Text>
+                          <Text style={styles.activityTitle}>{title}</Text>
                           {act.description ? <Text style={styles.activityDesc}>{act.description}</Text> : null}
                           <Text style={styles.activityTime}>
                             {formatWesternNumber(new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}

@@ -32,11 +32,14 @@ vi.mock('@workspace/db', () => {
   };
 });
 
-import { listNotifications, markNotificationAsRead, markAllNotificationsAsRead } from './services/notificationService';
+import { listNotifications, markNotificationAsRead, markAllNotificationsAsRead, resolveNotification } from './services/notificationService';
 
 describe('User-Scoped Notifications Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSelect.mockReset();
+    mockInsert.mockReset();
+    mockUpdate.mockReset();
   });
 
   it('lists notifications scoped to a user and reflects read status per user', async () => {
@@ -221,6 +224,56 @@ describe('User-Scoped Notifications Service', () => {
     const res = await listNotifications({ page: 1, limit: 10, driverId }, userId);
     expect(res.items.length).toBe(0);
     expect(res.total).toBe(0);
+  });
+
+  it('resolves an active notification and updates resolved status and timestamps', async () => {
+    const notifId = 'notif-alert-123';
+    const fakeNotif = {
+      id: notifId,
+      driverId: 'driver-1',
+      type: 'STOP_EXTENDED',
+      resolved: false,
+      resolvedAt: null,
+      read: false,
+      readAt: null,
+      titleAr: 'توقف مطول',
+      messageAr: 'تجاوز الحد',
+    };
+
+    mockSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([fakeNotif]),
+    });
+
+    const updateChain: any = {};
+    updateChain.set = vi.fn().mockReturnValue(updateChain);
+    updateChain.where = vi.fn().mockReturnValue(updateChain);
+    updateChain.returning = vi.fn().mockResolvedValue([{
+      ...fakeNotif,
+      resolved: true,
+      resolvedAt: new Date(),
+      read: true,
+      readAt: new Date(),
+    }]);
+    mockUpdate.mockReturnValueOnce(updateChain);
+
+    const res = await resolveNotification(notifId, 'user-admin-1');
+    expect(res).not.toBeNull();
+    expect(res?.resolved).toBe(true);
+    expect(res?.read).toBe(true);
+    expect(res?.title).toBe('توقف مطول');
+  });
+
+  it('returns null when attempting to resolve a non-existent notification', async () => {
+    mockSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([]),
+    });
+
+    const res = await resolveNotification('non-existent-id');
+    expect(res).toBeNull();
   });
 });
 

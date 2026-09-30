@@ -172,6 +172,8 @@ erDiagram
     {
       "id": "act-1",
       "type": "SHIFT_STARTED",
+      "title": "بدء الوردية",
+      "description": "بدء وردية العمل بنجاح",
       "timestamp": "2026-09-30T10:00:00.000Z",
       "latitude": 24.7136,
       "longitude": 46.6753,
@@ -180,6 +182,8 @@ erDiagram
     {
       "id": "act-2",
       "type": "LEFT_RESTAURANT",
+      "title": "مغادرة المطعم",
+      "description": "خرج السائق من نطاق المطعم (210 متر)",
       "timestamp": "2026-09-30T10:15:00.000Z",
       "latitude": 24.7155,
       "longitude": 46.6780,
@@ -188,6 +192,8 @@ erDiagram
     {
       "id": "act-3",
       "type": "MOVING",
+      "title": "بدء الحركة",
+      "description": "السرعة الحالية: 28 كم/س",
       "timestamp": "2026-09-30T10:16:00.000Z",
       "latitude": 24.7160,
       "longitude": 46.6790,
@@ -196,10 +202,12 @@ erDiagram
     {
       "id": "act-4",
       "type": "STOPPED",
+      "title": "توقف عن الحركة",
+      "description": "متوقف خارج نطاق المطعم",
       "timestamp": "2026-09-30T10:30:00.000Z",
       "latitude": 24.7300,
       "longitude": 46.6900,
-      "metadata": {}
+      "metadata": { "insideRestaurant": false }
     }
   ]
 }
@@ -215,26 +223,51 @@ erDiagram
   - `from`: ISO timestamp string (required)
   - `to`: ISO timestamp string (required)
   - `driverId`: string UUID (optional)
-- **Response**:
+- **Response** (includes canonical schema and client compatibility aliases):
 ```json
 {
   "summary": {
     "from": "2026-09-01T00:00:00.000Z",
     "to": "2026-09-30T23:59:59.000Z",
+    "totalDrivers": 1,
     "totalShifts": 42,
     "totalDurationMinutes": 18450,
     "totalDistanceMeters": 352100,
     "movingDurationMinutes": 9800,
     "stoppedDurationMinutes": 4200,
     "restaurantDurationMinutes": 4450,
-    "alertCount": 8
+    "alertCount": 8,
+    "totalMovingMinutes": 9800,
+    "totalStoppedMinutes": 4200,
+    "totalRestaurantMinutes": 4450,
+    "totalAlerts": 8
   },
   "drivers": [
     {
       "driverId": "uuid",
       "driverName": "Ahmed",
       "employeeId": "DRV-101",
-      "totalShifts": 20,
+      "shiftCount": 20,
+      "totalDurationMinutes": 9000,
+      "totalDistanceMeters": 180000,
+      "movingDurationMinutes": 5000,
+      "stoppedDurationMinutes": 2000,
+      "restaurantDurationMinutes": 2000,
+      "alertCount": 3,
+      "durationMinutes": 9000,
+      "distanceMeters": 180000,
+      "movingMinutes": 5000,
+      "stoppedMinutes": 2000,
+      "restaurantMinutes": 2000,
+      "alerts": 3
+    }
+  ],
+  "driverBreakdown": [
+    {
+      "driverId": "uuid",
+      "driverName": "Ahmed",
+      "employeeId": "DRV-101",
+      "shiftCount": 20,
       "totalDurationMinutes": 9000,
       "totalDistanceMeters": 180000,
       "movingDurationMinutes": 5000,
@@ -248,7 +281,49 @@ erDiagram
 
 ---
 
-### 3.3 Centralized Audit Logs API
+### 3.3 Shift Operations API
+
+#### `POST /api/drivers/:id/shifts/force-end` (Alias: `/api/drivers/:id/shift/force-end`)
+- **Auth**: `requireAuth`, `requireRole('ADMIN')`.
+- **Description**: Terminates active shift regardless of driver geofence proximity and records an audit log entry.
+- **Response**:
+```json
+{
+  "shift": {
+    "id": "uuid",
+    "driverId": "uuid",
+    "status": "COMPLETED",
+    "startedAt": "2026-09-30T10:00:00.000Z",
+    "endedAt": "2026-09-30T18:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 3.4 Alert Center & Notifications API
+
+#### `PATCH /api/notifications/:id/resolve`
+- **Auth**: `requireAuth`, `requireRole('ADMIN', 'CALL_CENTER')`.
+- **Description**: Marks notification as resolved and read, records resolution timestamp, and clears associated alert state in `alert_state` table.
+- **Response**:
+```json
+{
+  "notification": {
+    "id": "uuid",
+    "type": "STOP_EXTENDED",
+    "severity": "WARNING",
+    "resolved": true,
+    "resolvedAt": "2026-09-30T19:30:00.000Z",
+    "read": true,
+    "readAt": "2026-09-30T19:30:00.000Z"
+  }
+}
+```
+
+---
+
+### 3.5 Centralized Audit Logs API
 
 #### `GET /api/audit-logs`
 - **Auth**: `requireAuth`, `requireRole('ADMIN')`.

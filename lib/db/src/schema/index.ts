@@ -98,6 +98,7 @@ export const shiftsTable = pgTable(
   (table) => ({
     driverIdx: index("shifts_driver_idx").on(table.driverId),
     statusIdx: index("shifts_status_idx").on(table.status),
+    startedAtIdx: index("shifts_started_at_idx").on(table.startedAt),
     activeShiftPerDriver: uniqueIndex("shifts_driver_active_unique")
       .on(table.driverId)
       .where(sql`"status" = 'ACTIVE'`),
@@ -218,6 +219,7 @@ export const notificationsTable = pgTable(
     driverIdx: index("notifications_driver_idx").on(table.driverId),
     typeIdx: index("notifications_type_idx").on(table.type),
     readIdx: index("notifications_read_idx").on(table.read),
+    resolvedIdx: index("notifications_resolved_idx").on(table.resolved),
     createdIdx: index("notifications_created_at_idx").on(table.createdAt.desc()),
   }),
 );

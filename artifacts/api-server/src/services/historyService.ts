@@ -32,6 +32,8 @@ export interface ActivityEvent {
     | "BATTERY_CRITICAL"
     | "SHIFT_ENDED";
   timestamp: string;
+  title: string;
+  description: string;
   latitude: number | null;
   longitude: number | null;
   metadata?: Record<string, any>;
@@ -193,6 +195,8 @@ export async function getDriverActivityTimeline(
     driverId,
     shiftId: shift.id,
     type: "SHIFT_STARTED",
+    title: "بدء الوردية",
+    description: "بدء وردية العمل بنجاح",
     timestamp: shift.startedAt.toISOString(),
     latitude: firstPoint ? firstPoint.latitude : null,
     longitude: firstPoint ? firstPoint.longitude : null,
@@ -241,6 +245,8 @@ export async function getDriverActivityTimeline(
               driverId,
               shiftId: shift.id,
               type: "LEFT_RESTAURANT",
+              title: "مغادرة المطعم",
+              description: `خرج السائق من نطاق المطعم (${Math.round(dist)} متر)`,
               timestamp: recordedAt.toISOString(),
               latitude: lat,
               longitude: lon,
@@ -261,6 +267,8 @@ export async function getDriverActivityTimeline(
               driverId,
               shiftId: shift.id,
               type: "ARRIVED_AT_RESTAURANT",
+              title: "الوصول إلى المطعم",
+              description: `وصل السائق إلى نطاق المطعم (${Math.round(dist)} متر)`,
               timestamp: recordedAt.toISOString(),
               latitude: lat,
               longitude: lon,
@@ -291,15 +299,18 @@ export async function getDriverActivityTimeline(
         if (consecutiveMoving >= 2 && (displacement >= 10 || !lastReliablePoint)) {
           currentMovementState = "MOVING";
           stoppedSince = null;
+          const speedKmh = Math.round(speed * 3.6);
           events.push({
             id: `moving-${p.id}`,
             driverId,
             shiftId: shift.id,
             type: "MOVING",
+            title: "بدء الحركة",
+            description: `السرعة الحالية: ${speedKmh} كم/س`,
             timestamp: recordedAt.toISOString(),
             latitude: lat,
             longitude: lon,
-            metadata: { speedKmh: Math.round(speed * 3.6) },
+            metadata: { speedKmh },
           });
         }
       } else {
@@ -317,6 +328,8 @@ export async function getDriverActivityTimeline(
             driverId,
             shiftId: shift.id,
             type: "STOPPED",
+            title: "توقف عن الحركة",
+            description: currentRestaurantState === "AT_RESTAURANT" ? "متوقف داخل نطاق المطعم" : "متوقف خارج نطاق المطعم",
             timestamp: recordedAt.toISOString(),
             latitude: lat,
             longitude: lon,
@@ -349,6 +362,8 @@ export async function getDriverActivityTimeline(
         driverId,
         shiftId: shift.id,
         type: "STOP_EXTENDED",
+        title: notif.titleAr || "توقف مطول خارج المطعم",
+        description: notif.messageAr || "تجاوز السائق الحد الأقصى المسموح به للتوقف",
         timestamp: notif.createdAt.toISOString(),
         latitude: lat,
         longitude: lon,
@@ -360,10 +375,12 @@ export async function getDriverActivityTimeline(
         driverId,
         shiftId: shift.id,
         type: "GPS_DISABLED",
+        title: notif.titleAr || "تعطيل نظام تحديد المواقع (GPS)",
+        description: notif.messageAr || "تم تعطيل خدمة الموقع على جهاز السائق",
         timestamp: notif.createdAt.toISOString(),
         latitude: null,
         longitude: null,
-        metadata: { title: notif.titleAr },
+        metadata: { title: notif.titleAr, message: notif.messageAr },
       });
     } else if (notif.type === "BATTERY_CRITICAL") {
       events.push({
@@ -371,10 +388,12 @@ export async function getDriverActivityTimeline(
         driverId,
         shiftId: shift.id,
         type: "BATTERY_CRITICAL",
+        title: notif.titleAr || "مستوى البطارية حرج",
+        description: notif.messageAr || "مستوى شحن بطارية جهاز السائق أقل من الحد المسموح",
         timestamp: notif.createdAt.toISOString(),
         latitude: null,
         longitude: null,
-        metadata: { title: notif.titleAr },
+        metadata: { title: notif.titleAr, message: notif.messageAr },
       });
     }
   }
@@ -382,18 +401,21 @@ export async function getDriverActivityTimeline(
   // D. Final event: Shift Ended (if completed)
   if (shift.status === "COMPLETED" && shift.endedAt) {
     const lastPoint = points[points.length - 1];
+    const durationMins = Math.round(
+      (shift.endedAt.getTime() - shift.startedAt.getTime()) / 60000,
+    );
     events.push({
       id: `shift-end-${shift.id}`,
       driverId,
       shiftId: shift.id,
       type: "SHIFT_ENDED",
+      title: "انتهاء الوردية",
+      description: `اكتملت وردية العمل — المدة الإجمالية: ${durationMins} دقيقة`,
       timestamp: shift.endedAt.toISOString(),
       latitude: lastPoint ? lastPoint.latitude : null,
       longitude: lastPoint ? lastPoint.longitude : null,
       metadata: {
-        durationMinutes: Math.round(
-          (shift.endedAt.getTime() - shift.startedAt.getTime()) / 60000,
-        ),
+        durationMinutes: durationMins,
       },
     });
   }

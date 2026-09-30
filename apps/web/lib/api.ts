@@ -222,6 +222,8 @@ export type NotificationItem = {
 
 export type ActivityEvent = {
   id: string;
+  driverId?: string;
+  shiftId?: string | null;
   type:
     | 'SHIFT_STARTED'
     | 'ARRIVED_AT_RESTAURANT'
@@ -229,12 +231,17 @@ export type ActivityEvent = {
     | 'MOVING'
     | 'STOPPED'
     | 'STOP_EXTENDED'
+    | 'GPS_DISABLED'
+    | 'BATTERY_CRITICAL'
     | 'SHIFT_ENDED'
     | 'ALERT';
   timestamp: string;
   title: string;
   description?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   details?: Record<string, any>;
+  metadata?: Record<string, any>;
 };
 
 export type DriverActivityResponse = {
@@ -247,15 +254,38 @@ export type ReportSummaryResponse = {
   summary: {
     from: string;
     to: string;
+    totalDrivers?: number;
     totalShifts: number;
     totalDurationMinutes: number;
     totalDistanceMeters: number;
-    totalMovingMinutes: number;
-    totalStoppedMinutes: number;
-    totalRestaurantMinutes: number;
-    totalAlerts: number;
+    movingDurationMinutes?: number;
+    stoppedDurationMinutes?: number;
+    restaurantDurationMinutes?: number;
+    alertCount?: number;
+    totalMovingMinutes?: number;
+    totalStoppedMinutes?: number;
+    totalRestaurantMinutes?: number;
+    totalAlerts?: number;
   };
-  driverBreakdown: Array<{
+  drivers?: Array<{
+    driverId: string;
+    driverName: string;
+    employeeId: string;
+    shiftCount: number;
+    totalDurationMinutes: number;
+    totalDistanceMeters: number;
+    movingDurationMinutes: number;
+    stoppedDurationMinutes: number;
+    restaurantDurationMinutes: number;
+    alertCount: number;
+    durationMinutes?: number;
+    distanceMeters?: number;
+    movingMinutes?: number;
+    stoppedMinutes?: number;
+    restaurantMinutes?: number;
+    alerts?: number;
+  }>;
+  driverBreakdown?: Array<{
     driverId: string;
     driverName: string;
     employeeId: string;
@@ -266,20 +296,29 @@ export type ReportSummaryResponse = {
     stoppedMinutes: number;
     restaurantMinutes: number;
     alertCount: number;
+    totalDurationMinutes?: number;
+    totalDistanceMeters?: number;
+    movingDurationMinutes?: number;
+    stoppedDurationMinutes?: number;
+    restaurantDurationMinutes?: number;
+    alerts?: number;
   }>;
 };
 
 export type AuditLogRecord = {
   id: string;
   action: string;
-  userId: string | null;
-  userName: string | null;
-  userRole: string | null;
+  actorId?: string | null;
+  actorEmail?: string | null;
+  actorRole?: string | null;
+  userId?: string | null;
+  userName?: string | null;
+  userRole?: string | null;
   entityType: string;
   entityId: string | null;
   details: Record<string, any> | null;
   ipAddress: string | null;
-  userAgent: string | null;
+  userAgent?: string | null;
   createdAt: string;
 };
 
@@ -532,7 +571,7 @@ export async function getDriverActivity(
 }
 
 export async function forceEndDriverShift(driverId: string): Promise<{ success: boolean; shiftId: string }> {
-  return apiRequest<{ success: boolean; shiftId: string }>(`/api/drivers/${driverId}/shift/force-end`, {
+  return apiRequest<{ success: boolean; shiftId: string }>(`/api/drivers/${driverId}/shifts/force-end`, {
     method: 'POST',
   });
 }

@@ -119,6 +119,8 @@ export async function listAuditLogs(params: ListAuditParams = {}) {
 
   const parsedItems = items.map((item) => ({
     ...item,
+    userName: item.actorEmail,
+    userRole: item.actorRole,
     details: item.details ? (() => {
       try { return JSON.parse(item.details); } catch { return item.details; }
     })() : null,

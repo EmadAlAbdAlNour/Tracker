@@ -102,6 +102,10 @@ describe("Centralized Audit Log Service", () => {
     const result = await auditService.listAuditLogs({ page: 1, limit: 10 });
     expect(result.items.length).toBe(1);
     expect(result.items[0].action).toBe("USER_CREATED");
+    expect(result.items[0].actorEmail).toBe("admin@tracker.local");
+    expect(result.items[0].actorRole).toBe("ADMIN");
+    expect((result.items[0] as any).userName).toBe("admin@tracker.local");
+    expect((result.items[0] as any).userRole).toBe("ADMIN");
     expect(result.items[0].details).toEqual({ email: "new@tracker.local" });
   });
 });

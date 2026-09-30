@@ -159,7 +159,7 @@ router.post("/me/shifts/start", requireAuth, requireRole("DRIVER"), async (req: 
 });
 
 // ADMIN-only: Force end an active driver shift (even if driver is outside geofence)
-router.post("/:id/shifts/force-end", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
+router.post(["/:id/shifts/force-end", "/:id/shift/force-end"], requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const shift = await forceEndDriverShift(driverId);

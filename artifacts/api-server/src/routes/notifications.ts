@@ -5,6 +5,7 @@ import { createError } from "../lib/errors";
 import {
   listNotifications,
   markNotificationAsRead,
+  resolveNotification,
   markAllNotificationsAsRead,
 } from "../services/notificationService";
 import { getDriverByUserId } from "../lib/auth";
@@ -55,6 +56,20 @@ router.patch("/:id/read", requireAuth, requireRole("ADMIN", "CALL_CENTER", "DRIV
       return;
     }
     res.status(200).json({ notification: { ...notification, read: true } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id/resolve", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const notification = await resolveNotification(id, req.user!.id);
+    if (!notification) {
+      next(createError(404, "NOT_FOUND", "Notification not found"));
+      return;
+    }
+    res.status(200).json({ success: true, notification });
   } catch (error) {
     next(error);
   }

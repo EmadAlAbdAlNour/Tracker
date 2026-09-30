@@ -184,8 +184,8 @@ export default function AuditLogPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <div className="font-semibold text-slate-900">{log.userName || 'System'}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{log.userRole || '—'}</div>
+                      <div className="font-semibold text-slate-900">{log.actorEmail || log.userName || 'System'}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">{log.actorRole || log.userRole || '—'}</div>
                     </td>
                     <td className="px-5 py-3 font-mono">
                       <span className="text-slate-500 font-semibold">{log.entityType}</span>
