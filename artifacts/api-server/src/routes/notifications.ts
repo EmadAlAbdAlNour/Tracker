@@ -16,7 +16,11 @@ const notificationQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   unreadOnly: z.coerce.boolean().optional(),
   type: z.string().optional(),
+  severity: z.enum(["INFO", "WARNING", "CRITICAL"]).optional(),
+  resolved: z.coerce.boolean().optional(),
   driverId: z.string().uuid().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
 });
 
 router.get("/", requireAuth, requireRole("ADMIN", "CALL_CENTER", "DRIVER"), async (req: AuthenticatedRequest, res, next) => {

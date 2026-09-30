@@ -108,12 +108,28 @@ android {
     def vCode = (findProperty('versionCode') ?: System.getenv('VERSION_CODE') ?: defaultVersionCode) as Integer
     def vName = (findProperty('versionName') ?: System.getenv('VERSION_NAME') ?: defaultVersionName).toString()
 
+    def gitSha = ""
+    try {
+        gitSha = providers.exec {
+            workingDir(rootDir)
+            commandLine("git", "rev-parse", "HEAD")
+        }.standardOutput.asText.get().trim()
+    } catch (Exception e) {
+        println "Warning: Could not get git SHA: ${e.message}"
+        gitSha = "UNKNOWN"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId 'com.tracker.driver'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode vCode
         versionName vName
+        buildConfigField "String", "GIT_SHA", "\"${gitSha}\""
     }
     signingConfigs {
         debug {

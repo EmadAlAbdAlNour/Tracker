@@ -45,10 +45,22 @@ router.get("/restaurant", requireAuth, requireRole("ADMIN", "CALL_CENTER"), asyn
   }
 });
 
+import { recordAuditEvent } from "../services/auditService";
+
 router.put("/restaurant", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = restaurantUpdateSchema.parse(req.body);
     const settings = await updateRestaurantSettings(body, req.user!.id);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "RESTAURANT_SETTINGS_UPDATED",
+      entityType: "SETTINGS",
+      entityId: settings.id || "restaurant-settings",
+      details: body,
+      ipAddress: req.ip,
+    });
     res.status(200).json({ settings });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -73,6 +85,16 @@ router.put("/alerts", requireAuth, requireRole("ADMIN"), async (req: Authenticat
   try {
     const body = alertUpdateSchema.parse(req.body);
     const settings = await updateAlertSettings(body);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "ALERT_SETTINGS_UPDATED",
+      entityType: "SETTINGS",
+      entityId: settings.id || "alert-settings",
+      details: body,
+      ipAddress: req.ip,
+    });
     res.status(200).json({ settings });
   } catch (error) {
     if (error instanceof z.ZodError) {

@@ -8,6 +8,8 @@ import fleetRouter from "./fleet";
 import settingsRouter from "./settings";
 import notificationsRouter from "./notifications";
 import releasesRouter from "./releases";
+import auditRouter from "./audit";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -19,6 +21,8 @@ router.use("/drivers", driversRouter);
 router.use("/fleet", fleetRouter);
 router.use("/settings", settingsRouter);
 router.use("/notifications", notificationsRouter);
+router.use("/audit-logs", auditRouter);
+router.use("/reports", reportsRouter);
 router.use("/releases", releasesRouter);
 router.use(releasesRouter);
 

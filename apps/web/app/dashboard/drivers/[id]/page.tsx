@@ -24,12 +24,15 @@ import {
   getDriverById,
   getDriverHistory,
   getDriverLocations,
+  getDriverActivity,
+  forceEndDriverShift,
   resetDriverDevice,
   updateDriver,
   permanentDeleteUser,
   type DriverDetailResponse,
   type ShiftRecord,
   type LocationPoint,
+  type ActivityEvent,
 } from '@/lib/api';
 import { PageHeader } from '@/components/dashboard-shell';
 import { useAuth } from '@/components/auth-provider';
@@ -44,9 +47,13 @@ export default function DriverDetailsPage() {
 
   const [driver, setDriver] = useState<DriverDetailResponse['driver'] | null>(null);
   const [shifts, setShifts] = useState<ShiftRecord[]>([]);
-  const [locations, setLocations] = useState<LocationPoint[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Force end shift
+  const [forceEndLoading, setForceEndLoading] = useState(false);
 
   // Reset device dialog
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -71,18 +78,33 @@ export default function DriverDetailsPage() {
     }
   };
 
+  const handleForceEndShift = async () => {
+    if (!confirm(rtl ? 'هل أنت متأكد من إنهاء هذه الوردية إجبارياً؟' : 'Are you sure you want to force end this shift?')) return;
+    setForceEndLoading(true);
+    try {
+      await forceEndDriverShift(driverId);
+      await loadAll();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to force end shift');
+    } finally {
+      setForceEndLoading(false);
+    }
+  };
+
   async function loadAll(isMounted = true) {
     setLoading(true);
     try {
-      const [driverData, shiftData, locationData] = await Promise.all([
+      const [driverData, shiftData, locationData, activityData] = await Promise.all([
         getDriverById(driverId),
         getDriverHistory(driverId, 1, 10).catch(() => ({ items: [], total: 0, page: 1, limit: 10 })),
-        getDriverLocations(driverId, 1, 10).catch(() => ({ items: [], total: 0, page: 1, limit: 10 })),
+        getDriverLocations(driverId, { page: 1, limit: 20 }).catch(() => ({ items: [], total: 0, page: 1, limit: 20 })),
+        getDriverActivity(driverId).catch(() => ({ driverId, items: [] })),
       ]);
       if (isMounted) {
         setDriver(driverData);
         setShifts(shiftData.items);
         setLocations(locationData.items);
+        setActivities(activityData.items || []);
         setError(null);
       }
     } catch (err) {
@@ -182,6 +204,17 @@ export default function DriverDetailsPage() {
         subtitle={`${t('drivers.employeeId')}: ${formatWesternNumber(driver.employeeId)}`}
         action={
           <div className="flex items-center gap-3">
+            {driver.currentShiftStatus === 'ACTIVE' && (
+              <button
+                type="button"
+                onClick={handleForceEndShift}
+                disabled={forceEndLoading}
+                className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition disabled:opacity-50"
+              >
+                <Clock className="h-3.5 w-3.5 text-amber-600" />
+                <span>{forceEndLoading ? (rtl ? 'جاري الإنهاء...' : 'Ending...') : (rtl ? 'إنهاء الوردية إجبارياً' : 'Force End Shift')}</span>
+              </button>
+            )}
             {device && session?.user?.role === 'ADMIN' && (
               <button
                 type="button"
@@ -434,6 +467,64 @@ export default function DriverDetailsPage() {
         </div>
       </div>
 
+      {/* Driver Activity Timeline */}
+      <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-slate-100 p-5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-emerald-600" />
+            <h3 className="text-sm font-bold text-slate-900">{rtl ? 'الجدول الزمني للنشاط' : 'Activity Timeline'}</h3>
+          </div>
+          <span className="text-xs text-slate-500 font-medium">
+            {formatWesternNumber(activities.length)} {rtl ? 'حدث' : 'events'}
+          </span>
+        </div>
+
+        <div className="p-6">
+          {activities.length === 0 ? (
+            <div className="text-center py-8 text-xs text-slate-400">
+              {rtl ? 'لا توجد أنشطة مسجلة لهذه الفترة' : 'No recorded activity events for this period.'}
+            </div>
+          ) : (
+            <div className="relative border-s-2 border-slate-100 ms-3 space-y-6">
+              {activities.map((event) => {
+                const isAlert = event.type === 'ALERT';
+                const isStart = event.type === 'SHIFT_STARTED';
+                const isEnd = event.type === 'SHIFT_ENDED';
+                const isRestaurant = event.type === 'ARRIVED_AT_RESTAURANT' || event.type === 'LEFT_RESTAURANT';
+                const isMoving = event.type === 'MOVING';
+
+                const dotColor = isAlert
+                  ? 'bg-rose-500 border-rose-100'
+                  : isStart
+                  ? 'bg-emerald-500 border-emerald-100'
+                  : isEnd
+                  ? 'bg-slate-500 border-slate-100'
+                  : isRestaurant
+                  ? 'bg-blue-500 border-blue-100'
+                  : isMoving
+                  ? 'bg-teal-500 border-teal-100'
+                  : 'bg-amber-500 border-amber-100';
+
+                return (
+                  <div key={event.id} className="relative ps-6">
+                    <div className={`absolute -start-[9px] top-1 h-4 w-4 rounded-full border-2 ${dotColor}`} />
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                      <span className="text-xs font-bold text-slate-900">{event.title}</span>
+                      <time className="text-[11px] font-mono text-slate-400">
+                        {formatWesternNumber(new Date(event.timestamp).toLocaleTimeString('en-US'))} ({formatTimeAgo(event.timestamp)})
+                      </time>
+                    </div>
+                    {event.description && (
+                      <p className="mt-1 text-xs text-slate-600">{event.description}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Recent Locations Table */}
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-slate-100 p-5 flex items-center justify-between">
@@ -441,6 +532,9 @@ export default function DriverDetailsPage() {
             <MapPin className="h-4 w-4 text-emerald-600" />
             <h3 className="text-sm font-bold text-slate-900">{t('drivers.locationHistory')}</h3>
           </div>
+          <span className="text-xs text-slate-500 font-medium">
+            {formatWesternNumber(locations.length)} {rtl ? 'نقطة مسجلة' : 'points'}
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -448,15 +542,17 @@ export default function DriverDetailsPage() {
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-100">
               <tr>
                 <th className="px-5 py-3 text-start">{t('drivers.coordinates')}</th>
+                <th className="px-5 py-3 text-start">{rtl ? 'الحالة التشغيلية' : 'Status'}</th>
                 <th className="px-5 py-3 text-start">{t('map.speed')}</th>
                 <th className="px-5 py-3 text-start">{t('drivers.accuracy')}</th>
+                <th className="px-5 py-3 text-start">{rtl ? 'نطاق المطعم' : 'Geofence'}</th>
                 <th className="px-5 py-3 text-start">{t('drivers.recordedTime')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
               {locations.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="p-6 text-center text-slate-400">
+                  <td colSpan={6} className="p-6 text-center text-slate-400">
                     {t('drivers.noLocations')}
                   </td>
                 </tr>
@@ -464,13 +560,34 @@ export default function DriverDetailsPage() {
                 locations.map((loc) => (
                   <tr key={loc.id}>
                     <td className="px-5 py-3 font-mono text-slate-800">
-                      {formatWesternNumber(loc.latitude.toFixed(5))}, {formatWesternNumber(loc.longitude.toFixed(5))}
+                      {formatWesternNumber(Number(loc.latitude).toFixed(5))}, {formatWesternNumber(Number(loc.longitude).toFixed(5))}
                     </td>
                     <td className="px-5 py-3">
-                      {loc.speed != null ? `${formatWesternNumber(Math.round(loc.speed * 3.6))} ${t('map.kmh')}` : '—'}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        loc.operationalStatus === 'AT_RESTAURANT'
+                          ? 'bg-blue-100 text-blue-800'
+                          : loc.operationalStatus === 'MOVING'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {loc.operationalStatus || 'STOPPED'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      {loc.speed != null ? `${formatWesternNumber(Math.round(Number(loc.speed) * 3.6))} ${t('map.kmh')}` : '—'}
                     </td>
                     <td className="px-5 py-3 text-slate-500">
-                      {loc.accuracy != null ? `±${formatWesternNumber(Math.round(loc.accuracy))} ${t('map.meters')}` : '—'}
+                      <span className={loc.accuracy != null && Number(loc.accuracy) <= 35 ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-medium'}>
+                        {loc.accuracy != null ? `±${formatWesternNumber(Math.round(Number(loc.accuracy)))} ${t('map.meters')}` : '—'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                        loc.isInsideGeofence ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-500'
+                      }`}>
+                        {loc.isInsideGeofence ? (rtl ? 'داخل المطعم' : 'Inside') : (rtl ? 'خارج المطعم' : 'Outside')}
+                        {loc.distanceToRestaurantMeters != null ? ` (${formatWesternNumber(Math.round(Number(loc.distanceToRestaurantMeters)))}m)` : ''}
+                      </span>
                     </td>
                     <td className="px-5 py-3 text-slate-500 text-[11px]">
                       {formatTimeAgo(loc.recordedAt)}

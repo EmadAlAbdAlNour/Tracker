@@ -25,6 +25,7 @@ interface DriverDetailModalProps {
   onClose: () => void;
   onDeviceReset?: (driverId: string) => Promise<void>;
   onForceEndShift?: (driverId: string) => Promise<void>;
+  apiRequest?: <T>(path: string, options?: RequestInit) => Promise<T>;
 }
 
 export function DriverDetailModal({
@@ -34,7 +35,13 @@ export function DriverDetailModal({
   onClose,
   onDeviceReset,
   onForceEndShift,
+  apiRequest,
 }: DriverDetailModalProps): React.JSX.Element {
+  const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'locations'>('overview');
+  const [activities, setActivities] = useState<any[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   const [resetting, setResetting] = useState(false);
   const [forceEnding, setForceEnding] = useState(false);
   const [dialogConfig, setDialogConfig] = useState<{
@@ -53,6 +60,30 @@ export function DriverDetailModal({
     title: '',
     message: '',
   });
+
+  React.useEffect(() => {
+    let isMounted = true;
+    if (visible && driver?.driverId && apiRequest) {
+      setLoadingHistory(true);
+      Promise.all([
+        apiRequest<any>(`/api/drivers/${driver.driverId}/activity`).catch(() => ({ items: [] })),
+        apiRequest<any>(`/api/drivers/${driver.driverId}/locations?limit=15`).catch(() => ({ items: [] })),
+      ])
+        .then(([actData, locData]) => {
+          if (isMounted) {
+            setActivities(actData?.items || []);
+            setLocations(locData?.items || []);
+            setLoadingHistory(false);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setLoadingHistory(false);
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, driver?.driverId, apiRequest]);
 
   if (!driver) return <></>;
 
@@ -227,202 +258,332 @@ export function DriverDetailModal({
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Status & Freshness Header Card */}
-          <View style={styles.card}>
-            <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.cardSectionTitle}>{rtl ? 'الحالة والاتصال الميداني' : 'Connection & Status'}</Text>
-              <View style={[styles.badgePill, { backgroundColor: connBadge.bg, borderColor: connBadge.border }]}>
-                <Text style={[styles.badgePillText, { color: connBadge.text }]}>{connBadge.label}</Text>
-              </View>
-            </View>
-
-            {/* Connection Freshness (lastSeen) */}
-            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Connection:'}</Text>
-              <Text style={styles.metaValue}>
-                {isAwaitingTelemetry
-                  ? (rtl ? 'بانتظار بدء الإرسال' : 'Awaiting signal')
-                  : lastSeenMinutes != null
-                  ? lastSeenMinutes === 0
-                    ? (rtl ? 'منذ ثوانٍ' : 'seconds ago')
-                    : (rtl ? `منذ ${formatWesternNumber(lastSeenMinutes)} دقيقة` : `${formatWesternNumber(lastSeenMinutes)}m ago`)
-                  : (rtl ? 'غير متوفر' : 'Unavailable')}
-              </Text>
-            </View>
-
-            {/* GPS Location Freshness (recordedAt) */}
-            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'آخر موقع مسجل:' : 'Last GPS Location:'}</Text>
-              <Text style={styles.metaValue}>
-                {isAwaitingTelemetry || !hasLocation
-                  ? (rtl ? 'لا توجد بيانات موقع' : 'No GPS coordinates')
-                  : locationAgeMinutes != null
-                  ? locationAgeMinutes === 0
-                    ? (rtl ? 'منذ ثوانٍ' : 'seconds ago')
-                    : (rtl ? `منذ ${formatWesternNumber(locationAgeMinutes)} دقيقة` : `${formatWesternNumber(locationAgeMinutes)}m ago`)
-                  : '—'}
-              </Text>
-            </View>
-
-            {/* Operational Status */}
-            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'الحالة التشغيلية:' : 'Operational Status:'}</Text>
-              <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700' }]}>
-                {movBadge.label}
-              </Text>
-            </View>
-          </View>
-
-          {/* Telemetry Card (Explicit Stale vs Live Semantics) */}
-          <View style={styles.card}>
-            <View style={[styles.telemetryHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.cardSectionTitle}>
-                {isAwaitingTelemetry
-                  ? (rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal')
-                  : isOnline
-                  ? (rtl ? 'بيانات التتبع المباشرة' : 'Live Telemetry')
-                  : (rtl ? 'آخر بيانات معروفة (تاريخية)' : 'Last Known Telemetry')}
-              </Text>
-              {isAwaitingTelemetry ? (
-                <View style={styles.staleNoticePill}>
-                  <Text style={styles.staleNoticeText}>{rtl ? 'قيد الانتظار' : 'Pending'}</Text>
-                </View>
-              ) : !isOnline ? (
-                <View style={styles.staleNoticePill}>
-                  <Text style={styles.staleNoticeText}>{rtl ? 'غير مباشر' : 'Stale'}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.grid2Col}>
-              {/* Speed */}
-              <View style={styles.gridCell}>
-                <Text style={styles.gridCellLabel}>
-                  {speedSemantics.isCurrent
-                    ? (rtl ? 'السرعة الحالية' : 'Current Speed')
-                    : speedSemantics.isHistorical
-                    ? (rtl ? 'آخر سرعة مسجلة' : 'Last Recorded Speed')
-                    : (rtl ? 'السرعة' : 'Speed')}
-                </Text>
-                <Text style={styles.gridCellValue}>
-                  {speedSemantics.speedKmh != null
-                    ? `${formatWesternNumber(speedSemantics.speedKmh)} ${t('driverDetail.speedUnit')}`
-                    : '—'}
-                </Text>
-                {speedSemantics.isHistorical && speedSemantics.ageMinutes != null ? (
-                  <Text style={styles.gridCellSublabel}>
-                    {rtl ? `منذ ${formatWesternNumber(speedSemantics.ageMinutes)} دقيقة` : `${formatWesternNumber(speedSemantics.ageMinutes)}m ago`}
-                  </Text>
-                ) : null}
-              </View>
-
-              {/* Heading */}
-              <View style={styles.gridCell}>
-                <Text style={styles.gridCellLabel}>
-                  {isOnline ? rtl ? 'الاتجاه' : 'Heading' : rtl ? 'الاتجاه وقت آخر تحديث' : 'Heading at last update'}
-                </Text>
-                <Text style={styles.gridCellValue}>
-                  {driver.location?.heading != null ? `${formatWesternNumber(Math.round(driver.location.heading))}°` : '—'}
-                </Text>
-              </View>
-
-              {/* Geofence */}
-              <View style={styles.gridCell}>
-                <Text style={styles.gridCellLabel}>{rtl ? 'نطاق المطعم' : 'Geofence'}</Text>
-                <Text
-                  style={[
-                    styles.gridCellValue,
-                    {
-                      color: isAwaitingTelemetry
-                        ? colors.text.muted
-                        : driver.isInsideGeofence
-                        ? colors.status.online
-                        : colors.status.warning,
-                    },
-                  ]}
-                >
-                  {isAwaitingTelemetry
-                    ? rtl ? 'بانتظار تحديد الموقع' : 'Awaiting location'
-                    : driver.isInsideGeofence
-                    ? t('driverDetail.insideGeofence')
-                    : t('driverDetail.outsideGeofence')}
-                </Text>
-              </View>
-
-              {/* Distance */}
-              <View style={styles.gridCell}>
-                <Text style={styles.gridCellLabel}>{rtl ? 'المسافة عن المطعم' : 'Distance'}</Text>
-                <Text style={styles.gridCellValue}>
-                  {driver.distanceToRestaurantMeters != null
-                    ? `~${formatWesternNumber(Math.round(driver.distanceToRestaurantMeters))} ${t('driverDetail.meters')}`
-                    : '—'}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Shift & Device Hardware */}
-          <View style={styles.card}>
-            <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
-              {rtl ? 'بيانات الوردية والجهاز المعتمد' : 'Shift & Authorized Device'}
+        {/* Tab Selector Bar */}
+        <View style={[styles.tabBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'overview' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('overview')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'overview' && styles.tabButtonTextActive]}>
+              {rtl ? 'نظرة عامة' : 'Overview'}
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'activity' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('activity')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'activity' && styles.tabButtonTextActive]}>
+              {rtl ? 'النشاط' : 'Activity'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'locations' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('locations')}
+          >
+            <Text style={[styles.tabButtonText, activeTab === 'locations' && styles.tabButtonTextActive]}>
+              {rtl ? 'المواقع' : 'Locations'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'حالة الوردية:' : 'Shift:'}</Text>
-              <Text style={[styles.metaValue, { color: driver.shift ? colors.status.online : colors.text.muted, fontWeight: '700' }]}>
-                {driver.shift ? t('shift.onDuty') : t('shift.offDuty')}
-              </Text>
-            </View>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {activeTab === 'overview' && (
+            <>
+              {/* Status & Freshness Header Card */}
+              <View style={styles.card}>
+                <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.cardSectionTitle}>{rtl ? 'الحالة والاتصال الميداني' : 'Connection & Status'}</Text>
+                  <View style={[styles.badgePill, { backgroundColor: connBadge.bg, borderColor: connBadge.border }]}>
+                    <Text style={[styles.badgePillText, { color: connBadge.text }]}>{connBadge.label}</Text>
+                  </View>
+                </View>
 
-            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'مستوى البطارية:' : 'Battery:'}</Text>
-              <Text style={styles.metaValue}>
-                {driver.device?.batteryPercentage != null
-                  ? `${formatWesternNumber(driver.device.batteryPercentage)}% ${driver.device.isCharging ? '(شاحن)' : ''}`
-                  : '—'}
-              </Text>
-            </View>
-
-            <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
-              <Text style={styles.metaLabel}>{rtl ? 'معرف الجهاز المعتمد:' : 'Device ID:'}</Text>
-              <Text style={[styles.metaValue, { fontSize: 10, fontFamily: 'monospace' }]}>
-                {driver.device?.deviceIdentifier ? `${driver.device.deviceIdentifier.slice(0, 12)}...` : '—'}
-              </Text>
-            </View>
-
-            {/* Admin Destructive Action: Force End Active Shift */}
-            {isAdmin && driver.shift && (driver.shift.status === 'ACTIVE' || !driver.shift.status) && (
-              <TouchableOpacity
-                style={[styles.destructiveForceEndButton, (forceEnding || resetting) && styles.disabledButton]}
-                onPress={handleForceEndPress}
-                disabled={forceEnding || resetting}
-              >
-                {forceEnding ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.destructiveForceEndText}>
-                    {rtl ? 'إنهاء وردية السائق إجبارياً' : 'Force End Driver Shift'}
+                {/* Connection Freshness (lastSeen) */}
+                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Connection:'}</Text>
+                  <Text style={styles.metaValue}>
+                    {isAwaitingTelemetry
+                      ? (rtl ? 'بانتظار بدء الإرسال' : 'Awaiting signal')
+                      : lastSeenMinutes != null
+                      ? lastSeenMinutes === 0
+                        ? (rtl ? 'منذ ثوانٍ' : 'seconds ago')
+                        : (rtl ? `منذ ${formatWesternNumber(lastSeenMinutes)} دقيقة` : `${formatWesternNumber(lastSeenMinutes)}m ago`)
+                      : (rtl ? 'غير متوفر' : 'Unavailable')}
                   </Text>
-                )}
-              </TouchableOpacity>
-            )}
+                </View>
 
-            {/* Admin Destructive Action: Reset Device */}
-            {isAdmin && (
-              <TouchableOpacity
-                style={[styles.destructiveResetButton, (resetting || forceEnding) && styles.disabledButton]}
-                onPress={handleResetPress}
-                disabled={resetting || forceEnding}
-              >
-                {resetting ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.destructiveResetText}>{t('admin.resetDevice')}</Text>
+                {/* GPS Location Freshness (recordedAt) */}
+                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.metaLabel}>{rtl ? 'آخر موقع مسجل:' : 'Last GPS Location:'}</Text>
+                  <Text style={styles.metaValue}>
+                    {isAwaitingTelemetry || !hasLocation
+                      ? (rtl ? 'لا توجد بيانات موقع' : 'No GPS coordinates')
+                      : locationAgeMinutes != null
+                      ? locationAgeMinutes === 0
+                        ? (rtl ? 'منذ ثوانٍ' : 'seconds ago')
+                        : (rtl ? `منذ ${formatWesternNumber(locationAgeMinutes)} دقيقة` : `${formatWesternNumber(locationAgeMinutes)}m ago`)
+                      : '—'}
+                  </Text>
+                </View>
+
+                {/* Operational Status */}
+                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.metaLabel}>{rtl ? 'الحالة التشغيلية:' : 'Operational Status:'}</Text>
+                  <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700' }]}>
+                    {movBadge.label}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Telemetry Card (Explicit Stale vs Live Semantics) */}
+              <View style={styles.card}>
+                <View style={[styles.telemetryHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.cardSectionTitle}>
+                    {isAwaitingTelemetry
+                      ? (rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal')
+                      : isOnline
+                      ? (rtl ? 'بيانات التتبع المباشرة' : 'Live Telemetry')
+                      : (rtl ? 'آخر بيانات معروفة (تاريخية)' : 'Last Known Telemetry')}
+                  </Text>
+                  {isAwaitingTelemetry ? (
+                    <View style={styles.staleNoticePill}>
+                      <Text style={styles.staleNoticeText}>{rtl ? 'قيد الانتظار' : 'Pending'}</Text>
+                    </View>
+                  ) : !isOnline ? (
+                    <View style={styles.staleNoticePill}>
+                      <Text style={styles.staleNoticeText}>{rtl ? 'غير مباشر' : 'Stale'}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.grid2Col}>
+                  {/* Speed */}
+                  <View style={styles.gridCell}>
+                    <Text style={styles.gridCellLabel}>
+                      {speedSemantics.isCurrent
+                        ? (rtl ? 'السرعة الحالية' : 'Current Speed')
+                        : speedSemantics.isHistorical
+                        ? (rtl ? 'آخر سرعة مسجلة' : 'Last Recorded Speed')
+                        : (rtl ? 'السرعة' : 'Speed')}
+                    </Text>
+                    <Text style={styles.gridCellValue}>
+                      {speedSemantics.speedKmh != null
+                        ? `${formatWesternNumber(speedSemantics.speedKmh)} ${t('driverDetail.speedUnit')}`
+                        : '—'}
+                    </Text>
+                    {speedSemantics.isHistorical && speedSemantics.ageMinutes != null ? (
+                      <Text style={styles.gridCellSublabel}>
+                        {rtl ? `منذ ${formatWesternNumber(speedSemantics.ageMinutes)} دقيقة` : `${formatWesternNumber(speedSemantics.ageMinutes)}m ago`}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {/* Heading */}
+                  <View style={styles.gridCell}>
+                    <Text style={styles.gridCellLabel}>
+                      {isOnline ? rtl ? 'الاتجاه' : 'Heading' : rtl ? 'الاتجاه وقت آخر تحديث' : 'Heading at last update'}
+                    </Text>
+                    <Text style={styles.gridCellValue}>
+                      {driver.location?.heading != null ? `${formatWesternNumber(Math.round(driver.location.heading))}°` : '—'}
+                    </Text>
+                  </View>
+
+                  {/* Geofence */}
+                  <View style={styles.gridCell}>
+                    <Text style={styles.gridCellLabel}>{rtl ? 'نطاق المطعم' : 'Geofence'}</Text>
+                    <Text
+                      style={[
+                        styles.gridCellValue,
+                        {
+                          color: isAwaitingTelemetry
+                            ? colors.text.muted
+                            : driver.isInsideGeofence
+                            ? colors.status.online
+                            : colors.status.warning,
+                        },
+                      ]}
+                    >
+                      {isAwaitingTelemetry
+                        ? rtl ? 'بانتظار تحديد الموقع' : 'Awaiting location'
+                        : driver.isInsideGeofence
+                        ? t('driverDetail.insideGeofence')
+                        : t('driverDetail.outsideGeofence')}
+                    </Text>
+                  </View>
+
+                  {/* Distance */}
+                  <View style={styles.gridCell}>
+                    <Text style={styles.gridCellLabel}>{rtl ? 'المسافة عن المطعم' : 'Distance'}</Text>
+                    <Text style={styles.gridCellValue}>
+                      {driver.distanceToRestaurantMeters != null
+                        ? `~${formatWesternNumber(Math.round(driver.distanceToRestaurantMeters))} ${t('driverDetail.meters')}`
+                        : '—'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Shift & Device Hardware */}
+              <View style={styles.card}>
+                <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                  {rtl ? 'بيانات الوردية والجهاز المعتمد' : 'Shift & Authorized Device'}
+                </Text>
+
+                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.metaLabel}>{rtl ? 'حالة الوردية:' : 'Shift:'}</Text>
+                  <Text style={[styles.metaValue, { color: driver.shift ? colors.status.online : colors.text.muted, fontWeight: '700' }]}>
+                    {driver.shift ? t('shift.onDuty') : t('shift.offDuty')}
+                  </Text>
+                </View>
+
+                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.metaLabel}>{rtl ? 'مستوى البطارية:' : 'Battery:'}</Text>
+                  <Text style={styles.metaValue}>
+                    {driver.device?.batteryPercentage != null
+                      ? `${formatWesternNumber(driver.device.batteryPercentage)}% ${driver.device.isCharging ? '(شاحن)' : ''}`
+                      : '—'}
+                  </Text>
+                </View>
+
+                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <Text style={styles.metaLabel}>{rtl ? 'معرف الجهاز المعتمد:' : 'Device ID:'}</Text>
+                  <Text style={[styles.metaValue, { fontSize: 10, fontFamily: 'monospace' }]}>
+                    {driver.device?.deviceIdentifier ? `${driver.device.deviceIdentifier.slice(0, 12)}...` : '—'}
+                  </Text>
+                </View>
+
+                {/* Admin Destructive Action: Force End Active Shift */}
+                {isAdmin && driver.shift && (driver.shift.status === 'ACTIVE' || !driver.shift.status) && (
+                  <TouchableOpacity
+                    style={[styles.destructiveForceEndButton, (forceEnding || resetting) && styles.disabledButton]}
+                    onPress={handleForceEndPress}
+                    disabled={forceEnding || resetting}
+                  >
+                    {forceEnding ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.destructiveForceEndText}>
+                        {rtl ? 'إنهاء وردية السائق إجبارياً' : 'Force End Driver Shift'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-            )}
-          </View>
+
+                {/* Admin Destructive Action: Reset Device */}
+                {isAdmin && (
+                  <TouchableOpacity
+                    style={[styles.destructiveResetButton, (resetting || forceEnding) && styles.disabledButton]}
+                    onPress={handleResetPress}
+                    disabled={resetting || forceEnding}
+                  >
+                    {resetting ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <Text style={styles.destructiveResetText}>{t('admin.resetDevice')}</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
+          )}
+
+          {/* TAB 2: ACTIVITY TIMELINE */}
+          {activeTab === 'activity' && (
+            <View style={styles.card}>
+              <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'الجدول الزمني للنشاط الميداني' : 'Field Activity Timeline'}
+              </Text>
+              {loadingHistory ? (
+                <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 24 }} />
+              ) : activities.length === 0 ? (
+                <Text style={styles.emptyTabMessage}>
+                  {rtl ? 'لا توجد أحداث نشاط مسجلة لهذا السائق' : 'No recorded activity events'}
+                </Text>
+              ) : (
+                <View style={{ marginTop: 8 }}>
+                  {activities.map((act) => {
+                    const isAlert = act.type === 'ALERT';
+                    const isStart = act.type === 'SHIFT_STARTED';
+                    const isEnd = act.type === 'SHIFT_ENDED';
+                    const dotColor = isAlert ? colors.status.critical : isStart ? colors.status.online : isEnd ? colors.text.muted : colors.primary;
+
+                    return (
+                      <View key={act.id} style={[styles.activityItem, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <View style={[styles.activityDot, { backgroundColor: dotColor }]} />
+                        <View style={{ flex: 1, marginHorizontal: 8, alignItems: rtl ? 'flex-end' : 'flex-start' }}>
+                          <Text style={styles.activityTitle}>{act.title}</Text>
+                          {act.description ? <Text style={styles.activityDesc}>{act.description}</Text> : null}
+                          <Text style={styles.activityTime}>
+                            {formatWesternNumber(new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* TAB 3: RECENT LOCATION POINTS */}
+          {activeTab === 'locations' && (
+            <View style={styles.card}>
+              <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                {rtl ? 'سجل المواقع الحديثة (GPS)' : 'Recent Location Trail'}
+              </Text>
+              {loadingHistory ? (
+                <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 24 }} />
+              ) : locations.length === 0 ? (
+                <Text style={styles.emptyTabMessage}>
+                  {rtl ? 'لا توجد إحداثيات مسجلة' : 'No recorded location points'}
+                </Text>
+              ) : (
+                <View style={{ marginTop: 8 }}>
+                  {locations.map((loc) => (
+                    <View key={loc.id} style={styles.locationItemCard}>
+                      <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <Text style={styles.locationCoords}>
+                          {formatWesternNumber(Number(loc.latitude).toFixed(4))}, {formatWesternNumber(Number(loc.longitude).toFixed(4))}
+                        </Text>
+                        <View
+                          style={[
+                            styles.locationStatusPill,
+                            {
+                              backgroundColor: loc.operationalStatus === 'MOVING' ? colors.status.onlineBg : colors.status.offlineBg,
+                              borderColor: loc.operationalStatus === 'MOVING' ? colors.status.onlineBorder : colors.status.offlineBorder,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.locationStatusPillText,
+                              {
+                                color: loc.operationalStatus === 'MOVING' ? colors.status.online : colors.text.muted,
+                              },
+                            ]}
+                          >
+                            {loc.operationalStatus || 'STOPPED'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row', marginTop: 4 }]}>
+                        <Text style={styles.metaLabel}>{rtl ? 'السرعة والدقة:' : 'Speed & Accuracy:'}</Text>
+                        <Text style={styles.metaValue}>
+                          {loc.speed != null ? `${formatWesternNumber(Math.round(Number(loc.speed) * 3.6))} km/h` : '0 km/h'} • ±{formatWesternNumber(Math.round(Number(loc.accuracy || 0)))}m
+                        </Text>
+                      </View>
+                      <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <Text style={styles.metaLabel}>{rtl ? 'الوقت المسجل:' : 'Recorded At:'}</Text>
+                        <Text style={styles.metaValue}>
+                          {formatWesternNumber(new Date(loc.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
         </ScrollView>
 
         <TrackerDialog
@@ -600,4 +761,91 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
+  tabBar: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.xs,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceSubtle,
+  },
+  tabButtonActive: {
+    backgroundColor: colors.primary,
+  },
+  tabButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.muted,
+  },
+  tabButtonTextActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  emptyTabMessage: {
+    textAlign: 'center',
+    color: colors.text.muted,
+    fontSize: 12,
+    marginVertical: 20,
+  },
+  activityItem: {
+    alignItems: 'flex-start',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  activityDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  activityTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  activityDesc: {
+    fontSize: 11,
+    color: colors.text.muted,
+    marginTop: 2,
+  },
+  activityTime: {
+    fontSize: 10,
+    color: colors.text.light,
+    marginTop: 4,
+    fontFamily: 'monospace',
+  },
+  locationItemCard: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  locationCoords: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text.primary,
+    fontFamily: 'monospace',
+  },
+  locationStatusPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  locationStatusPillText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
 });
+

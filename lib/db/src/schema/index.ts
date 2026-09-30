@@ -263,9 +263,34 @@ export const alertStateTable = pgTable(
   }),
 );
 
+export const auditLogsTable = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").references(() => usersTable.id, {
+      onDelete: "set null",
+    }),
+    actorEmail: text("actor_email").notNull(),
+    actorRole: text("actor_role").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    details: text("details"),
+    ipAddress: text("ip_address"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    actorIdx: index("audit_logs_actor_idx").on(table.actorId),
+    actionIdx: index("audit_logs_action_idx").on(table.action),
+    entityIdx: index("audit_logs_entity_idx").on(table.entityType, table.entityId),
+    createdIdx: index("audit_logs_created_at_idx").on(table.createdAt.desc()),
+  }),
+);
+
 export const userRelations = relations(usersTable, ({ many }) => ({
   drivers: many(driversTable),
   refreshTokens: many(refreshTokensTable),
+  auditLogs: many(auditLogsTable),
 }));
 
 export const driverRelations = relations(driversTable, ({ one, many }) => ({
@@ -335,6 +360,13 @@ export const notificationReadRelations = relations(notificationReadsTable, ({ on
   }),
   user: one(usersTable, {
     fields: [notificationReadsTable.userId],
+    references: [usersTable.id],
+  }),
+}));
+
+export const auditLogRelations = relations(auditLogsTable, ({ one }) => ({
+  actor: one(usersTable, {
+    fields: [auditLogsTable.actorId],
     references: [usersTable.id],
   }),
 }));
@@ -438,6 +470,18 @@ export const insertNotificationReadSchema = z.object({
   readAt: z.date().optional(),
 });
 
+export const insertAuditLogSchema = z.object({
+  actorId: z.string().uuid().nullable().optional(),
+  actorEmail: z.string().min(1),
+  actorRole: z.string().min(1),
+  action: z.string().min(1),
+  entityType: z.string().min(1),
+  entityId: z.string().min(1),
+  details: z.string().nullable().optional(),
+  ipAddress: z.string().nullable().optional(),
+  createdAt: z.date().optional(),
+});
+
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type User = typeof usersTable.$inferSelect;
 export type Driver = typeof driversTable.$inferSelect;
@@ -451,6 +495,7 @@ export type AlertSettings = typeof alertSettingsTable.$inferSelect;
 export type Notification = typeof notificationsTable.$inferSelect;
 export type NotificationRead = typeof notificationReadsTable.$inferSelect;
 export type AlertState = typeof alertStateTable.$inferSelect;
+export type AuditLog = typeof auditLogsTable.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
@@ -462,5 +507,6 @@ export type InsertRestaurantSettings = z.infer<typeof insertRestaurantSettingsSc
 export type InsertAlertSettings = z.infer<typeof insertAlertSettingsSchema>;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type InsertNotificationRead = z.infer<typeof insertNotificationReadSchema>;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 
 

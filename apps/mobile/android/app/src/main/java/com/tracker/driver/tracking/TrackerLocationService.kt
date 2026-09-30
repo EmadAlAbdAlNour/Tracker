@@ -90,6 +90,9 @@ class TrackerLocationService : Service() {
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
+    @Volatile
+    private var lastElapsedRealtimeNanos: Long = 0L
+
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val shiftSuffix = if (::uploader.isInitialized) uploader.shiftId?.takeLast(8) else null
@@ -419,6 +422,16 @@ class TrackerLocationService : Service() {
             return
         }
 
+        // Monotonic ordering: discard non-monotonic/out-of-order samples on API 17+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            val curNanos = location.elapsedRealtimeNanos
+            if (lastElapsedRealtimeNanos > 0L && curNanos < lastElapsedRealtimeNanos) {
+                Log.w(TAG, "TRACKER_DISCARD_NON_MONOTONIC_SAMPLE prevNanos=$lastElapsedRealtimeNanos curNanos=$curNanos")
+                return
+            }
+            lastElapsedRealtimeNanos = curNanos
+        }
+
         val isoTimestamp = synchronized(isoDateFormat) {
             isoDateFormat.format(Date(location.time))
         }
@@ -427,7 +440,16 @@ class TrackerLocationService : Service() {
         // Sanitize values to strictly conform to backend schema (e.g. accuracy >= 0, speed >= 0, heading 0..360)
         val accuracy = location.accuracy.toDouble()
         val altitude = if (location.hasAltitude()) location.altitude else null
-        val speed = if (location.hasSpeed() && location.speed >= 0f) location.speed.toDouble() else null
+
+        // Conservative speed semantics: audit speed accuracy on API 26+
+        val speed = if (location.hasSpeed() && location.speed >= 0f) {
+            val isSpeedAccurate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                !location.hasSpeedAccuracy() || location.speedAccuracyMetersPerSecond <= 25.0f
+            } else {
+                true
+            }
+            if (isSpeedAccurate) location.speed.toDouble() else null
+        } else null
         val heading = if (location.hasBearing() && location.bearing in 0.0f..360.0f) location.bearing.toDouble() else null
         val currentShiftId = if (::uploader.isInitialized) uploader.shiftId else null
 

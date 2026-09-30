@@ -24,9 +24,28 @@ import {
   resetDriverDeviceByDriverId,
   assignDriverDevice,
 } from "../services/authService";
+import { listDriverLocationHistory, getDriverActivityTimeline } from "../services/historyService";
+import { recordAuditEvent } from "../services/auditService";
 import { type AuthenticatedRequest, requireAuth, requireAuthOrTelemetry, requireRole } from "../middleware/auth";
 import { signTelemetryToken, TELEMETRY_TOKEN_EXPIRY_SECONDS } from "../lib/auth";
 import { deviceRegisterSchema, driverCreateSchema, driverUpdateSchema, heartbeatSchema, locationBatchSchema, locationPointSchema, paginationSchema, shiftListQuerySchema } from "../validation/auth";
+
+const locationHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+  shiftId: z.string().uuid().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  order: z.enum(["asc", "desc"]).default("desc"),
+});
+
+const activityQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  shiftId: z.string().uuid().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
 const router = Router();
 
@@ -70,6 +89,16 @@ router.post("/:id/device/reset", requireAuth, requireRole("ADMIN"), async (req: 
       const driver = await getDriverById(driverId);
       if (!driver) throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
       await resetDriverDeviceByDriverId(driverId);
+      await recordAuditEvent({
+        actorId: req.user?.id,
+        actorEmail: req.user?.email || "unknown",
+        actorRole: req.user?.role || "ADMIN",
+        action: "DEVICE_RESET",
+        entityType: "DEVICE",
+        entityId: driverId,
+        details: { driverId },
+        ipAddress: req.ip,
+      });
     })();
 
     res.status(200).json({ success: true });
@@ -92,6 +121,16 @@ router.post("/:id/device/assign", requireAuth, requireRole("ADMIN"), async (req:
       .parse(req.body);
 
     const device = await assignDriverDevice(driverId, body);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "DEVICE_ASSIGNED",
+      entityType: "DEVICE",
+      entityId: device.id,
+      details: { driverId, platform: body.platform, deviceIdentifier: body.deviceIdentifier },
+      ipAddress: req.ip,
+    });
     res.status(200).json({ success: true, device });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -124,6 +163,16 @@ router.post("/:id/shifts/force-end", requireAuth, requireRole("ADMIN"), async (r
   try {
     const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const shift = await forceEndDriverShift(driverId);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "SHIFT_FORCE_ENDED",
+      entityType: "SHIFT",
+      entityId: shift.id,
+      details: { driverId, shiftId: shift.id, endedAt: shift.endedAt },
+      ipAddress: req.ip,
+    });
     res.status(200).json({ success: true, shift });
   } catch (error) {
     next(error);
@@ -135,6 +184,16 @@ router.post("/:id/shifts/end", requireAuth, requireRole("ADMIN"), async (req: Au
   try {
     const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const shift = await forceEndDriverShift(driverId);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "SHIFT_FORCE_ENDED",
+      entityType: "SHIFT",
+      entityId: shift.id,
+      details: { driverId, shiftId: shift.id, endedAt: shift.endedAt },
+      ipAddress: req.ip,
+    });
     res.status(200).json({ success: true, shift });
   } catch (error) {
     next(error);
@@ -285,6 +344,17 @@ router.post("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedReq
       active: body.active,
     });
 
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "DRIVER_CREATED",
+      entityType: "DRIVER",
+      entityId: result.driver.id,
+      details: { driverId: result.driver.id, employeeId: result.driver.employeeId, name: body.name },
+      ipAddress: req.ip,
+    });
+
     res.status(201).json({ driver: result.driver, user: result.user });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -383,20 +453,49 @@ router.get("/:id/locations", requireAuth, async (req: AuthenticatedRequest, res,
       next(createError(403, "AUTH_FORBIDDEN", "Driver cannot access another driver's location"));
       return;
     }
-    const query = paginationSchema.parse(req.query);
-    const result = await listDriverLocations(driverId, {
+    const query = locationHistoryQuerySchema.parse(req.query);
+    const result = await listDriverLocationHistory(driverId, {
       page: query.page,
       limit: query.limit,
+      shiftId: query.shiftId,
+      from: query.from,
+      to: query.to,
+      order: query.order,
     });
-    res.status(200).json({
-      page: query.page,
-      limit: query.limit,
-      total: result.total,
-      items: result.items,
-    });
+    res.status(200).json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      next(createError(400, "VALIDATION_ERROR", "Invalid pagination", error.flatten()));
+      next(createError(400, "VALIDATION_ERROR", "Invalid location query", error.flatten()));
+      return;
+    }
+    next(error);
+  }
+});
+
+router.get("/:id/activity", requireAuth, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driverId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const driver = await getDriverById(driverId);
+    if (!driver) {
+      next(createError(404, "DRIVER_NOT_FOUND", "Driver not found"));
+      return;
+    }
+    if (req.user!.role === "DRIVER" && driver.userId !== req.user!.id) {
+      next(createError(403, "AUTH_FORBIDDEN", "Driver cannot access another driver's activity"));
+      return;
+    }
+    const query = activityQuerySchema.parse(req.query);
+    const result = await getDriverActivityTimeline(driverId, {
+      page: query.page,
+      limit: query.limit,
+      shiftId: query.shiftId,
+      from: query.from,
+      to: query.to,
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      next(createError(400, "VALIDATION_ERROR", "Invalid activity query", error.flatten()));
       return;
     }
     next(error);
@@ -443,6 +542,16 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req: Authenticate
 
     const body = driverUpdateSchema.parse(req.body);
     const updated = await updateDriverProfile(driverId, body);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "DRIVER_UPDATED",
+      entityType: "DRIVER",
+      entityId: driverId,
+      details: { ...body, password: body.password ? "[REDACTED]" : undefined },
+      ipAddress: req.ip,
+    });
     res.status(200).json({ driver: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {

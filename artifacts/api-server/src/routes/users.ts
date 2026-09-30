@@ -67,10 +67,22 @@ router.get("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequ
   }
 });
 
+import { recordAuditEvent } from "../services/auditService";
+
 router.post("/", requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = userCreateSchema.parse(req.body);
     const user = await createUser(body);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "USER_CREATED",
+      entityType: "USER",
+      entityId: user.id,
+      details: { name: user.name, email: user.email, role: user.role, active: user.active },
+      ipAddress: req.ip,
+    });
     res.status(201).json({ user });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -100,6 +112,16 @@ router.patch("/:id", requireAuth, requireRole("ADMIN"), async (req: Authenticate
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const body = userUpdateSchema.parse(req.body);
     const user = await updateUser(id, body);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: body.active === false ? "USER_DEACTIVATED" : "USER_UPDATED",
+      entityType: "USER",
+      entityId: user.id,
+      details: { ...body, password: body.password ? "[REDACTED]" : undefined },
+      ipAddress: req.ip,
+    });
     res.status(200).json({ user });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -114,6 +136,16 @@ router.delete("/:id/permanent", requireAuth, requireRole("ADMIN"), async (req: A
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const result = await permanentDeleteUser(id, req.user?.id);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "USER_DELETED_PERMANENTLY",
+      entityType: "USER",
+      entityId: id,
+      details: { targetUserId: id },
+      ipAddress: req.ip,
+    });
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -125,10 +157,30 @@ router.delete("/:id", requireAuth, requireRole("ADMIN"), async (req: Authenticat
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (req.query.permanent === "true") {
       const result = await permanentDeleteUser(id, req.user?.id);
+      await recordAuditEvent({
+        actorId: req.user?.id,
+        actorEmail: req.user?.email || "unknown",
+        actorRole: req.user?.role || "ADMIN",
+        action: "USER_DELETED_PERMANENTLY",
+        entityType: "USER",
+        entityId: id,
+        details: { targetUserId: id },
+        ipAddress: req.ip,
+      });
       res.status(200).json(result);
       return;
     }
     await deactivateUser(id);
+    await recordAuditEvent({
+      actorId: req.user?.id,
+      actorEmail: req.user?.email || "unknown",
+      actorRole: req.user?.role || "ADMIN",
+      action: "USER_DEACTIVATED",
+      entityType: "USER",
+      entityId: id,
+      details: { targetUserId: id },
+      ipAddress: req.ip,
+    });
     res.status(200).json({ success: true, deactivated: true });
   } catch (error) {
     next(error);

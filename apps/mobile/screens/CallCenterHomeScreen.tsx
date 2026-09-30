@@ -716,6 +716,7 @@ export function CallCenterHomeScreen({
         driver={selectedDriver}
         isAdmin={false}
         onClose={() => setDriverModalVisible(false)}
+        apiRequest={apiRequest}
       />
     </SafeAreaView>
   );

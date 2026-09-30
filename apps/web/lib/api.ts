@@ -220,6 +220,69 @@ export type NotificationItem = {
   createdAt: string;
 };
 
+export type ActivityEvent = {
+  id: string;
+  type:
+    | 'SHIFT_STARTED'
+    | 'ARRIVED_AT_RESTAURANT'
+    | 'LEFT_RESTAURANT'
+    | 'MOVING'
+    | 'STOPPED'
+    | 'STOP_EXTENDED'
+    | 'SHIFT_ENDED'
+    | 'ALERT';
+  timestamp: string;
+  title: string;
+  description?: string;
+  details?: Record<string, any>;
+};
+
+export type DriverActivityResponse = {
+  driverId: string;
+  shiftId?: string;
+  items: ActivityEvent[];
+};
+
+export type ReportSummaryResponse = {
+  summary: {
+    from: string;
+    to: string;
+    totalShifts: number;
+    totalDurationMinutes: number;
+    totalDistanceMeters: number;
+    totalMovingMinutes: number;
+    totalStoppedMinutes: number;
+    totalRestaurantMinutes: number;
+    totalAlerts: number;
+  };
+  driverBreakdown: Array<{
+    driverId: string;
+    driverName: string;
+    employeeId: string;
+    shiftCount: number;
+    durationMinutes: number;
+    distanceMeters: number;
+    movingMinutes: number;
+    stoppedMinutes: number;
+    restaurantMinutes: number;
+    alertCount: number;
+  }>;
+};
+
+export type AuditLogRecord = {
+  id: string;
+  action: string;
+  userId: string | null;
+  userName: string | null;
+  userRole: string | null;
+  entityType: string;
+  entityId: string | null;
+  details: Record<string, any> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+};
+
 export type ErrorPayload = {
   error?: {
     code?: string;
@@ -430,8 +493,48 @@ export async function getDriverHistory(id: string, page = 1, limit = 10): Promis
   return apiRequest<ApiListResponse<ShiftRecord>>(`/api/drivers/${id}/shifts?page=${page}&limit=${limit}`);
 }
 
-export async function getDriverLocations(id: string, page = 1, limit = 20): Promise<ApiListResponse<LocationPoint>> {
-  return apiRequest<ApiListResponse<LocationPoint>>(`/api/drivers/${id}/locations?page=${page}&limit=${limit}`);
+export async function getDriverLocations(
+  id: string,
+  params?: { page?: number; limit?: number; shiftId?: string; from?: string; to?: string; order?: 'asc' | 'desc' } | number,
+  legacyLimit?: number
+): Promise<ApiListResponse<LocationPoint & { operationalStatus?: string; isInsideGeofence?: boolean; distanceToRestaurantMeters?: number; isReliable?: boolean }>> {
+  let page = 1;
+  let limit = 20;
+  const query = new URLSearchParams();
+
+  if (typeof params === 'number') {
+    page = params;
+    if (legacyLimit) limit = legacyLimit;
+  } else if (params) {
+    if (params.page) page = params.page;
+    if (params.limit) limit = params.limit;
+    if (params.shiftId) query.set('shiftId', params.shiftId);
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    if (params.order) query.set('order', params.order);
+  }
+
+  query.set('page', String(page));
+  query.set('limit', String(limit));
+  return apiRequest<ApiListResponse<LocationPoint & { operationalStatus?: string; isInsideGeofence?: boolean; distanceToRestaurantMeters?: number; isReliable?: boolean }>>(`/api/drivers/${id}/locations?${query.toString()}`);
+}
+
+export async function getDriverActivity(
+  driverId: string,
+  params?: { shiftId?: string; from?: string; to?: string }
+): Promise<DriverActivityResponse> {
+  const query = new URLSearchParams();
+  if (params?.shiftId) query.set('shiftId', params.shiftId);
+  if (params?.from) query.set('from', params.from);
+  if (params?.to) query.set('to', params.to);
+  const qStr = query.toString();
+  return apiRequest<DriverActivityResponse>(`/api/drivers/${driverId}/activity${qStr ? `?${qStr}` : ''}`);
+}
+
+export async function forceEndDriverShift(driverId: string): Promise<{ success: boolean; shiftId: string }> {
+  return apiRequest<{ success: boolean; shiftId: string }>(`/api/drivers/${driverId}/shift/force-end`, {
+    method: 'POST',
+  });
 }
 
 export async function getDriverLatestLocation(id: string): Promise<{ location: LocationPoint | null }> {
@@ -478,11 +581,19 @@ export async function listNotifications(params?: {
   page?: number;
   limit?: number;
   unreadOnly?: boolean;
+  severity?: string;
+  resolved?: boolean;
+  from?: string;
+  to?: string;
 }): Promise<{ items: NotificationItem[]; total: number; unreadCount: number; page: number; limit: number }> {
   const query = new URLSearchParams();
   if (params?.page) query.set('page', String(params.page));
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.unreadOnly) query.set('unreadOnly', 'true');
+  if (params?.severity) query.set('severity', params.severity);
+  if (params?.resolved != null) query.set('resolved', String(params.resolved));
+  if (params?.from) query.set('from', params.from);
+  if (params?.to) query.set('to', params.to);
   return apiRequest<{ items: NotificationItem[]; total: number; unreadCount: number; page: number; limit: number }>(`/api/notifications?${query.toString()}`);
 }
 
@@ -492,10 +603,50 @@ export async function markNotificationRead(id: string): Promise<{ notification: 
   });
 }
 
+export async function resolveNotification(id: string): Promise<{ success: boolean; notification: NotificationItem }> {
+  return apiRequest<{ success: boolean; notification: NotificationItem }>(`/api/notifications/${id}/resolve`, {
+    method: 'PATCH',
+  });
+}
+
 export async function markAllNotificationsRead(): Promise<{ success: boolean }> {
   return apiRequest<{ success: boolean }>('/api/notifications/read-all', {
     method: 'POST',
   });
+}
+
+export async function getReportsSummary(params?: {
+  from?: string;
+  to?: string;
+  driverId?: string;
+}): Promise<ReportSummaryResponse> {
+  const query = new URLSearchParams();
+  if (params?.from) query.set('from', params.from);
+  if (params?.to) query.set('to', params.to);
+  if (params?.driverId) query.set('driverId', params.driverId);
+  const qStr = query.toString();
+  return apiRequest<ReportSummaryResponse>(`/api/reports/summary${qStr ? `?${qStr}` : ''}`);
+}
+
+export async function listAuditLogs(params?: {
+  action?: string;
+  userId?: string;
+  entityType?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  limit?: number;
+}): Promise<ApiListResponse<AuditLogRecord>> {
+  const query = new URLSearchParams();
+  if (params?.action) query.set('action', params.action);
+  if (params?.userId) query.set('userId', params.userId);
+  if (params?.entityType) query.set('entityType', params.entityType);
+  if (params?.from) query.set('from', params.from);
+  if (params?.to) query.set('to', params.to);
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  const qStr = query.toString();
+  return apiRequest<ApiListResponse<AuditLogRecord>>(`/api/audit-logs${qStr ? `?${qStr}` : ''}`);
 }
 
 export async function listUsers(params?: { page?: number; limit?: number; role?: string; search?: string }): Promise<ApiListResponse<SessionUser>> {
@@ -562,6 +713,8 @@ export const apiClient = {
   getDriverTrackingStatus,
   getDriverHistory,
   getDriverLocations,
+  getDriverActivity,
+  forceEndDriverShift,
   getDriverLatestLocation,
   resetDriverDevice,
   getLiveFleetStatus,
@@ -571,7 +724,10 @@ export const apiClient = {
   updateAlertSettings,
   listNotifications,
   markNotificationRead,
+  resolveNotification,
   markAllNotificationsRead,
+  getReportsSummary,
+  listAuditLogs,
   listUsers,
   createUser,
   updateUser,

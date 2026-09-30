@@ -2,8 +2,11 @@
   "nav": {
     "overview": "Overview",
     "drivers": "Drivers",
+    "alerts": "Alerts",
+    "reports": "Reports",
     "devices": "Devices",
     "users": "Users",
+    "audit": "Audit Log",
     "map": "Live Map",
     "settings": "Settings"
   },

@@ -3,6 +3,7 @@ import {
   resolveConnectionState,
   resolveOperationalState,
   resolveSpeedSemantics,
+  resolveTelemetryDiagnostics,
 } from '../lib/telemetry';
 import { t, isRtl, formatTimeAgo, formatWesternNumber } from '../lib/i18n';
 import type { FleetDriverLiveStatus } from '../lib/api';
@@ -554,4 +555,87 @@ describe('Web UI Semantics Hardening — Phase 1 Final', () => {
     expect(speed.speedKmh).toBe(54);
     expect(speed.ageMinutes).toBe(78);
   });
+
+  describe('resolveTelemetryDiagnostics 4-state diagnostics model', () => {
+    it('resolves OFFLINE when isOnline is false or null regardless of GPS points', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: false,
+          location: { accuracy: 10, recordedAt: new Date(now).toISOString() },
+        },
+        now,
+      });
+      expect(diag.status).toBe('OFFLINE');
+      expect(diag.isOnline).toBe(false);
+      expect(diag.labelEn).toBe('Offline');
+      expect(diag.labelAr).toBe('غير متصل');
+    });
+
+    it('resolves SYNCING when online but has pending unsynced queue points', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: { accuracy: 10, recordedAt: new Date(now).toISOString() },
+        },
+        pendingQueueCount: 14,
+        now,
+      });
+      expect(diag.status).toBe('SYNCING');
+      expect(diag.isOnline).toBe(true);
+      expect(diag.labelEn).toBe('Syncing');
+      expect(diag.labelAr).toBe('مزامنة البيانات');
+    });
+
+    it('resolves GPS_STALE when online but GPS point is older than 5 minutes', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: {
+            accuracy: 15,
+            recordedAt: new Date(now - 12 * 60 * 1000).toISOString(),
+          },
+        },
+        now,
+      });
+      expect(diag.status).toBe('GPS_STALE');
+      expect(diag.gpsAgeMinutes).toBe(12);
+      expect(diag.isOnline).toBe(true);
+      expect(diag.labelEn).toBe('GPS Stale');
+    });
+
+    it('resolves GPS_DEGRADED when online with fresh GPS but accuracy > 35m', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: {
+            accuracy: 75,
+            recordedAt: new Date(now - 30 * 1000).toISOString(),
+          },
+        },
+        now,
+      });
+      expect(diag.status).toBe('GPS_DEGRADED');
+      expect(diag.isReliableGps).toBe(false);
+      expect(diag.isOnline).toBe(true);
+      expect(diag.labelEn).toBe('GPS Degraded');
+    });
+
+    it('resolves ONLINE when online with fresh and reliable GPS', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: {
+            accuracy: 12,
+            recordedAt: new Date(now - 10 * 1000).toISOString(),
+          },
+        },
+        now,
+      });
+      expect(diag.status).toBe('ONLINE');
+      expect(diag.isReliableGps).toBe(true);
+      expect(diag.isOnline).toBe(true);
+      expect(diag.labelEn).toBe('Online');
+    });
+  });
 });
+

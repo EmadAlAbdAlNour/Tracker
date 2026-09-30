@@ -5,6 +5,7 @@ import {
   resolveConnectionState,
   resolveOperationalState,
   resolveSpeedSemantics,
+  resolveTelemetryDiagnostics,
 } from './telemetry';
 import { t, isRtl, formatTimeAgo, formatWesternNumber } from './i18n';
 
@@ -471,5 +472,89 @@ describe('Telemetry & Auth Parity Regression Tests', () => {
       expect(validateStartShiftPayload({ latitude: 24.7136, longitude: 46.6753 })).toBe(true);
     });
   });
+
+  describe('Part 6 — 4-State Diagnostics Model', () => {
+    const now = Date.now();
+
+    it('resolves OFFLINE when isOnline is false or null regardless of location presence', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: false,
+          location: { accuracy: 10, recordedAt: new Date(now).toISOString() },
+        },
+        now,
+      });
+      expect(diag.status).toBe('OFFLINE');
+      expect(diag.isOnline).toBe(false);
+      expect(diag.badgeColor).toBe('#64748b');
+      expect(diag.labelEn).toBe('Offline');
+      expect(diag.labelAr).toBe('غير متصل');
+    });
+
+    it('resolves SYNCING when online with pending queued locations', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: { accuracy: 10, recordedAt: new Date(now).toISOString() },
+        },
+        pendingQueueCount: 7,
+        now,
+      });
+      expect(diag.status).toBe('SYNCING');
+      expect(diag.isOnline).toBe(true);
+      expect(diag.badgeColor).toBe('#06b6d4');
+      expect(diag.labelEn).toBe('Syncing');
+      expect(diag.labelAr).toBe('مزامنة البيانات');
+    });
+
+    it('resolves GPS_STALE when online but GPS timestamp is older than 5 minutes', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: {
+            accuracy: 15,
+            recordedAt: new Date(now - 10 * 60 * 1000).toISOString(),
+          },
+        },
+        now,
+      });
+      expect(diag.status).toBe('GPS_STALE');
+      expect(diag.gpsAgeMinutes).toBe(10);
+      expect(diag.badgeColor).toBe('#f59e0b');
+    });
+
+    it('resolves GPS_DEGRADED when online with fresh GPS but accuracy > 35m', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: {
+            accuracy: 60,
+            recordedAt: new Date(now - 20 * 1000).toISOString(),
+          },
+        },
+        now,
+      });
+      expect(diag.status).toBe('GPS_DEGRADED');
+      expect(diag.isReliableGps).toBe(false);
+      expect(diag.badgeColor).toBe('#f97316');
+    });
+
+    it('resolves ONLINE when online with fresh and reliable GPS', () => {
+      const diag = resolveTelemetryDiagnostics({
+        driver: {
+          isOnline: true,
+          location: {
+            accuracy: 8,
+            recordedAt: new Date(now - 5 * 1000).toISOString(),
+          },
+        },
+        now,
+      });
+      expect(diag.status).toBe('ONLINE');
+      expect(diag.isReliableGps).toBe(true);
+      expect(diag.badgeColor).toBe('#10b981');
+    });
+  });
 });
+
 

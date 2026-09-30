@@ -1,12 +1,16 @@
 import { db, notificationsTable, notificationReadsTable } from "@workspace/db";
-import { eq, desc, and, sql, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, isNull, inArray, gte, lte } from "drizzle-orm";
 
 export interface ListNotificationsParams {
   page?: number;
   limit?: number;
   unreadOnly?: boolean;
   type?: string;
+  severity?: "INFO" | "WARNING" | "CRITICAL";
+  resolved?: boolean;
   driverId?: string;
+  from?: string;
+  to?: string;
 }
 
 export interface CreateNotificationInput {
@@ -35,6 +39,18 @@ export async function listNotifications(params: ListNotificationsParams = {}, us
       }
       if (params.driverId) {
         baseConditions.push(eq(notificationsTable.driverId, params.driverId));
+      }
+      if (params.severity) {
+        baseConditions.push(eq(notificationsTable.severity, params.severity));
+      }
+      if (params.resolved !== undefined) {
+        baseConditions.push(eq(notificationsTable.resolved, params.resolved));
+      }
+      if (params.from) {
+        baseConditions.push(gte(notificationsTable.createdAt, new Date(params.from)));
+      }
+      if (params.to) {
+        baseConditions.push(lte(notificationsTable.createdAt, new Date(params.to)));
       }
 
       const itemsConditions = [...baseConditions];
@@ -117,6 +133,18 @@ export async function listNotifications(params: ListNotificationsParams = {}, us
   }
   if (params.driverId) {
     conditions.push(eq(notificationsTable.driverId, params.driverId));
+  }
+  if (params.severity) {
+    conditions.push(eq(notificationsTable.severity, params.severity));
+  }
+  if (params.resolved !== undefined) {
+    conditions.push(eq(notificationsTable.resolved, params.resolved));
+  }
+  if (params.from) {
+    conditions.push(gte(notificationsTable.createdAt, new Date(params.from)));
+  }
+  if (params.to) {
+    conditions.push(lte(notificationsTable.createdAt, new Date(params.to)));
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
