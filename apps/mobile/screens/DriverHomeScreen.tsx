@@ -496,7 +496,7 @@ export function DriverHomeScreen({
 
               {/* Q1: Shift */}
               <View style={[styles.checkRow, { flexDirection: rowDir }]}>
-                <View style={styles.checkLeft}>
+                <View style={[styles.checkLeft, { flexDirection: rowDir }]}>
                   <AppIcon name="driver" size={16} color={activeShift ? colors.status.online : colors.text.muted} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'حالة الوردية:' : 'Operational Shift:'}</Text>
                 </View>
@@ -509,7 +509,7 @@ export function DriverHomeScreen({
 
               {/* Q2: Live Tracking */}
               <View style={[styles.checkRow, { flexDirection: rowDir }]}>
-                <View style={styles.checkLeft}>
+                <View style={[styles.checkLeft, { flexDirection: rowDir }]}>
                   <AppIcon name="gps" size={16} color={trackingActive ? colors.status.online : colors.text.muted} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'التتبع المباشر:' : 'Live Tracking:'}</Text>
                 </View>
@@ -522,7 +522,7 @@ export function DriverHomeScreen({
 
               {/* Q3: GPS Service */}
               <View style={[styles.checkRow, { flexDirection: rowDir }]}>
-                <View style={styles.checkLeft}>
+                <View style={[styles.checkLeft, { flexDirection: rowDir }]}>
                   <AppIcon name="target" size={16} color={telemetry.locationServicesEnabled ? colors.status.online : colors.status.critical} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'خدمة الموقع (GPS):' : 'Location Services (GPS):'}</Text>
                 </View>
@@ -535,7 +535,7 @@ export function DriverHomeScreen({
 
               {/* Q4: Network Connection */}
               <View style={[styles.checkRow, { flexDirection: rowDir }]}>
-                <View style={styles.checkLeft}>
+                <View style={[styles.checkLeft, { flexDirection: rowDir }]}>
                   <AppIcon name="wifi" size={16} color={telemetry.networkStatus !== 'offline' ? colors.status.online : colors.status.stopped} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'الاتصال بالإنترنت:' : 'Internet Connection:'}</Text>
                 </View>
@@ -548,7 +548,7 @@ export function DriverHomeScreen({
 
               {/* Q5: Synchronization / Queue */}
               <View style={[styles.checkRow, { flexDirection: rowDir }]}>
-                <View style={styles.checkLeft}>
+                <View style={[styles.checkLeft, { flexDirection: rowDir }]}>
                   <AppIcon name="sync" size={16} color={queuedCount === 0 ? colors.status.online : colors.status.stopped} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'مزامنة المواقع:' : 'Data Synchronization:'}</Text>
                 </View>
@@ -689,7 +689,7 @@ export function DriverHomeScreen({
               </View>
             </View>
 
-            <TouchableOpacity style={styles.logoutRowButton} onPress={handleLogoutPress}>
+            <TouchableOpacity style={[styles.logoutRowButton, { flexDirection: rowDir }]} onPress={handleLogoutPress}>
               <AppIcon name="logout" size={16} color="#dc2626" />
               <Text style={styles.logoutRowButtonText}>{t('app.logout')}</Text>
             </TouchableOpacity>

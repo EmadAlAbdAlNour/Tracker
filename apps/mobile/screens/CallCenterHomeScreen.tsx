@@ -542,7 +542,7 @@ export function CallCenterHomeScreen({
             </View>
           ) : (
             <View style={styles.driversScreenContainer}>
-              <View style={styles.searchBar}>
+              <View style={[styles.searchBar, { flexDirection: rowDir }]}>
                 <AppIcon name="search" size={16} color={colors.text.muted} />
                 <TextInput
                   value={driverSearch}
@@ -602,14 +602,14 @@ export function CallCenterHomeScreen({
                           {isDOnline ? t('operator.online') : t('operator.offline')}
                         </Text>
                       </View>
-                      <Text style={styles.employeeIdLabel}>
-                        {t('diagnostics.employeeId')} {d.employeeId ? formatWesternNumber(d.employeeId) : '—'}
-                      </Text>
                     </View>
 
                     <View style={[styles.driverMainCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-                      <Text style={styles.cardDriverName}>{d.driverName}</Text>
-                      <Text style={styles.cardDriverFreshness}>
+                      <Text style={styles.cardDriverName} numberOfLines={1}>{d.driverName}</Text>
+                      <Text style={styles.employeeIdLabel} numberOfLines={1}>
+                        {t('diagnostics.employeeId')} {d.employeeId ? formatWesternNumber(d.employeeId) : '—'}
+                      </Text>
+                      <Text style={styles.cardDriverFreshness} numberOfLines={1}>
                         {d.operationalStatus === 'MOVING'
                           ? (rtl ? 'في حركة' : 'Moving')
                           : d.operationalStatus === 'AT_RESTAURANT'
@@ -698,7 +698,7 @@ export function CallCenterHomeScreen({
                       </Text>
                       <View style={[styles.notificationMetaRow, { flexDirection: rowDir }]}>
                         <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
-                          {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          {n.createdAt ? formatWesternNumber(new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : ''}
                         </Text>
                         {n.driverId && (
                           <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 4 }}>
@@ -951,26 +951,31 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   driverStatusCol: {
-    minWidth: 92,
+    minWidth: 68,
     flexShrink: 0,
-    gap: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusBadgePill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: radius.xs,
     borderWidth: 1,
+    alignItems: 'center',
   },
   statusBadgePillText: {
     fontSize: 10,
     fontWeight: '700',
   },
   employeeIdLabel: {
-    fontSize: 9,
+    fontSize: 11,
+    fontWeight: '500',
     color: colors.text.muted,
+    marginTop: 1,
   },
   driverMainCol: {
     flex: 1,
+    justifyContent: 'center',
   },
   cardDriverName: {
     fontSize: 14,
@@ -978,8 +983,9 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   cardDriverFreshness: {
-    fontSize: 10,
+    fontSize: 11,
     color: colors.text.muted,
+    marginTop: 1,
   },
   driverRightCol: {
     minWidth: 60,

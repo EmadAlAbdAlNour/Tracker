@@ -93,3 +93,22 @@ All notable changes across the Tracker codebase during this final master pass ar
 ### Finding F-07: Database Performance Indexes
 - Added `shifts_started_at_idx` index on `shifts(started_at)` and `notifications_resolved_idx` on `notifications(resolved)` in `lib/db/src/schema/index.ts`.
 - Generated Drizzle migration `0010_performance_indexes.sql` and registered entry in `_journal.json`.
+
+---
+
+## [UI/UX Polish & Visual QA Pass] — Arabic-First Production Standards (Phases 1–20)
+
+### 1. Mobile Design System & RTL Layout Symmetry
+- **Bottom Navigation**: Inverted tab order under RTL in `BottomTabBar.tsx`, centered icons and labels, applied Cairo font weights, and refined unread notification badge styling.
+- **RTL Flex Alignment**: Enforced `flexDirection: rowDir` on search inputs, checklist rows, diagnostic status indicators, and logout actions across `AdminHomeScreen`, `CallCenterHomeScreen`, and `DriverHomeScreen`.
+- **Text Wrap & Clipping Prevention**: Protected badges and pills (`statusBadgePill`, `staleNoticePill`) with `flexShrink: 0`, `numberOfLines={1}`, and minimum width constraints.
+
+### 2. Localization & Terminology Parity
+- **Status & Role Badges**: Fully localized operational states (`في حركة`, `متوقف`, `بالمطعم`), user roles (`سائق`, `مسؤول`, `مركز الاتصال`), and alert severities (`حرج`, `تحذير`, `معلومة`).
+- **Audit & Analytics Filters**: Localized entity tabs (`الكل`, `المستخدمين`, `السائقين`, `الأجهزة`, `الإعدادات`) and metric units (`كم/س`, `متر`, `كم`, `س`).
+- **Numeral Standardization**: Formatted timestamps, IDs, and measurements consistently with Western Arabic numerals (`formatWesternNumber`).
+
+### 3. Visual Verification & Documentation
+- **Visual Evidence**: Captured and cataloged 32 high-resolution screenshots across all user roles, dialogs, and states on Android Emulator (`Medium_Phone_API_36.1`).
+- **Audit Artifacts**: Produced `docs/UI_POLISH_PLAN.md`, `docs/UI_POLISH_AUDIT.md`, `docs/UI_LOCALIZATION_AUDIT.md`, and `docs/UI_VISUAL_QA.md`.
+- **Zero Regressions**: 100% test pass rate across 327 automated tests and clean Next.js 14 production builds.

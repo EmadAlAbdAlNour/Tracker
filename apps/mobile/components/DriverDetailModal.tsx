@@ -379,11 +379,11 @@ export function DriverDetailModal({
                   </Text>
                   {isAwaitingTelemetry ? (
                     <View style={styles.staleNoticePill}>
-                      <Text style={styles.staleNoticeText}>{rtl ? 'قيد الانتظار' : 'Pending'}</Text>
+                      <Text style={styles.staleNoticeText} numberOfLines={1}>{rtl ? 'قيد الانتظار' : 'Pending'}</Text>
                     </View>
                   ) : !isOnline ? (
                     <View style={styles.staleNoticePill}>
-                      <Text style={styles.staleNoticeText}>{rtl ? 'غير مباشر' : 'Stale'}</Text>
+                      <Text style={styles.staleNoticeText} numberOfLines={1}>{rtl ? 'بيانات سابقة' : 'Stale'}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -597,14 +597,18 @@ export function DriverDetailModal({
                               },
                             ]}
                           >
-                            {loc.operationalStatus || 'STOPPED'}
+                            {loc.operationalStatus === 'MOVING'
+                              ? (rtl ? 'في حركة' : 'Moving')
+                              : loc.operationalStatus === 'AT_RESTAURANT'
+                              ? (rtl ? 'بالمطعم' : 'At Restaurant')
+                              : (rtl ? 'متوقف' : 'Stopped')}
                           </Text>
                         </View>
                       </View>
                       <View style={[styles.metaRow, { flexDirection: rowDir, marginTop: 4 }]}>
                         <Text style={styles.metaLabel}>{rtl ? 'السرعة والدقة:' : 'Speed & Accuracy:'}</Text>
                         <Text style={styles.metaValue}>
-                          {loc.speed != null ? `${formatWesternNumber(Math.round(Number(loc.speed) * 3.6))} km/h` : '0 km/h'} • ±{formatWesternNumber(Math.round(Number(loc.accuracy || 0)))}m
+                          {loc.speed != null ? `${formatWesternNumber(Math.round(Number(loc.speed) * 3.6))} ${t('driverDetail.speedUnit')}` : `0 ${t('driverDetail.speedUnit')}`} • ±{formatWesternNumber(Math.round(Number(loc.accuracy || 0)))}{t('driverDetail.meters')}
                         </Text>
                       </View>
                       <View style={[styles.metaRow, { flexDirection: rowDir }]}>
@@ -730,12 +734,15 @@ const styles = StyleSheet.create({
   },
   staleNoticePill: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: radius.xs,
     backgroundColor: colors.surfaceSubtle,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     flexShrink: 0,
+    minWidth: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
     alignSelf: 'center',
   },
   staleNoticeText: {

@@ -844,7 +844,7 @@ export function AdminHomeScreen({
             >
             {/* Error Banner with Retry */}
             {fleetError && (
-              <View style={styles.errorBanner}>
+              <View style={[styles.errorBanner, { flexDirection: rowDir }]}>
                 <AppIcon name="warning" size={16} color="#b91c1c" />
                 <Text style={styles.errorBannerText}>{fleetError}</Text>
                 <TouchableOpacity style={styles.retryButton} onPress={loadFleet}>
@@ -919,11 +919,11 @@ export function AdminHomeScreen({
                 </View>
 
                 {(fleet.alerts ?? []).slice(0, 3).map((al: any) => (
-                  <View key={al.id} style={styles.alertCard}>
+                  <View key={al.id} style={[styles.alertCard, { flexDirection: rowDir }]}>
                     <AppIcon name="warning" size={16} color={colors.status.critical} />
                     <View style={styles.alertBody}>
-                      <Text style={styles.alertTitle}>{al.title || al.type}</Text>
-                      <Text style={styles.alertMessage}>{al.message}</Text>
+                      <Text style={[styles.alertTitle, { textAlign: rtl ? 'right' : 'left' }]}>{al.title || al.type}</Text>
+                      <Text style={[styles.alertMessage, { textAlign: rtl ? 'right' : 'left' }]}>{al.message}</Text>
                     </View>
                     <Text style={styles.alertTime}>
                       {al.createdAt ? new Date(al.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -1086,7 +1086,7 @@ export function AdminHomeScreen({
           ) : (
             <View style={styles.driversScreenContainer}>
             {/* Search Input */}
-            <View style={styles.searchBar}>
+            <View style={[styles.searchBar, { flexDirection: rowDir }]}>
               <AppIcon name="search" size={16} color={colors.text.muted} />
               <TextInput
                 value={driverSearch}
@@ -1153,15 +1153,15 @@ export function AdminHomeScreen({
                             {isDOnline ? t('operator.online') : t('operator.offline')}
                           </Text>
                         </View>
-                        <Text style={styles.employeeIdLabel}>
-                          {t('diagnostics.employeeId')} {d.employeeId ? formatWesternNumber(d.employeeId) : '—'}
-                        </Text>
                       </View>
 
                       {/* Main Driver Info */}
                       <View style={[styles.driverMainCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-                        <Text style={styles.cardDriverName}>{d.driverName}</Text>
-                        <Text style={styles.cardDriverFreshness}>
+                        <Text style={styles.cardDriverName} numberOfLines={1}>{d.driverName}</Text>
+                        <Text style={styles.employeeIdLabel} numberOfLines={1}>
+                          {t('diagnostics.employeeId')} {d.employeeId ? formatWesternNumber(d.employeeId) : '—'}
+                        </Text>
+                        <Text style={styles.cardDriverFreshness} numberOfLines={1}>
                           {d.operationalStatus === 'MOVING'
                             ? (rtl ? 'في حركة' : 'Moving')
                             : d.operationalStatus === 'AT_RESTAURANT'
@@ -1212,7 +1212,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('devices')}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="device" size={18} color={colors.primary} />
                       <Text style={styles.moreRowText}>{t('admin.deviceManagement')}</Text>
                     </View>
@@ -1224,7 +1224,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('users')}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="users" size={18} color={colors.primary} />
                       <Text style={styles.moreRowText}>{t('admin.usersList')}</Text>
                     </View>
@@ -1236,7 +1236,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('notifications')}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="bell" size={18} color={colors.primary} />
                       <Text style={styles.moreRowText}>{t('notifications.title')}</Text>
                     </View>
@@ -1253,7 +1253,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('reports')}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="dashboard" size={18} color={colors.primary} />
                       <Text style={styles.moreRowText}>{rtl ? 'تقارير الأداء والعمليات' : 'Operational Reports'}</Text>
                     </View>
@@ -1265,7 +1265,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('audit')}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="check" size={18} color={colors.primary} />
                       <Text style={styles.moreRowText}>{rtl ? 'سجل العمليات المركزي' : 'Centralized Audit Log'}</Text>
                     </View>
@@ -1283,7 +1283,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('settings')}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="settings" size={18} color={colors.primary} />
                       <Text style={styles.moreRowText}>{t('admin.settings')}</Text>
                     </View>
@@ -1301,7 +1301,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={toggleLanguage}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="sync" size={16} color={colors.primary} />
                       <Text style={styles.moreRowText}>
                         {rtl ? 'تغيير اللغة (English)' : 'Change Language (العربية)'}
@@ -1313,7 +1313,7 @@ export function AdminHomeScreen({
                     style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={onLogout}
                   >
-                    <View style={styles.moreRowLeft}>
+                    <View style={[styles.moreRowLeft, { flexDirection: rowDir }]}>
                       <AppIcon name="logout" size={18} color="#dc2626" />
                       <Text style={[styles.moreRowText, { color: '#dc2626', fontWeight: '700' }]}>
                         {t('app.logout')}
@@ -1426,7 +1426,11 @@ export function AdminHomeScreen({
                                 },
                               ]}
                             >
-                              {u.role}
+                              {u.role === 'ADMIN'
+                                ? (rtl ? 'مسؤول' : 'ADMIN')
+                                : u.role === 'CALL_CENTER'
+                                ? (rtl ? 'مركز الاتصال' : 'CALL CENTER')
+                                : (rtl ? 'سائق' : 'DRIVER')}
                             </Text>
                           </View>
                           <TouchableOpacity
@@ -1714,7 +1718,11 @@ export function AdminHomeScreen({
                                       },
                                     ]}
                                   >
-                                    {n.severity || 'INFO'}
+                                    {n.severity === 'CRITICAL'
+                                      ? (rtl ? 'حرج' : 'CRITICAL')
+                                      : n.severity === 'WARNING'
+                                      ? (rtl ? 'تحذير' : 'WARNING')
+                                      : (rtl ? 'معلومة' : 'INFO')}
                                   </Text>
                                 </View>
                                 {!n.read && (
@@ -1729,7 +1737,7 @@ export function AdminHomeScreen({
                             </Text>
                             <View style={[styles.rowBetween, { flexDirection: rowDir, marginTop: 8 }]}>
                               <Text style={styles.notificationTime}>
-                                {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                {n.createdAt ? formatWesternNumber(new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : ''}
                               </Text>
                               {!n.resolved ? (
                                 <TouchableOpacity
@@ -1797,25 +1805,25 @@ export function AdminHomeScreen({
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'المسافة' : 'Distance'}</Text>
                             <Text style={[styles.metricVal, { color: colors.primary }]}>
-                              {formatWesternNumber(((reportData.summary?.totalDistanceMeters ?? 0) / 1000).toFixed(1))} km
+                              {formatWesternNumber(((reportData.summary?.totalDistanceMeters ?? 0) / 1000).toFixed(1))} {rtl ? 'كم' : 'km'}
                             </Text>
                           </View>
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'ساعات العمل' : 'Duration'}</Text>
                             <Text style={styles.metricVal}>
-                              {formatWesternNumber(Math.round((reportData.summary?.totalDurationMinutes ?? 0) / 60))}h
+                              {formatWesternNumber(Math.round((reportData.summary?.totalDurationMinutes ?? 0) / 60))}{rtl ? 'س' : 'h'}
                             </Text>
                           </View>
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'وقت الحركة' : 'Moving'}</Text>
                             <Text style={[styles.metricVal, { color: colors.status.online }]}>
-                              {formatWesternNumber(Math.round(((reportData.summary?.movingDurationMinutes ?? reportData.summary?.totalMovingMinutes ?? 0)) / 60))}h
+                              {formatWesternNumber(Math.round(((reportData.summary?.movingDurationMinutes ?? reportData.summary?.totalMovingMinutes ?? 0)) / 60))}{rtl ? 'س' : 'h'}
                             </Text>
                           </View>
                           <View style={styles.metricCard}>
                             <Text style={styles.metricLabel}>{rtl ? 'وقت التوقف' : 'Stopped'}</Text>
                             <Text style={[styles.metricVal, { color: colors.status.warning }]}>
-                              {formatWesternNumber(Math.round(((reportData.summary?.stoppedDurationMinutes ?? reportData.summary?.totalStoppedMinutes ?? 0)) / 60))}h
+                              {formatWesternNumber(Math.round(((reportData.summary?.stoppedDurationMinutes ?? reportData.summary?.totalStoppedMinutes ?? 0)) / 60))}{rtl ? 'س' : 'h'}
                             </Text>
                           </View>
                           <View style={styles.metricCard}>
@@ -1842,10 +1850,10 @@ export function AdminHomeScreen({
                                 {rtl ? 'الورديات:' : 'Shifts:'} {formatWesternNumber(drv.shiftCount)}
                               </Text>
                               <Text style={[styles.deviceMetaItem, { color: colors.primary, fontWeight: '700' }]}>
-                                {formatWesternNumber((((drv.totalDistanceMeters ?? drv.distanceMeters ?? 0)) / 1000).toFixed(1))} km
+                                {formatWesternNumber((((drv.totalDistanceMeters ?? drv.distanceMeters ?? 0)) / 1000).toFixed(1))} {rtl ? 'كم' : 'km'}
                               </Text>
                               <Text style={styles.deviceMetaItem}>
-                                {rtl ? 'المدة:' : 'Duration:'} {formatWesternNumber(Math.round(((drv.totalDurationMinutes ?? drv.durationMinutes ?? 0)) / 60))}h
+                                {rtl ? 'المدة:' : 'Duration:'} {formatWesternNumber(Math.round(((drv.totalDurationMinutes ?? drv.durationMinutes ?? 0)) / 60))}{rtl ? 'س' : 'h'}
                               </Text>
                               <Text style={[styles.deviceMetaItem, { color: colors.status.critical }]}>
                                 {rtl ? 'التنبيهات:' : 'Alerts:'} {formatWesternNumber(drv.alertCount ?? drv.alerts ?? 0)}
@@ -1874,7 +1882,17 @@ export function AdminHomeScreen({
                         }}
                       >
                         <Text style={[styles.presetChipText, auditEntityFilter === ent && styles.presetChipTextActive]}>
-                          {ent === '' ? (rtl ? 'الكل' : 'All') : ent}
+                          {ent === ''
+                            ? (rtl ? 'الكل' : 'All')
+                            : ent === 'USER'
+                            ? (rtl ? 'المستخدمين' : 'Users')
+                            : ent === 'DRIVER'
+                            ? (rtl ? 'السائقين' : 'Drivers')
+                            : ent === 'DEVICE'
+                            ? (rtl ? 'الأجهزة' : 'Devices')
+                            : ent === 'SETTINGS'
+                            ? (rtl ? 'الإعدادات' : 'Settings')
+                            : ent}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -1914,7 +1932,7 @@ export function AdminHomeScreen({
                               </View>
                               <Text style={styles.deviceMetaItem}>
                                 {log.createdAt
-                                  ? new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                  ? formatWesternNumber(new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
                                   : ''}
                               </Text>
                             </View>
@@ -2380,26 +2398,31 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   driverStatusCol: {
-    minWidth: 92,
+    minWidth: 68,
     flexShrink: 0,
-    gap: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusBadgePill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: radius.xs,
     borderWidth: 1,
+    alignItems: 'center',
   },
   statusBadgePillText: {
     fontSize: 10,
     fontWeight: '700',
   },
   employeeIdLabel: {
-    fontSize: 9,
+    fontSize: 11,
+    fontWeight: '500',
     color: colors.text.muted,
+    marginTop: 1,
   },
   driverMainCol: {
     flex: 1,
+    justifyContent: 'center',
   },
   cardDriverName: {
     fontSize: 14,
@@ -2407,8 +2430,9 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   cardDriverFreshness: {
-    fontSize: 10,
+    fontSize: 11,
     color: colors.text.muted,
+    marginTop: 1,
   },
   driverRightCol: {
     minWidth: 60,

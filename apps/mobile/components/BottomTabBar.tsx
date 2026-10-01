@@ -5,7 +5,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, radius, spacing } from '../designSystem';
 import { AppIcon, type IconName } from './AppIcon';
-import { isRtl } from '../i18n';
+import { isRtl, getRowDirection } from '../i18n';
 
 export interface TabItem {
   id: string;
@@ -25,15 +25,12 @@ export function BottomTabBar({
   activeTab,
   onTabChange,
 }: BottomTabBarProps): React.JSX.Element {
-  const rtl = isRtl();
-
-  // In RTL, render tabs in right-to-left order
-  const displayTabs = rtl ? [...tabs].reverse() : tabs;
+  const rowDir = getRowDirection();
 
   return (
     <View style={styles.container}>
-      <View style={styles.tabBar}>
-        {displayTabs.map((tab) => {
+      <View style={[styles.tabBar, { flexDirection: rowDir }]}>
+        {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
           return (
             <TouchableOpacity
