@@ -15,8 +15,15 @@ import {
 import { colors, radius, spacing, typography, shadows } from '../designSystem';
 import { AppIcon } from './AppIcon';
 import { TrackerDialog } from './TrackerDialog';
-import { formatWesternNumber, isRtl, t } from '../i18n';
-import { resolveConnectionState, resolveOperationalState, resolveSpeedSemantics } from '../telemetry';
+import { formatWesternNumber, getRowDirection, isRtl, t } from '../i18n';
+import {
+  resolveActivityPresentation,
+  resolveBatteryFreshness,
+  resolveConnectionState,
+  resolveGeofencePresentation,
+  resolveOperationalState,
+  resolveSpeedSemantics,
+} from '../telemetry';
 
 interface DriverDetailModalProps {
   visible: boolean;
@@ -115,7 +122,32 @@ export function DriverDetailModal({
     operationalStatus: driver.operationalStatus,
     isOnline: driver.isOnline,
     recordedAt: driver.location?.recordedAt,
+    accuracy: driver.location?.accuracy,
   });
+
+  // Authoritative Geofence Presentation (No-Location Precedence)
+  const geofencePresentation = resolveGeofencePresentation({
+    hasLocation,
+    hasActiveShift,
+    isInsideGeofence: driver.isInsideGeofence,
+  });
+  const geofenceLabel = rtl ? geofencePresentation.labelAr : geofencePresentation.labelEn;
+  const geofenceColor =
+    geofencePresentation.state === 'INSIDE'
+      ? colors.status.online
+      : geofencePresentation.state === 'OUTSIDE'
+      ? colors.status.warning
+      : colors.text.muted;
+
+  // Authoritative Battery Freshness
+  const batteryFreshness = resolveBatteryFreshness({
+    batteryPercentage: driver.device?.batteryPercentage,
+    lastSeen: driver.device?.lastSeen,
+    isOnline: driver.isOnline,
+  });
+  const batteryLabel = rtl ? batteryFreshness.labelAr : batteryFreshness.labelEn;
+
+  const rowDir = getRowDirection();
 
   const getConnectionBadge = () => {
     switch (connectionState) {
@@ -245,7 +277,7 @@ export function DriverDetailModal({
     >
       <SafeAreaView style={styles.modalContainer}>
         {/* Header */}
-        <View style={[styles.header, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+        <View style={[styles.header, { flexDirection: rowDir }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityLabel="Close">
             <AppIcon name="close" size={16} color={colors.text.primary} />
           </TouchableOpacity>
@@ -259,7 +291,7 @@ export function DriverDetailModal({
         </View>
 
         {/* Tab Selector Bar */}
-        <View style={[styles.tabBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+        <View style={[styles.tabBar, { flexDirection: rowDir }]}>
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'overview' && styles.tabButtonActive]}
             onPress={() => setActiveTab('overview')}
@@ -291,7 +323,7 @@ export function DriverDetailModal({
             <>
               {/* Status & Freshness Header Card */}
               <View style={styles.card}>
-                <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.rowBetween, { flexDirection: rowDir }]}>
                   <Text style={styles.cardSectionTitle}>{rtl ? 'الحالة والاتصال الميداني' : 'Connection & Status'}</Text>
                   <View style={[styles.badgePill, { backgroundColor: connBadge.bg, borderColor: connBadge.border }]}>
                     <Text style={[styles.badgePillText, { color: connBadge.text }]}>{connBadge.label}</Text>
@@ -299,7 +331,7 @@ export function DriverDetailModal({
                 </View>
 
                 {/* Connection Freshness (lastSeen) */}
-                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Connection:'}</Text>
                   <Text style={styles.metaValue}>
                     {isAwaitingTelemetry
@@ -313,7 +345,7 @@ export function DriverDetailModal({
                 </View>
 
                 {/* GPS Location Freshness (recordedAt) */}
-                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'آخر موقع مسجل:' : 'Last GPS Location:'}</Text>
                   <Text style={styles.metaValue}>
                     {isAwaitingTelemetry || !hasLocation
@@ -327,7 +359,7 @@ export function DriverDetailModal({
                 </View>
 
                 {/* Operational Status */}
-                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'الحالة التشغيلية:' : 'Operational Status:'}</Text>
                   <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700' }]}>
                     {movBadge.label}
@@ -337,7 +369,7 @@ export function DriverDetailModal({
 
               {/* Telemetry Card (Explicit Stale vs Live Semantics) */}
               <View style={styles.card}>
-                <View style={[styles.telemetryHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.telemetryHeaderRow, { flexDirection: rowDir }]}>
                   <Text style={styles.cardSectionTitle}>
                     {isAwaitingTelemetry
                       ? (rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal')
@@ -394,24 +426,14 @@ export function DriverDetailModal({
                     <Text
                       style={[
                         styles.gridCellValue,
-                        {
-                          color: isAwaitingTelemetry
-                            ? colors.text.muted
-                            : driver.isInsideGeofence
-                            ? colors.status.online
-                            : colors.status.warning,
-                        },
+                        { color: geofenceColor },
                       ]}
                     >
-                      {isAwaitingTelemetry
-                        ? rtl ? 'بانتظار تحديد الموقع' : 'Awaiting location'
-                        : driver.isInsideGeofence
-                        ? t('driverDetail.insideGeofence')
-                        : t('driverDetail.outsideGeofence')}
+                      {geofenceLabel}
                     </Text>
                   </View>
 
-                  {/* Distance */}
+                  {/* Distance & GPS Accuracy */}
                   <View style={styles.gridCell}>
                     <Text style={styles.gridCellLabel}>{rtl ? 'المسافة عن المطعم' : 'Distance'}</Text>
                     <Text style={styles.gridCellValue}>
@@ -419,6 +441,13 @@ export function DriverDetailModal({
                         ? `~${formatWesternNumber(Math.round(driver.distanceToRestaurantMeters))} ${t('driverDetail.meters')}`
                         : '—'}
                     </Text>
+                    {driver.location?.accuracy != null && (
+                      <Text style={[styles.gridCellSublabel, Number(driver.location.accuracy) > 35 && { color: colors.status.warning }]}>
+                        {rtl
+                          ? `دقة GPS: ±${formatWesternNumber(Math.round(Number(driver.location.accuracy)))}م${Number(driver.location.accuracy) > 35 ? ' (منخفضة)' : ''}`
+                          : `GPS ±${formatWesternNumber(Math.round(Number(driver.location.accuracy)))}m${Number(driver.location.accuracy) > 35 ? ' (Degraded)' : ''}`}
+                      </Text>
+                    )}
                   </View>
                 </View>
               </View>
@@ -429,23 +458,21 @@ export function DriverDetailModal({
                   {rtl ? 'بيانات الوردية والجهاز المعتمد' : 'Shift & Authorized Device'}
                 </Text>
 
-                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'حالة الوردية:' : 'Shift:'}</Text>
                   <Text style={[styles.metaValue, { color: driver.shift ? colors.status.online : colors.text.muted, fontWeight: '700' }]}>
                     {driver.shift ? t('shift.onDuty') : t('shift.offDuty')}
                   </Text>
                 </View>
 
-                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'مستوى البطارية:' : 'Battery:'}</Text>
-                  <Text style={styles.metaValue}>
-                    {driver.device?.batteryPercentage != null
-                      ? `${formatWesternNumber(driver.device.batteryPercentage)}% ${driver.device.isCharging ? '(شاحن)' : ''}`
-                      : '—'}
+                  <Text style={[styles.metaValue, batteryFreshness.isStale && { color: colors.status.warning }]}>
+                    {batteryLabel}
                   </Text>
                 </View>
 
-                <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'معرف الجهاز المعتمد:' : 'Device ID:'}</Text>
                   <Text style={[styles.metaValue, { fontSize: 10, fontFamily: 'monospace' }]}>
                     {driver.device?.deviceIdentifier ? `${driver.device.deviceIdentifier.slice(0, 12)}...` : '—'}
@@ -507,24 +534,20 @@ export function DriverDetailModal({
                     const isEnd = act.type === 'SHIFT_ENDED';
                     const dotColor = isAlert ? colors.status.critical : isStart ? colors.status.online : isEnd ? colors.text.muted : colors.primary;
 
-                    const title = act.title || (
-                      act.type === 'SHIFT_STARTED' ? (rtl ? 'بدء الوردية' : 'Shift Started') :
-                      act.type === 'ARRIVED_AT_RESTAURANT' ? (rtl ? 'الوصول إلى المطعم' : 'Arrived at Restaurant') :
-                      act.type === 'LEFT_RESTAURANT' ? (rtl ? 'مغادرة المطعم' : 'Left Restaurant') :
-                      act.type === 'MOVING' ? (rtl ? 'بدء الحركة' : 'Moving') :
-                      act.type === 'STOPPED' ? (rtl ? 'توقف عن الحركة' : 'Stopped') :
-                      act.type === 'STOP_EXTENDED' ? (rtl ? 'توقف مطول خارج المطعم' : 'Extended Stop') :
-                      act.type === 'GPS_DISABLED' ? (rtl ? 'تعطيل GPS' : 'GPS Disabled') :
-                      act.type === 'BATTERY_CRITICAL' ? (rtl ? 'بطارية حرجة' : 'Battery Critical') :
-                      act.type === 'SHIFT_ENDED' ? (rtl ? 'انتهاء الوردية' : 'Shift Ended') : act.type
+                    const presentation = resolveActivityPresentation(
+                      act.type,
+                      rtl,
+                      act.title,
+                      act.description,
+                      act.metadata
                     );
 
                     return (
-                      <View key={act.id} style={[styles.activityItem, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <View key={act.id} style={[styles.activityItem, { flexDirection: rowDir }]}>
                         <View style={[styles.activityDot, { backgroundColor: dotColor }]} />
                         <View style={{ flex: 1, marginHorizontal: 8, alignItems: rtl ? 'flex-end' : 'flex-start' }}>
-                          <Text style={styles.activityTitle}>{title}</Text>
-                          {act.description ? <Text style={styles.activityDesc}>{act.description}</Text> : null}
+                          <Text style={styles.activityTitle}>{presentation.title}</Text>
+                          {presentation.description ? <Text style={styles.activityDesc}>{presentation.description}</Text> : null}
                           <Text style={styles.activityTime}>
                             {formatWesternNumber(new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}
                           </Text>
@@ -553,7 +576,7 @@ export function DriverDetailModal({
                 <View style={{ marginTop: 8 }}>
                   {locations.map((loc) => (
                     <View key={loc.id} style={styles.locationItemCard}>
-                      <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <View style={[styles.rowBetween, { flexDirection: rowDir }]}>
                         <Text style={styles.locationCoords}>
                           {formatWesternNumber(Number(loc.latitude).toFixed(4))}, {formatWesternNumber(Number(loc.longitude).toFixed(4))}
                         </Text>
@@ -578,13 +601,13 @@ export function DriverDetailModal({
                           </Text>
                         </View>
                       </View>
-                      <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row', marginTop: 4 }]}>
+                      <View style={[styles.metaRow, { flexDirection: rowDir, marginTop: 4 }]}>
                         <Text style={styles.metaLabel}>{rtl ? 'السرعة والدقة:' : 'Speed & Accuracy:'}</Text>
                         <Text style={styles.metaValue}>
                           {loc.speed != null ? `${formatWesternNumber(Math.round(Number(loc.speed) * 3.6))} km/h` : '0 km/h'} • ±{formatWesternNumber(Math.round(Number(loc.accuracy || 0)))}m
                         </Text>
                       </View>
-                      <View style={[styles.metaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                         <Text style={styles.metaLabel}>{rtl ? 'الوقت المسجل:' : 'Recorded At:'}</Text>
                         <Text style={styles.metaValue}>
                           {formatWesternNumber(new Date(loc.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}
@@ -669,6 +692,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
+    flex: 1,
+    flexShrink: 1,
   },
   rowBetween: {
     justifyContent: 'space-between',
@@ -701,14 +726,17 @@ const styles = StyleSheet.create({
   telemetryHeaderRow: {
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   staleNoticePill: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: radius.xs,
     backgroundColor: colors.surfaceSubtle,
     borderWidth: 1,
     borderColor: colors.borderStrong,
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   staleNoticeText: {
     fontSize: 10,

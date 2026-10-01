@@ -49,7 +49,19 @@ export const deviceRegisterSchema = z.object({
   appVersion: z.string().trim().min(1).max(50).optional().or(z.literal("")),
 });
 
-export const locationPointSchema = z.object({
+export const locationPointSchema = z.preprocess((val: any) => {
+  if (val && typeof val === "object") {
+    const copy = { ...val };
+    if (copy.lat !== undefined && copy.latitude === undefined) {
+      copy.latitude = copy.lat;
+    }
+    if (copy.lng !== undefined && copy.longitude === undefined) {
+      copy.longitude = copy.lng;
+    }
+    return copy;
+  }
+  return val;
+}, z.object({
   clientLocationId: z.string().trim().min(1).max(255).optional(),
   shiftId: z.string().uuid().optional(),
   latitude: z.number().min(-90).max(90),
@@ -66,7 +78,7 @@ export const locationPointSchema = z.object({
   isCharging: z.boolean().nullable().optional(),
   locationServicesEnabled: z.boolean().nullable().optional(),
   networkStatus: z.string().trim().max(50).nullable().optional(),
-});
+}));
 
 export const locationBatchSchema = z.array(locationPointSchema).min(1).max(20);
 

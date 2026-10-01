@@ -22,7 +22,7 @@ import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import { RealGeographicMapView, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
-import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale } from '../i18n';
+import { formatWesternNumber, getLocale, getRowDirection, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
 import { NotificationService } from '../notificationService';
 
@@ -60,6 +60,7 @@ export function CallCenterHomeScreen({
   const [unreadCount, setUnreadCount] = useState(0);
 
   const rtl = isRtl();
+  const rowDir = getRowDirection();
 
   const toggleLanguage = async () => {
     const next: Locale = locale === 'ar' ? 'en' : 'ar';
@@ -562,7 +563,7 @@ export function CallCenterHomeScreen({
                 return (
                   <TouchableOpacity
                     key={d.driverId}
-                    style={[styles.operationalDriverCard, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.operationalDriverCard, { flexDirection: rowDir }]}
                     onPress={() => {
                       setSelectedDriver(d);
                       setDriverModalVisible(true);
@@ -589,7 +590,7 @@ export function CallCenterHomeScreen({
                         </Text>
                       </View>
                       <Text style={styles.employeeIdLabel}>
-                        {t('diagnostics.employeeId')} {formatWesternNumber(d.employeeId)}
+                        {t('diagnostics.employeeId')} {d.employeeId ? formatWesternNumber(d.employeeId) : '—'}
                       </Text>
                     </View>
 
@@ -937,7 +938,8 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   driverStatusCol: {
-    minWidth: 72,
+    minWidth: 92,
+    flexShrink: 0,
     gap: 2,
   },
   statusBadgePill: {

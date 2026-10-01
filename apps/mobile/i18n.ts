@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { I18nManager } from 'react-native';
 
 export const LOCALE_STORAGE_KEY = 'tracker_mobile_locale';
 
@@ -456,6 +457,42 @@ export async function setStoredLocale(locale: Locale): Promise<void> {
 
 export function isRtl(): boolean {
   return currentLocale === 'ar';
+}
+
+/**
+ * Returns the flex row direction ('row' or 'row-reverse') needed to achieve
+ * the desired visual direction dictated by the application locale.
+ * - On an Arabic Android system, Yoga natively inverts 'row' to RTL.
+ *   Applying 'row-reverse' on top would double-invert it back to LTR!
+ * - On an English Android system, Yoga treats 'row' as LTR.
+ *   Applying 'row-reverse' produces RTL.
+ *
+ * Therefore:
+ * Target RTL visual layout:
+ *   If Yoga is natively RTL: 'row' (renders visual RTL)
+ *   If Yoga is natively LTR: 'row-reverse' (renders visual RTL)
+ * Target LTR visual layout:
+ *   If Yoga is natively RTL: 'row-reverse' (renders visual LTR)
+ *   If Yoga is natively LTR: 'row' (renders visual LTR)
+ */
+export function getRowDirection(forceRtl?: boolean): 'row' | 'row-reverse' {
+  const targetRtl = forceRtl !== undefined ? forceRtl : isRtl();
+  const nativeRtl = Boolean(I18nManager.isRTL);
+  return targetRtl !== nativeRtl ? 'row-reverse' : 'row';
+}
+
+/**
+ * Returns the alignItems cross-axis alignment ('flex-start' or 'flex-end')
+ * corresponding to the visual start or end of the layout.
+ * Visual start in RTL is right side; in LTR is left side.
+ */
+export function getFlexAlignment(visualStart: boolean = true): 'flex-start' | 'flex-end' {
+  const targetRtl = isRtl();
+  const nativeRtl = Boolean(I18nManager.isRTL);
+  const isAlignedWithNative = targetRtl === nativeRtl;
+  return visualStart
+    ? (isAlignedWithNative ? 'flex-start' : 'flex-end')
+    : (isAlignedWithNative ? 'flex-end' : 'flex-start');
 }
 
 export function t(path: string): string {

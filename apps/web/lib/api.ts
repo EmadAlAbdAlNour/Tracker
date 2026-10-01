@@ -7,6 +7,7 @@ export type SessionUser = {
   phone: string | null;
   role: Role;
   active: boolean;
+  employeeId?: string | null;
 };
 
 export type Session = {
@@ -702,6 +703,7 @@ export async function createUser(data: {
   email: string;
   phone?: string;
   role: Role;
+  employeeId?: string;
   password: string;
   active?: boolean;
 }): Promise<{ user: SessionUser }> {
@@ -716,6 +718,7 @@ export async function updateUser(id: string, data: {
   email?: string;
   phone?: string;
   role?: Role;
+  employeeId?: string;
   password?: string;
   active?: boolean;
 }): Promise<{ user: SessionUser }> {

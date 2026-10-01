@@ -4,6 +4,8 @@ import { getRestaurantSettings, getAlertSettings } from "./settingsService";
 import {
   evaluateOperationalHistory,
   DEFAULT_RELIABLE_ACCURACY_METERS,
+  MOVEMENT_SPEED_THRESHOLD_MPS,
+  STOP_SPEED_THRESHOLD_MPS,
   type OperationalPoint,
 } from "./fleetService";
 import { calculateDistanceMeters } from "./alertService";
@@ -100,7 +102,7 @@ export async function listDriverLocationHistory(
     let operationalStatus: "AT_RESTAURANT" | "MOVING" | "STOPPED" = "STOPPED";
     if (isInsideGeofence) {
       operationalStatus = "AT_RESTAURANT";
-    } else if (isReliable && speed >= 1.5) {
+    } else if (isReliable && speed >= MOVEMENT_SPEED_THRESHOLD_MPS) {
       operationalStatus = "MOVING";
     }
 
@@ -293,7 +295,7 @@ export async function getDriverActivityTimeline(
     }
 
     if (currentMovementState === "STOPPED") {
-      if (speed >= 1.5) {
+      if (speed >= MOVEMENT_SPEED_THRESHOLD_MPS) {
         consecutiveMoving++;
         consecutiveStopping = 0;
         if (consecutiveMoving >= 2 && (displacement >= 10 || !lastReliablePoint)) {
@@ -317,7 +319,7 @@ export async function getDriverActivityTimeline(
         consecutiveMoving = 0;
       }
     } else {
-      if (speed < 1.0) {
+      if (speed < STOP_SPEED_THRESHOLD_MPS) {
         consecutiveStopping++;
         consecutiveMoving = 0;
         if (consecutiveStopping >= 3) {

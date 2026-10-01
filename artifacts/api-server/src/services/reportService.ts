@@ -2,7 +2,7 @@ import { db, shiftsTable, locationPointsTable, driversTable, usersTable, notific
 import { eq, and, gte, lte, asc, desc, inArray } from "drizzle-orm";
 import { getRestaurantSettings } from "./settingsService";
 import { calculateDistanceMeters } from "./alertService";
-import { DEFAULT_RELIABLE_ACCURACY_METERS } from "./fleetService";
+import { DEFAULT_RELIABLE_ACCURACY_METERS, MOVEMENT_SPEED_THRESHOLD_MPS } from "./fleetService";
 
 export interface DriverReportMetrics {
   driverId: string;
@@ -213,7 +213,7 @@ export async function generateOperationalReport(params: {
           const speed = p.speed != null ? Number(p.speed) : 0;
           if (isInsideRestaurant) {
             shiftRestaurantMins += deltaMins;
-          } else if (speed >= 1.5) {
+          } else if (speed >= MOVEMENT_SPEED_THRESHOLD_MPS) {
             shiftMovingMins += deltaMins;
           } else {
             shiftStoppedMins += deltaMins;

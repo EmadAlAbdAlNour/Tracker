@@ -484,7 +484,7 @@ export async function evaluateAllActiveDriverAlerts() {
 let schedulerTimer: NodeJS.Timeout | null = null;
 
 export function startAlertEvaluationScheduler(intervalMs = 30000): void {
-  if (process.env.NODE_ENV === "test") return;
+  if (process.env.NODE_ENV === "test" || process.env.VERCEL) return;
   if (schedulerTimer) return;
 
   setTimeout(() => {

@@ -45,6 +45,7 @@ export default function UsersPage() {
     role: Role;
     password: string;
     active: boolean;
+    employeeId: string;
   }>({
     name: '',
     email: '',
@@ -52,6 +53,7 @@ export default function UsersPage() {
     role: 'ADMIN',
     password: '',
     active: true,
+    employeeId: '',
   });
 
   // Edit Modal State
@@ -67,6 +69,7 @@ export default function UsersPage() {
     role: Role;
     password: string;
     active: boolean;
+    employeeId: string;
   }>({
     name: '',
     email: '',
@@ -74,6 +77,7 @@ export default function UsersPage() {
     role: 'ADMIN',
     password: '',
     active: true,
+    employeeId: '',
   });
 
   const openEditModal = (user: SessionUser) => {
@@ -85,6 +89,7 @@ export default function UsersPage() {
       role: user.role,
       password: '',
       active: user.active,
+      employeeId: user.employeeId || '',
     });
     setEditError(null);
     setShowEditPassword(false);
@@ -104,6 +109,7 @@ export default function UsersPage() {
         role: editFormData.role,
         password: editFormData.password.trim() ? editFormData.password.trim() : undefined,
         active: editFormData.active,
+        employeeId: editFormData.role === 'DRIVER' ? editFormData.employeeId.trim() : undefined,
       });
       setEditModalOpen(false);
       setEditTargetUser(null);
@@ -175,6 +181,7 @@ export default function UsersPage() {
         role: formData.role,
         password: formData.password,
         active: formData.active,
+        employeeId: formData.role === 'DRIVER' ? formData.employeeId.trim() : undefined,
       });
       setModalOpen(false);
       setFormData({
@@ -184,6 +191,7 @@ export default function UsersPage() {
         role: 'ADMIN',
         password: '',
         active: true,
+        employeeId: '',
       });
       await loadData();
     } catch (err) {
@@ -343,6 +351,11 @@ export default function UsersPage() {
                     <tr key={user.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-5 py-3.5">
                         <div className="font-bold text-slate-900">{user.name}</div>
+                        {user.role === 'DRIVER' && user.employeeId && (
+                          <div className="text-[11px] font-mono text-slate-500">
+                            {rtl ? `الرقم الوظيفي: ${formatWesternNumber(user.employeeId)}` : `Emp ID: ${user.employeeId}`}
+                          </div>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 font-mono text-slate-600">{user.email}</td>
                       <td className="px-5 py-3.5 font-mono text-slate-600">
@@ -505,6 +518,22 @@ export default function UsersPage() {
                 </div>
               </div>
 
+              {formData.role === 'DRIVER' && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    {rtl ? 'الرقم الوظيفي *' : 'Employee ID *'}
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.employeeId}
+                    onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
+                    placeholder="e.g. 101"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono"
+                    required
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-700">
                   {t('drivers.password')} *
@@ -658,6 +687,22 @@ export default function UsersPage() {
                   </select>
                 </div>
               </div>
+
+              {editFormData.role === 'DRIVER' && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    {rtl ? 'الرقم الوظيفي *' : 'Employee ID *'}
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.employeeId}
+                    onChange={(e) => setEditFormData({ ...editFormData, employeeId: e.target.value })}
+                    placeholder="e.g. 101"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 font-mono"
+                    required
+                  />
+                </div>
+              )}
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">

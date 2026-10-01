@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-native', () => ({
+  I18nManager: { isRTL: false },
+}));
+
 import { formatTimeAgo, formatWesternNumber } from './i18n';
 import type { MapDriverPoint } from './components/RealGeographicMapView';
 

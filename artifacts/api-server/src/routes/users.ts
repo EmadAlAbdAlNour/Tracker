@@ -21,20 +21,32 @@ const userQuerySchema = z.object({
   search: z.string().optional(),
 });
 
-const userCreateSchema = z.object({
-  name: z.string().trim().min(2).max(150),
-  email: z.string().trim().email(),
-  phone: z.string().trim().min(6).max(30).optional().or(z.literal("")),
-  role: z.enum(["ADMIN", "CALL_CENTER", "DRIVER"]),
-  password: z.string().min(8).max(200),
-  active: z.boolean().default(true),
-});
+export const userCreateSchema = z
+  .object({
+    name: z.string().trim().min(2).max(150),
+    email: z.string().trim().email(),
+    phone: z.string().trim().min(6).max(30).optional().or(z.literal("")),
+    role: z.enum(["ADMIN", "CALL_CENTER", "DRIVER"]),
+    employeeId: z.string().trim().min(1).max(50).optional(),
+    password: z.string().min(8).max(200),
+    active: z.boolean().default(true),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === "DRIVER" && (!data.employeeId || data.employeeId.trim().length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Employee ID is required when role is DRIVER",
+        path: ["employeeId"],
+      });
+    }
+  });
 
-const userUpdateSchema = z.object({
+export const userUpdateSchema = z.object({
   name: z.string().trim().min(2).max(150).optional(),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().min(6).max(30).optional().or(z.literal("")),
   role: z.enum(["ADMIN", "CALL_CENTER", "DRIVER"]).optional(),
+  employeeId: z.string().trim().min(1).max(50).optional(),
   password: z.string().min(8).max(200).optional(),
   active: z.boolean().optional(),
 });

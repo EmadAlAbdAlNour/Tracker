@@ -29,7 +29,7 @@ import {
   stopBackgroundTracking,
   type DriverTelemetryState,
 } from '../location';
-import { formatWesternNumber, getLocale, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from '../i18n';
+import { formatWesternNumber, getLocale, getRowDirection, isRtl, setStoredLocale, t, type Locale, getLocalizedErrorMessage } from '../i18n';
 import { type Session, saveTelemetryToken, clearTelemetryToken, readTelemetryToken, getStoredDeviceId } from '../session';
 import { TrackerDialog } from '../components/TrackerDialog';
 
@@ -126,6 +126,7 @@ export function DriverHomeScreen({
   }, [activeTab, dialogConfig.visible]);
 
   const rtl = isRtl();
+  const rowDir = getRowDirection();
 
   const toggleLanguage = async () => {
     const next: Locale = locale === 'ar' ? 'en' : 'ar';
@@ -453,7 +454,7 @@ export function DriverHomeScreen({
           >
             {/* 1. Primary Prominent State Status Card */}
             <View style={[styles.stateHeroCard, { backgroundColor: visuals.bg, borderColor: visuals.border }]}>
-              <View style={[styles.stateHeroHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.stateHeroHeader, { flexDirection: rowDir }]}>
                 <View style={[styles.stateDot, { backgroundColor: visuals.color }]} />
                 <Text style={[styles.stateHeroTitle, { color: visuals.color }]}>{visuals.title}</Text>
               </View>
@@ -476,7 +477,7 @@ export function DriverHomeScreen({
               {loading ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <View style={[styles.btnContentRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.btnContentRow, { flexDirection: rowDir }]}>
                   <AppIcon name={activeShift ? 'pause' : 'play'} size={18} color="#ffffff" />
                   <Text style={styles.primaryShiftButtonText}>
                     {activeShift
@@ -494,7 +495,7 @@ export function DriverHomeScreen({
               </Text>
 
               {/* Q1: Shift */}
-              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.checkRow, { flexDirection: rowDir }]}>
                 <View style={styles.checkLeft}>
                   <AppIcon name="driver" size={16} color={activeShift ? colors.status.online : colors.text.muted} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'حالة الوردية:' : 'Operational Shift:'}</Text>
@@ -507,7 +508,7 @@ export function DriverHomeScreen({
               </View>
 
               {/* Q2: Live Tracking */}
-              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.checkRow, { flexDirection: rowDir }]}>
                 <View style={styles.checkLeft}>
                   <AppIcon name="gps" size={16} color={trackingActive ? colors.status.online : colors.text.muted} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'التتبع المباشر:' : 'Live Tracking:'}</Text>
@@ -520,7 +521,7 @@ export function DriverHomeScreen({
               </View>
 
               {/* Q3: GPS Service */}
-              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.checkRow, { flexDirection: rowDir }]}>
                 <View style={styles.checkLeft}>
                   <AppIcon name="target" size={16} color={telemetry.locationServicesEnabled ? colors.status.online : colors.status.critical} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'خدمة الموقع (GPS):' : 'Location Services (GPS):'}</Text>
@@ -533,7 +534,7 @@ export function DriverHomeScreen({
               </View>
 
               {/* Q4: Network Connection */}
-              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.checkRow, { flexDirection: rowDir }]}>
                 <View style={styles.checkLeft}>
                   <AppIcon name="wifi" size={16} color={telemetry.networkStatus !== 'offline' ? colors.status.online : colors.status.stopped} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'الاتصال بالإنترنت:' : 'Internet Connection:'}</Text>
@@ -546,7 +547,7 @@ export function DriverHomeScreen({
               </View>
 
               {/* Q5: Synchronization / Queue */}
-              <View style={[styles.checkRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.checkRow, { flexDirection: rowDir }]}>
                 <View style={styles.checkLeft}>
                   <AppIcon name="sync" size={16} color={queuedCount === 0 ? colors.status.online : colors.status.stopped} />
                   <Text style={styles.checkQuestionText}>{rtl ? 'مزامنة المواقع:' : 'Data Synchronization:'}</Text>
@@ -560,7 +561,7 @@ export function DriverHomeScreen({
             </View>
 
             {/* Background Service Educational Notice */}
-            <View style={[styles.infoNotice, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+            <View style={[styles.infoNotice, { flexDirection: rowDir }]}>
               <AppIcon name="warning" size={14} color={colors.text.muted} />
               <Text style={[styles.infoNoticeText, { textAlign: rtl ? 'right' : 'left' }]}>
                 {t('shift.bgPermissionRequiredMessage')}
@@ -579,21 +580,21 @@ export function DriverHomeScreen({
 
               {activeShift ? (
                 <>
-                  <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                     <Text style={styles.detailLabel}>{rtl ? 'حالة الوردية:' : 'Status:'}</Text>
                     <Text style={[styles.detailValue, { color: colors.status.online, fontWeight: '700' }]}>
                       {t('shift.onDuty')}
                     </Text>
                   </View>
 
-                  <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                     <Text style={styles.detailLabel}>{rtl ? 'وقت البدء:' : 'Started At:'}</Text>
                     <Text style={styles.detailValue}>
                       {new Date(activeShift.startedAt).toLocaleTimeString()}
                     </Text>
                   </View>
 
-                  <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                     <Text style={styles.detailLabel}>{rtl ? 'المدة المنقضية:' : 'Duration:'}</Text>
                     <Text style={styles.detailValue}>
                       {formatWesternNumber(Math.round((Date.now() - new Date(activeShift.startedAt).getTime()) / 60000))} {rtl ? 'دقيقة' : 'minutes'}
@@ -617,7 +618,7 @@ export function DriverHomeScreen({
                 {rtl ? 'تشخيص عتاد الهاتف والاتصال' : 'Hardware & Diagnostics'}
               </Text>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'مستوى البطارية:' : 'Battery Level:'}</Text>
                 <Text style={styles.detailValue}>
                   {telemetry.batteryPercentage != null
@@ -626,14 +627,14 @@ export function DriverHomeScreen({
                 </Text>
               </View>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'نوع الشبكة:' : 'Network Type:'}</Text>
                 <Text style={styles.detailValue}>
                   {telemetry.networkStatus?.toUpperCase() ?? 'UNKNOWN'}
                 </Text>
               </View>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'النقاط المخزنة محلياً:' : 'Queued Locations:'}</Text>
                 <Text style={[styles.detailValue, { fontWeight: '700' }]}>
                   {formatWesternNumber(queuedCount)}
@@ -649,7 +650,7 @@ export function DriverHomeScreen({
                 {syncing ? (
                   <ActivityIndicator color="#0f766e" size="small" />
                 ) : (
-                  <View style={[styles.btnContentRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.btnContentRow, { flexDirection: rowDir }]}>
                     <AppIcon name="sync" size={16} color={colors.primary} />
                     <Text style={styles.syncButtonText}>{t('app.sync')}</Text>
                   </View>
@@ -667,22 +668,22 @@ export function DriverHomeScreen({
                 {rtl ? 'الملف التعريفي للسائق' : 'Driver Profile'}
               </Text>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'الاسم:' : 'Name:'}</Text>
                 <Text style={styles.detailValue}>{profile?.driverName || session.user.name}</Text>
               </View>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{t('diagnostics.employeeId')}</Text>
                 <Text style={styles.detailValue}>{formatWesternNumber(profile?.employeeId || '—')}</Text>
               </View>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'رقم الهاتف:' : 'Phone:'}</Text>
                 <Text style={styles.detailValue}>{session.user.phone || '—'}</Text>
               </View>
 
-              <View style={[styles.detailRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'نوع المركبة:' : 'Vehicle:'}</Text>
                 <Text style={styles.detailValue}>{profile?.vehicleType || 'Motorcycle'}</Text>
               </View>

@@ -289,7 +289,7 @@ export function computeOperationalStatus(params: {
   const isLocationFresh = locationAgeMs <= (5 * 60 * 1000); // 5 minutes freshness threshold
   const speed = (isLocationFresh && location.speed != null) ? Number(location.speed) : 0;
 
-  if (speed >= 1.0) {
+  if (speed >= STOP_SPEED_THRESHOLD_MPS) {
     return "MOVING";
   }
 

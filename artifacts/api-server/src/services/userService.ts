@@ -26,6 +26,7 @@ export interface CreateUserInput {
   email: string;
   phone?: string | null;
   role: "ADMIN" | "CALL_CENTER" | "DRIVER";
+  employeeId?: string | null;
   password?: string;
   active?: boolean;
 }
@@ -35,6 +36,7 @@ export interface UpdateUserInput {
   email?: string;
   phone?: string | null;
   role?: "ADMIN" | "CALL_CENTER" | "DRIVER";
+  employeeId?: string | null;
   password?: string;
   active?: boolean;
 }
@@ -59,8 +61,19 @@ export async function listUsers(params: ListUsersParams = {}) {
 
   const [rows, countResult] = await Promise.all([
     db
-      .select()
+      .select({
+        id: usersTable.id,
+        name: usersTable.name,
+        email: usersTable.email,
+        phone: usersTable.phone,
+        role: usersTable.role,
+        active: usersTable.active,
+        createdAt: usersTable.createdAt,
+        updatedAt: usersTable.updatedAt,
+        employeeId: driversTable.employeeId,
+      })
       .from(usersTable)
+      .leftJoin(driversTable, eq(driversTable.userId, usersTable.id))
       .where(whereClause)
       .orderBy(desc(usersTable.createdAt))
       .limit(limit)
@@ -74,7 +87,10 @@ export async function listUsers(params: ListUsersParams = {}) {
   const total = Number(countResult[0]?.count ?? 0);
 
   return {
-    items: rows.map(sanitizeUser),
+    items: rows.map((r) => ({
+      ...sanitizeUser(r),
+      employeeId: r.employeeId ?? null,
+    })),
     total,
     page,
     limit,
@@ -82,8 +98,28 @@ export async function listUsers(params: ListUsersParams = {}) {
 }
 
 export async function getUserById(id: string) {
-  const rows = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
-  return rows[0] ? sanitizeUser(rows[0]) : null;
+  const rows = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      phone: usersTable.phone,
+      role: usersTable.role,
+      active: usersTable.active,
+      createdAt: usersTable.createdAt,
+      updatedAt: usersTable.updatedAt,
+      employeeId: driversTable.employeeId,
+    })
+    .from(usersTable)
+    .leftJoin(driversTable, eq(driversTable.userId, usersTable.id))
+    .where(eq(usersTable.id, id))
+    .limit(1);
+  return rows[0]
+    ? {
+        ...sanitizeUser(rows[0]),
+        employeeId: rows[0].employeeId ?? null,
+      }
+    : null;
 }
 
 export async function createUser(input: CreateUserInput) {
@@ -108,104 +144,214 @@ export async function createUser(input: CreateUserInput) {
     throw createError(409, "PHONE_EXISTS", "A user with this phone number already exists");
   }
 
+  if (input.role === "DRIVER") {
+    if (!input.employeeId || input.employeeId.trim().length === 0) {
+      throw createError(400, "EMPLOYEE_ID_REQUIRED", "Employee ID is required when creating a driver");
+    }
+
+    const existingEmployee = await db
+      .select({ id: driversTable.id })
+      .from(driversTable)
+      .where(eq(driversTable.employeeId, input.employeeId.trim()))
+      .limit(1);
+
+    if (existingEmployee[0]) {
+      throw createError(409, "DRIVER_EMPLOYEE_ID_EXISTS", "Employee ID already exists");
+    }
+  }
+
   if (!input.password) {
     throw createError(400, "PASSWORD_REQUIRED", "A password is required to create a user");
   }
 
   const passwordHash = await hashPassword(input.password);
 
-  const [user] = await db
-    .insert(usersTable)
-    .values({
-      name: input.name.trim(),
-      email: normalizedEmail,
-      phone: normalizedPhone,
-      role: input.role,
-      passwordHash,
-      active: input.active ?? true,
-    })
-    .returning();
+  return await db.transaction(async (tx) => {
+    const [user] = await tx
+      .insert(usersTable)
+      .values({
+        name: input.name.trim(),
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        role: input.role,
+        passwordHash,
+        active: input.active ?? true,
+      })
+      .returning();
 
-  return sanitizeUser(user);
+    if (!user) {
+      throw createError(500, "USER_CREATION_FAILED", "Could not create user account");
+    }
+
+    if (input.role === "DRIVER") {
+      const [driver] = await tx
+        .insert(driversTable)
+        .values({
+          userId: user.id,
+          employeeId: input.employeeId!.trim(),
+          active: input.active ?? true,
+        })
+        .returning();
+
+      if (!driver) {
+        throw createError(500, "DRIVER_CREATION_FAILED", "Could not create driver profile");
+      }
+    }
+
+    return sanitizeUser(user);
+  });
 }
 
 export async function updateUser(id: string, input: UpdateUserInput) {
-  const existing = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
-  if (!existing[0]) {
-    throw createError(404, "USER_NOT_FOUND", "User not found");
-  }
-
-  const targetUser = existing[0];
-  const PRIMARY_ADMIN_EMAIL = "admin@tracker.local";
-  const isPrimaryAdmin = targetUser.email.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
-
-  if (isPrimaryAdmin) {
-    if (input.active === false) {
-      throw createError(400, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", "The primary system administrator account cannot be deactivated");
+  return await db.transaction(async (tx) => {
+    const existing = await tx.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+    if (!existing[0]) {
+      throw createError(404, "USER_NOT_FOUND", "User not found");
     }
-    if (input.role && input.role !== "ADMIN") {
-      throw createError(400, "CANNOT_DEMOTE_PRIMARY_ADMIN", "The primary system administrator role cannot be changed");
-    }
-  }
 
-  if (targetUser.role === "ADMIN" && (input.active === false || (input.role && input.role !== "ADMIN"))) {
-    const activeAdmins = await db
-      .select({ id: usersTable.id })
-      .from(usersTable)
-      .where(and(eq(usersTable.role, "ADMIN"), eq(usersTable.active, true), ne(usersTable.id, id)))
-      .limit(1);
+    const targetUser = existing[0];
+    const PRIMARY_ADMIN_EMAIL = "admin@tracker.local";
+    const isPrimaryAdmin = targetUser.email.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
 
-    if (activeAdmins.length === 0) {
-      throw createError(400, "LAST_ADMIN_PROTECTED", "Cannot deactivate or demote the last active administrator");
-    }
-  }
-
-  const updateData: Record<string, unknown> = {
-    updatedAt: new Date(),
-  };
-
-  if (input.name !== undefined) updateData.name = input.name.trim();
-  if (input.email !== undefined) {
-    const normalizedEmail = input.email.trim().toLowerCase();
-    if (normalizedEmail !== existing[0].email.toLowerCase()) {
-      const emailConflict = await db.select().from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
-      if (emailConflict[0]) {
-        throw createError(409, "EMAIL_EXISTS", "Email is already taken by another user");
+    if (isPrimaryAdmin) {
+      if (input.active === false) {
+        throw createError(400, "CANNOT_DEACTIVATE_PRIMARY_ADMIN", "The primary system administrator account cannot be deactivated");
       }
-      updateData.email = normalizedEmail;
-    }
-  }
-  if (input.phone !== undefined) {
-    const normalizedPhone = input.phone?.trim() || null;
-    if (normalizedPhone && normalizedPhone !== existing[0].phone) {
-      const phoneConflict = await db.select().from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
-      if (phoneConflict[0]) {
-        throw createError(409, "PHONE_EXISTS", "Phone number is already taken by another user");
+      if (input.role && input.role !== "ADMIN") {
+        throw createError(400, "CANNOT_DEMOTE_PRIMARY_ADMIN", "The primary system administrator role cannot be changed");
       }
     }
-    updateData.phone = normalizedPhone;
-  }
-  if (input.role !== undefined) updateData.role = input.role;
-  if (input.active !== undefined) {
-    updateData.active = input.active;
-    if (!input.active) {
-      // Revoke all refresh tokens if deactivated
+
+    if (targetUser.role === "ADMIN" && (input.active === false || (input.role && input.role !== "ADMIN"))) {
+      const activeAdmins = await tx
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(and(eq(usersTable.role, "ADMIN"), eq(usersTable.active, true), ne(usersTable.id, id)))
+        .limit(1);
+
+      if (activeAdmins.length === 0) {
+        throw createError(400, "LAST_ADMIN_PROTECTED", "Cannot deactivate or demote the last active administrator");
+      }
+    }
+
+    const updateData: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+
+    if (input.name !== undefined) updateData.name = input.name.trim();
+    if (input.email !== undefined) {
+      const normalizedEmail = input.email.trim().toLowerCase();
+      if (normalizedEmail !== existing[0].email.toLowerCase()) {
+        const emailConflict = await tx.select().from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
+        if (emailConflict[0]) {
+          throw createError(409, "EMAIL_EXISTS", "Email is already taken by another user");
+        }
+        updateData.email = normalizedEmail;
+      }
+    }
+    if (input.phone !== undefined) {
+      const normalizedPhone = input.phone?.trim() || null;
+      if (normalizedPhone && normalizedPhone !== existing[0].phone) {
+        const phoneConflict = await tx.select().from(usersTable).where(eq(usersTable.phone, normalizedPhone)).limit(1);
+        if (phoneConflict[0]) {
+          throw createError(409, "PHONE_EXISTS", "Phone number is already taken by another user");
+        }
+      }
+      updateData.phone = normalizedPhone;
+    }
+    if (input.role !== undefined) updateData.role = input.role;
+    if (input.active !== undefined) {
+      updateData.active = input.active;
+      if (!input.active) {
+        // Revoke all refresh tokens if deactivated
+        await revokeUserRefreshTokens(id);
+      }
+    }
+    if (input.password) {
+      updateData.passwordHash = await hashPassword(input.password);
+      // Revoke sessions on password reset
       await revokeUserRefreshTokens(id);
     }
-  }
-  if (input.password) {
-    updateData.passwordHash = await hashPassword(input.password);
-    // Revoke sessions on password reset
-    await revokeUserRefreshTokens(id);
-  }
 
-  const [updated] = await db
-    .update(usersTable)
-    .set(updateData as any)
-    .where(eq(usersTable.id, id))
-    .returning();
+    // Handle Driver record synchronization & role transitions
+    const driverRows = await tx.select().from(driversTable).where(eq(driversTable.userId, id)).limit(1);
+    const existingDriver = driverRows[0];
 
-  return sanitizeUser(updated);
+    const targetRole = input.role ?? targetUser.role;
+
+    if (targetRole === "DRIVER") {
+      if (existingDriver) {
+        const driverUpdate: Record<string, unknown> = { updatedAt: new Date() };
+        if (input.active !== undefined) driverUpdate.active = input.active;
+        if (input.employeeId && input.employeeId.trim() !== existingDriver.employeeId) {
+          const empConflict = await tx
+            .select({ id: driversTable.id })
+            .from(driversTable)
+            .where(and(eq(driversTable.employeeId, input.employeeId.trim()), ne(driversTable.id, existingDriver.id)))
+            .limit(1);
+          if (empConflict[0]) {
+            throw createError(409, "DRIVER_EMPLOYEE_ID_EXISTS", "Employee ID already exists");
+          }
+          driverUpdate.employeeId = input.employeeId.trim();
+        }
+        await tx.update(driversTable).set(driverUpdate as any).where(eq(driversTable.id, existingDriver.id));
+      } else {
+        // Non-driver becoming a driver: employeeId is strictly required
+        if (!input.employeeId || input.employeeId.trim().length === 0) {
+          throw createError(400, "EMPLOYEE_ID_REQUIRED", "Employee ID is required when setting role to DRIVER");
+        }
+        const empConflict = await tx
+          .select({ id: driversTable.id })
+          .from(driversTable)
+          .where(eq(driversTable.employeeId, input.employeeId.trim()))
+          .limit(1);
+        if (empConflict[0]) {
+          throw createError(409, "DRIVER_EMPLOYEE_ID_EXISTS", "Employee ID already exists");
+        }
+        await tx.insert(driversTable).values({
+          userId: id,
+          employeeId: input.employeeId.trim(),
+          active: input.active !== undefined ? input.active : targetUser.active,
+        });
+      }
+    } else if (targetUser.role === "DRIVER" && input.role && input.role !== "DRIVER") {
+      // Transitioning FROM DRIVER to non-DRIVER
+      if (existingDriver) {
+        const activeShifts = await tx
+          .select({ id: shiftsTable.id })
+          .from(shiftsTable)
+          .where(and(eq(shiftsTable.driverId, existingDriver.id), eq(shiftsTable.status, "ACTIVE")))
+          .limit(1);
+        if (activeShifts.length > 0) {
+          throw createError(400, "CANNOT_CHANGE_ROLE_ACTIVE_SHIFT", "Cannot change role of a driver with an active shift. End the shift first.");
+        }
+        const anyShifts = await tx
+          .select({ id: shiftsTable.id })
+          .from(shiftsTable)
+          .where(eq(shiftsTable.driverId, existingDriver.id))
+          .limit(1);
+        if (anyShifts.length > 0) {
+          throw createError(
+            400,
+            "CANNOT_DEMOTE_DRIVER_WITH_SHIFTS",
+            "Cannot change role of a driver with existing shift history. Deactivate this account and create a separate administrative account instead."
+          );
+        }
+        // Clean up driver record and any devices so no orphaned driver record remains
+        await tx.delete(devicesTable).where(eq(devicesTable.driverId, existingDriver.id));
+        await tx.delete(alertStateTable).where(eq(alertStateTable.driverId, existingDriver.id));
+        await tx.delete(driversTable).where(eq(driversTable.id, existingDriver.id));
+      }
+    }
+
+    const [updated] = await tx
+      .update(usersTable)
+      .set(updateData as any)
+      .where(eq(usersTable.id, id))
+      .returning();
+
+    return sanitizeUser(updated);
+  });
 }
 
 export async function deactivateUser(id: string) {

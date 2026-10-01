@@ -97,13 +97,15 @@ export function resolveSpeedSemantics(params: {
   operationalStatus?: string | null;
   isOnline?: boolean | null;
   recordedAt?: string | null;
+  accuracy?: number | null;
   now?: number;
 }): SpeedSemantics {
-  const { speedMs, operationalStatus, isOnline, recordedAt, now = Date.now() } = params;
+  const { speedMs, operationalStatus, isOnline, recordedAt, accuracy, now = Date.now() } = params;
   const speedKmh = speedMs != null && !isNaN(Number(speedMs)) ? Math.round(Number(speedMs) * 3.6) : null;
   const recordedAtMs = recordedAt ? new Date(recordedAt).getTime() : 0;
   const ageMinutes = recordedAtMs > 0 ? Math.max(0, Math.round((now - recordedAtMs) / 60000)) : null;
   const isLocationFresh = ageMinutes != null && ageMinutes <= 5;
+  const isAccuracyReliable = accuracy == null || accuracy <= 35;
 
   const effectiveOnline = isOnline != null ? isOnline : (operationalStatus !== 'OFFLINE');
   if (!effectiveOnline || operationalStatus === 'OFFLINE') {
@@ -115,9 +117,9 @@ export function resolveSpeedSemantics(params: {
     };
   }
 
-  // Speed is current ONLY when driver is actively MOVING and the GPS record is fresh
-  const isCurrent = operationalStatus === 'MOVING' && isLocationFresh && speedKmh != null;
-  // Speed is historical when speed was recorded in the past but driver is not currently moving (or GPS is stale)
+  // Speed is current ONLY when driver is actively MOVING, GPS record is fresh, and accuracy is reliable (<= 35m)
+  const isCurrent = operationalStatus === 'MOVING' && isLocationFresh && isAccuracyReliable && speedKmh != null;
+  // Speed is historical/degraded when speed was recorded in the past but driver is not currently moving, GPS is stale, or accuracy is degraded
   const isHistorical = !isCurrent && speedKmh != null;
 
   return {
@@ -242,3 +244,206 @@ export function resolveTelemetryDiagnostics(params: {
     isOnline: true,
   };
 }
+
+export type GeofencePresentationState = 'INSIDE' | 'OUTSIDE' | 'AWAITING' | 'NO_LOCATION';
+
+/**
+ * Authoritatively resolves geofence presentation state.
+ * INVARIANT: NO_LOCATION must NEVER become OUTSIDE_RESTAURANT.
+ */
+export function resolveGeofencePresentation(params: {
+  hasLocation: boolean;
+  hasActiveShift: boolean;
+  isInsideGeofence?: boolean | null;
+}): {
+  state: GeofencePresentationState;
+  labelEn: string;
+  labelAr: string;
+} {
+  const { hasLocation, hasActiveShift, isInsideGeofence } = params;
+  if (!hasLocation) {
+    if (hasActiveShift) {
+      return {
+        state: 'AWAITING',
+        labelEn: 'Awaiting location',
+        labelAr: 'بانتظار تحديد الموقع',
+      };
+    }
+    return {
+      state: 'NO_LOCATION',
+      labelEn: 'No location data',
+      labelAr: 'لا توجد بيانات موقع',
+    };
+  }
+  if (isInsideGeofence) {
+    return {
+      state: 'INSIDE',
+      labelEn: 'Inside restaurant range',
+      labelAr: 'داخل نطاق المطعم',
+    };
+  }
+  return {
+    state: 'OUTSIDE',
+    labelEn: 'Outside restaurant range',
+    labelAr: 'خارج نطاق المطعم',
+  };
+}
+
+export interface BatteryFreshness {
+  percentage: number | null;
+  isStale: boolean;
+  ageMinutes: number | null;
+  labelEn: string;
+  labelAr: string;
+}
+
+/**
+ * Resolves battery freshness semantics.
+ * Battery percentage is separated from freshness. A battery reading from an offline device
+ * is flagged as stale.
+ */
+export function resolveBatteryFreshness(params: {
+  batteryPercentage?: number | null;
+  lastSeen?: string | null;
+  isOnline?: boolean | null;
+  now?: number;
+}): BatteryFreshness {
+  const { batteryPercentage, lastSeen, isOnline, now = Date.now() } = params;
+  if (batteryPercentage == null) {
+    return {
+      percentage: null,
+      isStale: false,
+      ageMinutes: null,
+      labelEn: '—',
+      labelAr: '—',
+    };
+  }
+  const lastSeenMs = lastSeen ? new Date(lastSeen).getTime() : 0;
+  const ageMinutes = lastSeenMs > 0 ? Math.max(0, Math.round((now - lastSeenMs) / 60000)) : null;
+  const isStale = (isOnline === false) || (ageMinutes != null && ageMinutes > 10);
+
+  let labelEn = `${batteryPercentage}%`;
+  let labelAr = `${batteryPercentage}%`;
+  if (isStale && ageMinutes != null && ageMinutes >= 1) {
+    if (ageMinutes < 60) {
+      labelEn = `${batteryPercentage}% (stale ${ageMinutes}m)`;
+      labelAr = `${batteryPercentage}% (قديم ${ageMinutes} د)`;
+    } else {
+      const hours = Math.floor(ageMinutes / 60);
+      labelEn = `${batteryPercentage}% (stale ${hours}h)`;
+      labelAr = `${batteryPercentage}% (قديم ${hours} س)`;
+    }
+  }
+
+  return {
+    percentage: batteryPercentage,
+    isStale,
+    ageMinutes,
+    labelEn,
+    labelAr,
+  };
+}
+
+export interface LocalizedActivity {
+  title: string;
+  description: string;
+}
+
+/**
+ * Resolves activity timeline event titles and descriptions localized to the client locale.
+ * Fallbacks to event.title or event.type if unknown code arrives.
+ */
+export function resolveActivityPresentation(
+  type: string,
+  isRtl: boolean,
+  fallbackTitle?: string | null,
+  fallbackDesc?: string | null,
+  metadata?: any
+): LocalizedActivity {
+  switch (type) {
+    case 'SHIFT_STARTED':
+      return {
+        title: isRtl ? 'بدء الوردية' : 'Shift Started',
+        description: isRtl ? 'بدء وردية العمل بنجاح' : 'Work shift started successfully',
+      };
+    case 'ARRIVED_AT_RESTAURANT': {
+      const dist = metadata?.distanceMeters;
+      return {
+        title: isRtl ? 'الوصول إلى المطعم' : 'Arrived at Restaurant',
+        description: dist != null
+          ? (isRtl ? `وصل السائق إلى نطاق المطعم (${dist} متر)` : `Driver entered restaurant zone (${dist}m)`)
+          : (isRtl ? 'وصل السائق إلى نطاق المطعم' : 'Driver entered restaurant zone'),
+      };
+    }
+    case 'LEFT_RESTAURANT': {
+      const dist = metadata?.distanceMeters;
+      return {
+        title: isRtl ? 'مغادرة المطعم' : 'Left Restaurant',
+        description: dist != null
+          ? (isRtl ? `خرج السائق من نطاق المطعم (${dist} متر)` : `Driver exited restaurant zone (${dist}m)`)
+          : (isRtl ? 'خرج السائق من نطاق المطعم' : 'Driver exited restaurant zone'),
+      };
+    }
+    case 'MOVING': {
+      const speed = metadata?.speedKmh;
+      return {
+        title: isRtl ? 'بدء الحركة' : 'Moving',
+        description: speed != null
+          ? (isRtl ? `السرعة الحالية: ${speed} كم/س` : `Current speed: ${speed} km/h`)
+          : (isRtl ? 'السائق في حركة' : 'Driver is moving'),
+      };
+    }
+    case 'STOPPED': {
+      const inside = metadata?.insideRestaurant;
+      return {
+        title: isRtl ? 'توقف عن الحركة' : 'Stopped',
+        description: inside === true
+          ? (isRtl ? 'متوقف داخل نطاق المطعم' : 'Stopped inside restaurant zone')
+          : inside === false
+          ? (isRtl ? 'متوقف خارج نطاق المطعم' : 'Stopped outside restaurant zone')
+          : (isRtl ? 'توقف السائق عن الحركة' : 'Driver stopped moving'),
+      };
+    }
+    case 'STOP_EXTENDED':
+      return {
+        title: isRtl ? 'توقف مطول خارج المطعم' : 'Extended Stop',
+        description: isRtl
+          ? 'تجاوز السائق الحد الأقصى المسموح به للتوقف'
+          : 'Driver exceeded maximum allowed stationary time',
+      };
+    case 'GPS_DISABLED':
+      return {
+        title: isRtl ? 'تعطيل GPS' : 'GPS Disabled',
+        description: isRtl
+          ? 'تم تعطيل خدمة الموقع على جهاز السائق'
+          : 'Location services disabled on driver device',
+      };
+    case 'BATTERY_CRITICAL':
+      return {
+        title: isRtl ? 'بطارية حرجة' : 'Battery Critical',
+        description: isRtl
+          ? 'مستوى شحن بطارية جهاز السائق أقل من الحد المسموح'
+          : 'Driver device battery level is critical',
+      };
+    case 'SHIFT_ENDED': {
+      const duration = metadata?.durationMinutes;
+      return {
+        title: isRtl ? 'انتهاء الوردية' : 'Shift Ended',
+        description: duration != null
+          ? (isRtl ? `اكتملت وردية العمل — المدة: ${duration} دقيقة` : `Shift completed — Duration: ${duration} mins`)
+          : (isRtl ? 'تم إنهاء الوردية' : 'Shift ended'),
+      };
+    }
+    case 'ALERT':
+      return {
+        title: fallbackTitle || (isRtl ? 'تنبيه تشغيلي' : 'Operational Alert'),
+        description: fallbackDesc || '',
+      };
+    default:
+      return {
+        title: fallbackTitle || type,
+        description: fallbackDesc || '',
+      };
+  }
+}
+
