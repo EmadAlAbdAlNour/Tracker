@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { colors, radius, shadows, spacing, typography } from '../designSystem';
+import { colors, fonts, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
 import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
@@ -620,7 +620,7 @@ export function DriverHomeScreen({
 
               <View style={[styles.detailRow, { flexDirection: rowDir }]}>
                 <Text style={styles.detailLabel}>{rtl ? 'مستوى البطارية:' : 'Battery Level:'}</Text>
-                <Text style={styles.detailValue}>
+                <Text style={[styles.detailValue, { writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                   {telemetry.batteryPercentage != null
                     ? `${formatWesternNumber(telemetry.batteryPercentage)}% ${telemetry.isCharging ? '(متصل بالشاحن)' : ''}`
                     : '—'}
@@ -844,6 +844,7 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   cardTitle: {
+    fontFamily: fonts.bold,
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
@@ -852,16 +853,23 @@ const styles = StyleSheet.create({
   detailRow: {
     justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 26,
     paddingVertical: 4,
   },
   detailLabel: {
+    fontFamily: fonts.regular,
     fontSize: 12,
+    lineHeight: 18,
     color: colors.text.muted,
+    flexShrink: 0,
   },
   detailValue: {
+    fontFamily: fonts.semiBold,
     fontSize: 12,
+    lineHeight: 18,
     fontWeight: '600',
     color: colors.text.primary,
+    flexShrink: 1,
   },
   emptyNoticeText: {
     fontSize: 12,

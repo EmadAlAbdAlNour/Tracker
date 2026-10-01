@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { colors, radius, spacing, typography, shadows } from '../designSystem';
+import { colors, fonts, radius, spacing, typography, shadows } from '../designSystem';
 import { AppIcon } from './AppIcon';
 import { TrackerDialog } from './TrackerDialog';
 import { formatWesternNumber, getRowDirection, isRtl, t } from '../i18n';
@@ -333,7 +333,7 @@ export function DriverDetailModal({
                 {/* Connection Freshness (lastSeen) */}
                 <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'آخر اتصال مسجل:' : 'Last Connection:'}</Text>
-                  <Text style={styles.metaValue}>
+                  <Text style={[styles.metaValue, { writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                     {isAwaitingTelemetry
                       ? (rtl ? 'بانتظار بدء الإرسال' : 'Awaiting signal')
                       : lastSeenMinutes != null
@@ -347,7 +347,7 @@ export function DriverDetailModal({
                 {/* GPS Location Freshness (recordedAt) */}
                 <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'آخر موقع مسجل:' : 'Last GPS Location:'}</Text>
-                  <Text style={styles.metaValue}>
+                  <Text style={[styles.metaValue, { writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                     {isAwaitingTelemetry || !hasLocation
                       ? (rtl ? 'لا توجد بيانات موقع' : 'No GPS coordinates')
                       : locationAgeMinutes != null
@@ -361,7 +361,7 @@ export function DriverDetailModal({
                 {/* Operational Status */}
                 <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'الحالة التشغيلية:' : 'Operational Status:'}</Text>
-                  <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700' }]}>
+                  <Text style={[styles.metaValue, { color: movBadge.color, fontWeight: '700', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                     {movBadge.label}
                   </Text>
                 </View>
@@ -467,14 +467,20 @@ export function DriverDetailModal({
 
                 <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'مستوى البطارية:' : 'Battery:'}</Text>
-                  <Text style={[styles.metaValue, batteryFreshness.isStale && { color: colors.status.warning }]}>
+                  <Text
+                    style={[
+                      styles.metaValue,
+                      batteryFreshness.isStale && { color: colors.status.warning },
+                      { writingDirection: rtl ? 'rtl' : 'ltr' },
+                    ]}
+                  >
                     {batteryLabel}
                   </Text>
                 </View>
 
                 <View style={[styles.metaRow, { flexDirection: rowDir }]}>
                   <Text style={styles.metaLabel}>{rtl ? 'معرف الجهاز المعتمد:' : 'Device ID:'}</Text>
-                  <Text style={[styles.metaValue, { fontSize: 10, fontFamily: 'monospace' }]}>
+                  <Text style={[styles.metaValue, { fontSize: 10, fontFamily: 'monospace', writingDirection: 'ltr' }]}>
                     {driver.device?.deviceIdentifier ? `${driver.device.deviceIdentifier.slice(0, 12)}...` : '—'}
                   </Text>
                 </View>
@@ -693,6 +699,7 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   cardSectionTitle: {
+    fontFamily: fonts.bold,
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
@@ -710,22 +717,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   badgePillText: {
+    fontFamily: fonts.bold,
     fontSize: 11,
     fontWeight: '700',
   },
   metaRow: {
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 2,
+    minHeight: 26,
+    paddingVertical: 3,
   },
   metaLabel: {
+    fontFamily: fonts.regular,
     fontSize: 12,
+    lineHeight: 18,
     color: colors.text.muted,
+    flexShrink: 0,
   },
   metaValue: {
+    fontFamily: fonts.semiBold,
     fontSize: 12,
+    lineHeight: 18,
     fontWeight: '600',
     color: colors.text.primary,
+    flexShrink: 1,
   },
   telemetryHeaderRow: {
     justifyContent: 'space-between',
@@ -746,6 +761,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   staleNoticeText: {
+    fontFamily: fonts.bold,
     fontSize: 10,
     fontWeight: '700',
     color: colors.text.muted,
@@ -765,16 +781,19 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   gridCellLabel: {
+    fontFamily: fonts.regular,
     fontSize: 10,
     color: colors.text.muted,
     marginBottom: 2,
   },
   gridCellValue: {
+    fontFamily: fonts.bold,
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
   },
   gridCellSublabel: {
+    fontFamily: fonts.regular,
     fontSize: 10,
     color: colors.text.muted,
     marginTop: 2,
@@ -828,11 +847,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   tabButtonText: {
+    fontFamily: fonts.medium,
     fontSize: 12,
     fontWeight: '600',
     color: colors.text.muted,
   },
   tabButtonTextActive: {
+    fontFamily: fonts.bold,
     color: '#ffffff',
     fontWeight: '700',
   },

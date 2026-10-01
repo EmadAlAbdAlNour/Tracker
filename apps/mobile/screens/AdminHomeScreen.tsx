@@ -17,7 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { colors, radius, shadows, spacing, typography } from '../designSystem';
+import { colors, fonts, radius, shadows, spacing, typography } from '../designSystem';
 import { AppIcon } from '../components/AppIcon';
 import { AppHeader } from '../components/AppHeader';
 import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
@@ -982,22 +982,22 @@ export function AdminHomeScreen({
                   >
                     <View style={[styles.driverStatusDot, { backgroundColor: isDOnline ? colors.status.online : colors.status.offline }]} />
 
-                    <View style={[styles.driverInfo, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-                      <Text style={styles.driverName}>{d.driverName}</Text>
-                      <Text style={styles.driverMeta}>
+                    <View style={styles.driverInfo}>
+                      <Text style={[styles.driverName, { textAlign: rtl ? 'right' : 'left' }]}>{d.driverName}</Text>
+                      <Text style={[styles.driverMeta, { textAlign: rtl ? 'right' : 'left' }]}>
                         {t('diagnostics.employeeId')} {formatWesternNumber(d.employeeId)}
                       </Text>
                     </View>
 
                     <View style={[styles.driverTelemetryCol, { alignItems: rtl ? 'flex-start' : 'flex-end' }]}>
-                      <Text style={styles.driverSpeedText}>
+                      <Text style={[styles.driverSpeedText, { textAlign: rtl ? 'left' : 'right', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                         {isMoving && d.location?.speed != null
                           ? `${formatWesternNumber(Math.round(Number(d.location.speed) * 3.6))} ${t('driverDetail.speedUnit')}`
                           : d.operationalStatus === 'AT_RESTAURANT'
                           ? (rtl ? 'بالمطعم' : 'At Restaurant')
                           : isDOnline ? t('operator.stopped') : t('operator.offline')}
                       </Text>
-                      <Text style={styles.driverBatteryText}>
+                      <Text style={[styles.driverBatteryText, { textAlign: rtl ? 'left' : 'right', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                         {batteryText}
                       </Text>
                     </View>
@@ -1134,7 +1134,7 @@ export function AdminHomeScreen({
                       activeOpacity={0.7}
                     >
                       {/* Status Column */}
-                      <View style={[styles.driverStatusCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
+                      <View style={styles.driverStatusCol}>
                         <View
                           style={[
                             styles.statusBadgePill,
@@ -1156,12 +1156,12 @@ export function AdminHomeScreen({
                       </View>
 
                       {/* Main Driver Info */}
-                      <View style={[styles.driverMainCol, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-                        <Text style={styles.cardDriverName} numberOfLines={1}>{d.driverName}</Text>
-                        <Text style={styles.employeeIdLabel} numberOfLines={1}>
+                      <View style={styles.driverMainCol}>
+                        <Text style={[styles.cardDriverName, { textAlign: rtl ? 'right' : 'left' }]} numberOfLines={1}>{d.driverName}</Text>
+                        <Text style={[styles.employeeIdLabel, { textAlign: rtl ? 'right' : 'left' }]} numberOfLines={1}>
                           {t('diagnostics.employeeId')} {d.employeeId ? formatWesternNumber(d.employeeId) : '—'}
                         </Text>
-                        <Text style={styles.cardDriverFreshness} numberOfLines={1}>
+                        <Text style={[styles.cardDriverFreshness, { textAlign: rtl ? 'right' : 'left' }]} numberOfLines={1}>
                           {d.operationalStatus === 'MOVING'
                             ? (rtl ? 'في حركة' : 'Moving')
                             : d.operationalStatus === 'AT_RESTAURANT'
@@ -1174,10 +1174,10 @@ export function AdminHomeScreen({
 
                       {/* Right Telemetry Column */}
                       <View style={[styles.driverRightCol, { alignItems: rtl ? 'flex-start' : 'flex-end' }]}>
-                        <Text style={styles.driverCardSpeed}>
+                        <Text style={[styles.driverCardSpeed, { textAlign: rtl ? 'left' : 'right', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                           {speed != null ? `${formatWesternNumber(speed)} ${t('driverDetail.speedUnit')}` : '—'}
                         </Text>
-                        <Text style={styles.driverCardBattery}>
+                        <Text style={[styles.driverCardBattery, { textAlign: rtl ? 'left' : 'right', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                           {batteryText}
                         </Text>
                       </View>
@@ -2312,11 +2312,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   driverName: {
+    fontFamily: fonts.bold,
     fontSize: 13,
     fontWeight: '700',
     color: colors.text.primary,
   },
   driverMeta: {
+    fontFamily: fonts.regular,
     fontSize: 10,
     color: colors.text.muted,
   },
@@ -2324,11 +2326,13 @@ const styles = StyleSheet.create({
     minWidth: 70,
   },
   driverSpeedText: {
+    fontFamily: fonts.bold,
     fontSize: 11,
     fontWeight: '700',
     color: colors.text.primary,
   },
   driverBatteryText: {
+    fontFamily: fonts.regular,
     fontSize: 10,
     color: colors.text.muted,
   },
@@ -2398,7 +2402,7 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   driverStatusCol: {
-    minWidth: 68,
+    minWidth: 72,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2409,12 +2413,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.xs,
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   statusBadgePillText: {
+    fontFamily: fonts.bold,
     fontSize: 10,
     fontWeight: '700',
   },
   employeeIdLabel: {
+    fontFamily: fonts.medium,
     fontSize: 11,
     fontWeight: '500',
     color: colors.text.muted,
@@ -2425,24 +2432,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardDriverName: {
+    fontFamily: fonts.bold,
     fontSize: 14,
     fontWeight: '700',
     color: colors.text.primary,
   },
   cardDriverFreshness: {
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.text.muted,
     marginTop: 1,
   },
   driverRightCol: {
-    minWidth: 60,
+    minWidth: 64,
   },
   driverCardSpeed: {
+    fontFamily: fonts.bold,
     fontSize: 12,
     fontWeight: '700',
     color: colors.text.primary,
   },
   driverCardBattery: {
+    fontFamily: fonts.regular,
     fontSize: 10,
     color: colors.text.muted,
   },
