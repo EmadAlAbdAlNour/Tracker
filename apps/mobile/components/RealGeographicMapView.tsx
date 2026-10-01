@@ -6,7 +6,7 @@ import { StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'rea
 import { WebView } from 'react-native-webview';
 import { colors, radius, shadows, spacing } from '../designSystem';
 import { AppIcon } from './AppIcon';
-import { formatTimeAgo, formatWesternNumber, isRtl, t } from '../i18n';
+import { formatTimeAgo, formatWesternNumber, getRowDirection, isRtl, t } from '../i18n';
 
 export interface MapDriverPoint {
   driverId: string;
@@ -60,6 +60,7 @@ export function RealGeographicMapView({
 }: RealGeographicMapViewProps): React.JSX.Element {
   const webViewRef = useRef<WebView>(null);
   const rtl = isRtl();
+  const rowDir = getRowDirection();
   const isWebViewReadyRef = useRef(false);
 
   // Find selected driver object
@@ -449,9 +450,9 @@ export function RealGeographicMapView({
       {/* Selected Driver Inspection Card (Bottom overlay) */}
       {selectedDriver && !isCompactPreview && (
         <View style={styles.selectedDriverCard}>
-          <View style={[styles.driverCardHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.driverCardHeader, { flexDirection: rowDir }]}>
             <View style={[styles.driverNameRow, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-              <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: spacing.xs }}>
+              <View style={{ flexDirection: rowDir, alignItems: 'center', gap: spacing.xs }}>
                 <Text style={styles.driverNameText}>{selectedDriver.driverName}</Text>
                 {selectedDriver.operationalStatus === 'OFFLINE' ? (
                   <View style={styles.staleStatusBadge}>
@@ -485,7 +486,7 @@ export function RealGeographicMapView({
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.driverMetricsRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.driverMetricsRow, { flexDirection: rowDir }]}>
             {selectedDriver.operationalStatus === 'MOVING' && selectedDriver.location?.speed != null && (
               <Text style={styles.metricItem}>
                 {formatWesternNumber(Math.round(Number(selectedDriver.location.speed) * 3.6))} {t('driverDetail.speedUnit')}

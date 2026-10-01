@@ -6,7 +6,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, radius, spacing } from '../designSystem';
 import { AppIcon } from './AppIcon';
 import { TrackerLogo } from './TrackerLogo';
-import { isRtl, type Locale } from '../i18n';
+import { isRtl, getRowDirection, type Locale } from '../i18n';
 
 export interface AppHeaderProps {
   title: string;
@@ -32,6 +32,7 @@ export function AppHeader({
   rightAction,
 }: AppHeaderProps): React.JSX.Element {
   const rtl = isRtl();
+  const rowDir = getRowDirection();
 
   const getRoleBadgeStyle = () => {
     switch (role) {
@@ -48,9 +49,9 @@ export function AppHeader({
   const roleStyle = role ? getRoleBadgeStyle() : null;
 
   return (
-    <View style={[styles.header, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+    <View style={[styles.header, { flexDirection: rowDir }]}>
       {/* Identity / Navigation section on reading start */}
-      <View style={[styles.identityGroup, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+      <View style={[styles.identityGroup, { flexDirection: rowDir }]}>
         {onBack ? (
           <TouchableOpacity
             style={styles.backButton}
@@ -64,7 +65,7 @@ export function AppHeader({
         )}
 
         <View style={[styles.titleGroup, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
-          <View style={[styles.titleRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.titleRow, { flexDirection: rowDir }]}>
             <Text style={styles.titleText} numberOfLines={1}>
               {title}
             </Text>
@@ -83,7 +84,7 @@ export function AppHeader({
       </View>
 
       {/* Action Controls on reading end */}
-      <View style={[styles.actionsGroup, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+      <View style={[styles.actionsGroup, { flexDirection: rowDir }]}>
         {rightAction}
 
         {onToggleLanguage && (

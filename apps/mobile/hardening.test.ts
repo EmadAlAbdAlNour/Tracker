@@ -228,4 +228,50 @@ describe('Production Hardening Pass — Mobile Regression Suite', () => {
       expect(degradedGps.isHistorical).toBe(true);
     });
   });
+
+  describe('Dialog Action Keys & Error Localization', () => {
+    it('provides localized standard action keys in both AR and EN without raw key leaks', async () => {
+      const { t, setStoredLocale } = await import('./i18n');
+      
+      await setStoredLocale('ar');
+      expect(t('app.ok')).toBe('موافق');
+      expect(t('app.confirm')).toBe('تأكيد');
+      expect(t('app.close')).toBe('إغلاق');
+      expect(t('app.yes')).toBe('نعم');
+      expect(t('app.no')).toBe('لا');
+      expect(t('app.delete')).toBe('حذف');
+
+      await setStoredLocale('en');
+      expect(t('app.ok')).toBe('OK');
+      expect(t('app.confirm')).toBe('Confirm');
+      expect(t('app.close')).toBe('Close');
+      expect(t('app.yes')).toBe('Yes');
+      expect(t('app.no')).toBe('No');
+      expect(t('app.delete')).toBe('Delete');
+    });
+
+    it('localizes error codes and maps technical phrases like "Access denied" to Arabic', async () => {
+      const { getLocalizedErrorMessage, setStoredLocale } = await import('./i18n');
+      
+      await setStoredLocale('ar');
+      const forbiddenMsg = getLocalizedErrorMessage('AUTH_FORBIDDEN');
+      expect(forbiddenMsg).toBe('تم رفض الوصول. لا تملك الصلاحية لتنفيذ هذا الإجراء.');
+
+      // "Access denied" string from server must map to Arabic and not leak English
+      const deniedMsg = getLocalizedErrorMessage('Access denied');
+      expect(deniedMsg).toBe('تم رفض الوصول. لا تملك الصلاحية لتنفيذ هذا الإجراء.');
+
+      const geofenceMsg = getLocalizedErrorMessage('OUTSIDE_GEOFENCE');
+      expect(geofenceMsg).toBe('يجب أن يكون السائق داخل نطاق المطعم لبدء الوردية.');
+
+      // Raw technical English string must not leak into Arabic UI
+      const genericLeak = getLocalizedErrorMessage('Network request failed: unexpected socket hangup');
+      expect(genericLeak).toBe('حدث خطأ غير متوقع. يرجى المحاولة لاحقاً أو مراجعة المشرف.');
+
+      await setStoredLocale('en');
+      expect(getLocalizedErrorMessage('AUTH_FORBIDDEN')).toBe('Access denied. You do not have permission for this action.');
+      expect(getLocalizedErrorMessage('OUTSIDE_GEOFENCE')).toBe('Driver must be inside restaurant geofence to start shift.');
+    });
+  });
 });
+

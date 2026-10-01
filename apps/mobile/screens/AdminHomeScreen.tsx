@@ -27,6 +27,7 @@ import { TrackerDialog } from '../components/TrackerDialog';
 import { formatWesternNumber, getLocale, getRowDirection, isRtl, setStoredLocale, t, type Locale } from '../i18n';
 import { type Session } from '../session';
 import { NotificationService } from '../notificationService';
+import { resolveBatteryFreshness } from '../telemetry';
 
 interface AdminHomeScreenProps {
   session: Session;
@@ -910,7 +911,7 @@ export function AdminHomeScreen({
             {/* Section 2: Active Critical Alerts (If any) */}
             {(fleet?.alerts ?? []).length > 0 && (
               <View style={styles.section}>
-                <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
                   <Text style={styles.sectionTitle}>{rtl ? 'التنبيهات الميدانية النشطة' : 'Active Alerts'}</Text>
                   <View style={styles.alertCountBadge}>
                     <Text style={styles.alertCountText}>{formatWesternNumber((fleet.alerts ?? []).length)}</Text>
@@ -934,7 +935,7 @@ export function AdminHomeScreen({
 
             {/* Section 3: Live Map Preview Container */}
             <View style={styles.section}>
-              <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
                 <Text style={styles.sectionTitle}>{rtl ? 'معاينة الخريطة الميدانية' : 'Fleet Map Preview'}</Text>
                 <TouchableOpacity onPress={() => setActiveTab('map')}>
                   <Text style={styles.sectionActionLink}>{rtl ? 'فتح الخريطة الكاملة ←' : 'Full Map →'}</Text>
@@ -953,7 +954,7 @@ export function AdminHomeScreen({
 
             {/* Section 4: Live Drivers Quick Overview */}
             <View style={styles.section}>
-              <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
                 <Text style={styles.sectionTitle}>{rtl ? 'السائقون الميدانيون' : 'Active Fleet'}</Text>
                 <TouchableOpacity onPress={() => setActiveTab('drivers')}>
                   <Text style={styles.sectionActionLink}>{rtl ? 'عرض الكل ←' : 'View All →'}</Text>
@@ -963,10 +964,16 @@ export function AdminHomeScreen({
               {(fleet?.drivers ?? []).slice(0, 4).map((d: any) => {
                 const isDOnline = d.isOnline ?? (d.operationalStatus !== 'OFFLINE');
                 const isMoving = d.operationalStatus === 'MOVING';
+                const batteryFreshness = resolveBatteryFreshness({
+                  batteryPercentage: d.device?.batteryPercentage,
+                  lastSeen: d.device?.lastSeen,
+                  isOnline: isDOnline,
+                });
+                const batteryText = rtl ? batteryFreshness.labelAr : batteryFreshness.labelEn;
                 return (
                   <TouchableOpacity
                     key={d.driverId}
-                    style={[styles.driverRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.driverRow, { flexDirection: rowDir }]}
                     onPress={() => {
                       setSelectedDriver(d);
                       setDriverModalVisible(true);
@@ -991,7 +998,7 @@ export function AdminHomeScreen({
                           : isDOnline ? t('operator.stopped') : t('operator.offline')}
                       </Text>
                       <Text style={styles.driverBatteryText}>
-                        {d.device?.batteryPercentage != null ? `${formatWesternNumber(d.device.batteryPercentage)}%` : '—'}
+                        {batteryText}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1021,7 +1028,7 @@ export function AdminHomeScreen({
           ) : (
             <View style={styles.mapScreenContainer}>
               {/* Status Filter Bar */}
-              <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.filterBar, { flexDirection: rowDir }]}>
                 {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
                   <TouchableOpacity
                     key={statusKey}
@@ -1110,6 +1117,12 @@ export function AdminHomeScreen({
                   const isDOnline = d.isOnline ?? (d.operationalStatus !== 'OFFLINE');
                   const isMoving = d.operationalStatus === 'MOVING';
                   const speed = isMoving && d.location?.speed != null ? Math.round(Number(d.location.speed) * 3.6) : null;
+                  const batteryFreshness = resolveBatteryFreshness({
+                    batteryPercentage: d.device?.batteryPercentage,
+                    lastSeen: d.device?.lastSeen,
+                    isOnline: isDOnline,
+                  });
+                  const batteryText = rtl ? batteryFreshness.labelAr : batteryFreshness.labelEn;
                   return (
                     <TouchableOpacity
                       key={d.driverId}
@@ -1165,7 +1178,7 @@ export function AdminHomeScreen({
                           {speed != null ? `${formatWesternNumber(speed)} ${t('driverDetail.speedUnit')}` : '—'}
                         </Text>
                         <Text style={styles.driverCardBattery}>
-                          {d.device?.batteryPercentage != null ? `${formatWesternNumber(d.device.batteryPercentage)}%` : '—'}
+                          {batteryText}
                         </Text>
                       </View>
 
@@ -1196,7 +1209,7 @@ export function AdminHomeScreen({
 
                   {/* Devices */}
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('devices')}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1208,7 +1221,7 @@ export function AdminHomeScreen({
 
                   {/* Users */}
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('users')}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1220,7 +1233,7 @@ export function AdminHomeScreen({
 
                   {/* Notifications */}
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('notifications')}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1237,7 +1250,7 @@ export function AdminHomeScreen({
 
                   {/* Reports */}
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('reports')}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1249,7 +1262,7 @@ export function AdminHomeScreen({
 
                   {/* Audit Log */}
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('audit')}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1267,7 +1280,7 @@ export function AdminHomeScreen({
                   </Text>
 
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={() => setMoreSection('settings')}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1285,7 +1298,7 @@ export function AdminHomeScreen({
                   </Text>
 
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={toggleLanguage}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1297,7 +1310,7 @@ export function AdminHomeScreen({
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.moreRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.moreRow, { flexDirection: rowDir }]}
                     onPress={onLogout}
                   >
                     <View style={styles.moreRowLeft}>
@@ -1322,7 +1335,7 @@ export function AdminHomeScreen({
                   ) : (
                     devices.map((dev: any) => (
                       <View key={dev.id} style={styles.deviceCard}>
-                        <View style={[styles.deviceCardHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <View style={[styles.deviceCardHeader, { flexDirection: rowDir }]}>
                           <View>
                             <Text style={styles.deviceDriverName}>{dev.driverName || 'Driver'}</Text>
                             <Text style={styles.deviceIdText}>{dev.deviceIdentifier}</Text>
@@ -1347,7 +1360,7 @@ export function AdminHomeScreen({
                           </View>
                         </View>
 
-                        <View style={[styles.deviceMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                        <View style={[styles.deviceMetaRow, { flexDirection: rowDir }]}>
                           <Text style={styles.deviceMetaItem}>
                             {dev.platform || 'Android'} • v{dev.appVersion || '1.0.0'}
                           </Text>
@@ -1381,12 +1394,12 @@ export function AdminHomeScreen({
                     <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 24 }} />
                   ) : (
                     users.map((u: any) => (
-                      <View key={u.id} style={[styles.userRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <View key={u.id} style={[styles.userRow, { flexDirection: rowDir }]}>
                         <View style={[styles.userInfo, { alignItems: rtl ? 'flex-end' : 'flex-start' }]}>
                           <Text style={styles.userName}>{u.name}</Text>
                           <Text style={styles.userPhone}>{u.phone || u.email}</Text>
                         </View>
-                        <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 8 }}>
                           <View
                             style={[
                               styles.userRoleBadge,
@@ -1444,7 +1457,7 @@ export function AdminHomeScreen({
                 <ScrollView contentContainerStyle={styles.subviewScroll}>
                   {/* Restaurant Geofence Card */}
                   <View style={styles.settingsCard}>
-                    <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 8, marginBottom: 12 }}>
                       <AppIcon name="restaurant" size={18} color={colors.primary} />
                       <Text style={[styles.settingsCardTitle, { marginBottom: 0 }]}>
                         {t('admin.restaurantSettings')}
@@ -1501,7 +1514,7 @@ export function AdminHomeScreen({
 
                   {/* Alert Thresholds Card */}
                   <View style={styles.settingsCard}>
-                    <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 8, marginBottom: 12 }}>
                       <AppIcon name="warning" size={18} color={colors.status.critical} />
                       <Text style={[styles.settingsCardTitle, { marginBottom: 0 }]}>
                         {t('admin.alertThresholds')}
@@ -1547,7 +1560,7 @@ export function AdminHomeScreen({
 
                   {/* Alert Channels & Triggers Card */}
                   <View style={styles.settingsCard}>
-                    <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 8, marginBottom: 12 }}>
                       <AppIcon name="bell" size={18} color={colors.primary} />
                       <Text style={[styles.settingsCardTitle, { marginBottom: 0 }]}>
                         {rtl ? 'تفعيل وتنبيهات الإشعارات' : 'Alert Triggers & Channels'}
@@ -1569,7 +1582,7 @@ export function AdminHomeScreen({
                           key={item.key}
                           style={[
                             {
-                              flexDirection: rtl ? 'row-reverse' : 'row',
+                              flexDirection: rowDir,
                               alignItems: 'center',
                               justifyContent: 'space-between',
                               paddingVertical: 10,
@@ -1635,7 +1648,7 @@ export function AdminHomeScreen({
             {/* SUBVIEW: NOTIFICATIONS */}
             {moreSection === 'notifications' && (
               <View style={{ flex: 1 }}>
-                <View style={[styles.notificationsToolbar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                <View style={[styles.notificationsToolbar, { flexDirection: rowDir }]}>
                   <TouchableOpacity onPress={handleSendTestNotification} style={[styles.markAllReadButton, { backgroundColor: '#e0f2fe' }]}>
                     <Text style={[styles.markAllReadText, { color: colors.accent }]}>
                       {rtl ? 'إرسال تجريبي' : 'Send Test'}
@@ -1669,9 +1682,9 @@ export function AdminHomeScreen({
                             onPress={() => handleMarkNotificationRead(n.id)}
                             style={[styles.notificationCard, !n.read && styles.unreadNotification]}
                           >
-                            <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                            <View style={[styles.notificationHeaderRow, { flexDirection: rowDir }]}>
                               <Text style={styles.notificationTitle}>{itemTitle}</Text>
-                              <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 4, alignItems: 'center' }}>
+                              <View style={{ flexDirection: rowDir, gap: 4, alignItems: 'center' }}>
                                 <View
                                   style={[
                                     styles.severityBadge,
@@ -1714,7 +1727,7 @@ export function AdminHomeScreen({
                             <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
                               {itemMessage}
                             </Text>
-                            <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row', marginTop: 8 }]}>
+                            <View style={[styles.rowBetween, { flexDirection: rowDir, marginTop: 8 }]}>
                               <Text style={styles.notificationTime}>
                                 {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                               </Text>
@@ -1745,7 +1758,7 @@ export function AdminHomeScreen({
               {moreSection === 'reports' && (
                 <View style={{ flex: 1 }}>
                   {/* Preset Selector */}
-                  <View style={[styles.presetSelectorRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.presetSelectorRow, { flexDirection: rowDir }]}>
                     {(['today', 'yesterday', '7days', '30days'] as const).map((p) => (
                       <TouchableOpacity
                         key={p}
@@ -1820,11 +1833,11 @@ export function AdminHomeScreen({
 
                         {((reportData.drivers ?? reportData.driverBreakdown ?? [])).map((drv: any) => (
                           <View key={drv.driverId} style={styles.deviceCard}>
-                            <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                            <View style={[styles.rowBetween, { flexDirection: rowDir }]}>
                               <Text style={styles.deviceDriverName}>{drv.driverName}</Text>
                               <Text style={styles.deviceIdText}>{formatWesternNumber(drv.employeeId)}</Text>
                             </View>
-                            <View style={[styles.deviceMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row', marginTop: 6 }]}>
+                            <View style={[styles.deviceMetaRow, { flexDirection: rowDir, marginTop: 6 }]}>
                               <Text style={styles.deviceMetaItem}>
                                 {rtl ? 'الورديات:' : 'Shifts:'} {formatWesternNumber(drv.shiftCount)}
                               </Text>
@@ -1850,7 +1863,7 @@ export function AdminHomeScreen({
               {moreSection === 'audit' && (
                 <View style={{ flex: 1 }}>
                   {/* Entity Filter Selector */}
-                  <View style={[styles.presetSelectorRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.presetSelectorRow, { flexDirection: rowDir }]}>
                     {['', 'USER', 'DRIVER', 'DEVICE', 'SETTINGS'].map((ent) => (
                       <TouchableOpacity
                         key={ent}
@@ -1880,7 +1893,7 @@ export function AdminHomeScreen({
                           log.action.includes('FORCE_END');
                         return (
                           <View key={log.id} style={styles.deviceCard}>
-                            <View style={[styles.rowBetween, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                            <View style={[styles.rowBetween, { flexDirection: rowDir }]}>
                               <View
                                 style={[
                                   styles.severityBadge,
@@ -1905,7 +1918,7 @@ export function AdminHomeScreen({
                                   : ''}
                               </Text>
                             </View>
-                            <View style={[styles.deviceMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row', marginTop: 4 }]}>
+                            <View style={[styles.deviceMetaRow, { flexDirection: rowDir, marginTop: 4 }]}>
                               <Text style={styles.deviceDriverName}>{log.actorEmail || log.userName || 'System'}</Text>
                               <Text style={styles.deviceIdText}>
                                 {log.actorRole || log.userRole ? `${log.entityType} (${log.actorRole || log.userRole})` : log.entityType}
@@ -1957,7 +1970,7 @@ export function AdminHomeScreen({
       >
         <SafeAreaView style={styles.editModalContainer}>
           <View style={styles.editModalContent}>
-            <View style={[styles.editModalHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+            <View style={[styles.editModalHeader, { flexDirection: rowDir }]}>
               <Text style={styles.editModalTitle}>
                 {rtl ? 'تعديل بيانات المستخدم' : 'Edit User'}
               </Text>
@@ -2007,7 +2020,7 @@ export function AdminHomeScreen({
                 <Text style={[styles.inputLabel, { textAlign: rtl ? 'right' : 'left' }]}>
                   {rtl ? 'الدور الوظيفي' : 'Role'}
                 </Text>
-                <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 8 }}>
+                <View style={{ flexDirection: rowDir, gap: 8 }}>
                   {(['DRIVER', 'CALL_CENTER', 'ADMIN'] as const).map((r) => {
                     const isSelected = editUserRole === r;
                     return (
@@ -2067,7 +2080,7 @@ export function AdminHomeScreen({
                   onPress={() => setEditUserActive(!editUserActive)}
                   style={[
                     styles.activeToggleRow,
-                    { flexDirection: rtl ? 'row-reverse' : 'row' },
+                    { flexDirection: rowDir },
                   ]}
                 >
                   <Text style={styles.inputLabel}>
@@ -2089,7 +2102,7 @@ export function AdminHomeScreen({
                 </TouchableOpacity>
               </View>
 
-              <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', gap: 10, marginTop: 16 }}>
+              <View style={{ flexDirection: rowDir, gap: 10, marginTop: 16 }}>
                 <TouchableOpacity
                   onPress={() => setEditUserModalVisible(false)}
                   style={styles.cancelEditBtn}

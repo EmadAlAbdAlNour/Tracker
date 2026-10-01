@@ -10,6 +10,7 @@ import {
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { getAlertSettings, getRestaurantSettings } from "./settingsService";
 import { createNotification } from "./notificationService";
+import { STOP_SPEED_THRESHOLD_MPS } from "./fleetService";
 
 export function calculateDistanceMeters(
   lat1: number,
@@ -147,7 +148,7 @@ export async function evaluateDriverAlerts(ctx: EvaluateAlertContext) {
 
     // 2. Extended Stop Alert (Outside Restaurant Only)
     if (alertSettings.stopAlertEnabled) {
-      const isStopped = (ctx.speed == null || ctx.speed < 1.0) && !isInsideRestaurant;
+      const isStopped = (ctx.speed == null || ctx.speed < STOP_SPEED_THRESHOLD_MPS) && !isInsideRestaurant;
       const stopState = await getAlertState(ctx.driverId, "STOP_EXTENDED");
 
       if (isStopped) {

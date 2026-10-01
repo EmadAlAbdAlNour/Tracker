@@ -12,7 +12,7 @@ import {
 import { colors, radius, fonts, shadows } from '../designSystem';
 import { TrackerLogo } from './TrackerLogo';
 import { AppIcon } from './AppIcon';
-import { isRtl, formatWesternNumber } from '../i18n';
+import { isRtl, formatWesternNumber, getRowDirection } from '../i18n';
 
 export interface TrackerUpdateModalProps {
   visible: boolean;
@@ -40,6 +40,7 @@ export function TrackerUpdateModal({
   onRetry,
 }: TrackerUpdateModalProps): React.JSX.Element {
   const rtl = isRtl();
+  const rowDir = getRowDirection();
 
   const notes = rtl
     ? releaseNotes?.ar || releaseNotes?.en
@@ -72,7 +73,7 @@ export function TrackerUpdateModal({
               </Text>
 
               {/* Version Comparison Box (Always LTR text for version strings) */}
-              <View style={[styles.versionBox, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.versionBox, { flexDirection: rowDir }]}>
                 <View style={styles.versionChip}>
                   <Text style={styles.versionLabel}>
                     {rtl ? 'الإصدار الحالي' : 'Current'}
@@ -113,7 +114,7 @@ export function TrackerUpdateModal({
               {/* Downloading Progress Bar */}
               {downloading && (
                 <View style={styles.progressContainer}>
-                  <View style={[styles.progressHeader, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                  <View style={[styles.progressHeader, { flexDirection: rowDir }]}>
                     <Text style={styles.progressStatusText}>
                       {rtl ? 'جاري تحميل التحديث...' : 'Downloading update...'}
                     </Text>
@@ -148,7 +149,7 @@ export function TrackerUpdateModal({
               <View
                 style={[
                   styles.actionsRow,
-                  { flexDirection: rtl ? 'row-reverse' : 'row' },
+                  { flexDirection: rowDir },
                 ]}
               >
                 {!downloading && (

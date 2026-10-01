@@ -158,6 +158,45 @@ router.post("/me/shifts/start", requireAuth, requireRole("DRIVER"), async (req: 
   }
 });
 
+// Normal Driver End Shift (must precede /:id/shifts/end to prevent Express route shadowing)
+router.post("/me/shifts/end", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const shift = await endDriverShift(req.user!.id);
+    res.status(200).json({ shift });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/me/telemetry-token", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const driver = await getDriverByUserId(req.user!.id);
+    if (!driver) throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
+    if (!driver.active) throw createError(403, "DRIVER_INACTIVE", "Driver is inactive");
+
+    const device = await getDriverDevice(req.user!.id);
+    if (!device || !(device as any).authorized) {
+      throw createError(403, "DEVICE_UNAUTHORIZED", "Device is not authorized or has been revoked");
+    }
+
+    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string) || device.id;
+    if (device.id !== callerDeviceId && device.deviceIdentifier !== callerDeviceId) {
+      throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
+    }
+
+    const activeShifts = await listDriverShiftsForUser(req.user!.id, { status: "ACTIVE", limit: 1 });
+    const activeShift = activeShifts.items[0];
+    if (!activeShift) {
+      throw createError(409, "SHIFT_NOT_ACTIVE", "Driver does not have an active shift");
+    }
+
+    const telemetryToken = signTelemetryToken(req.user!.id, "DRIVER", device.id, activeShift.id);
+    res.status(200).json({ telemetryToken, expiresIn: TELEMETRY_TOKEN_EXPIRY_SECONDS, shiftId: activeShift.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ADMIN-only: Force end an active driver shift (even if driver is outside geofence)
 router.post(["/:id/shifts/force-end", "/:id/shift/force-end"], requireAuth, requireRole("ADMIN"), async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -195,44 +234,6 @@ router.post("/:id/shifts/end", requireAuth, requireRole("ADMIN"), async (req: Au
       ipAddress: req.ip,
     });
     res.status(200).json({ success: true, shift });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/me/telemetry-token", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
-  try {
-    const driver = await getDriverByUserId(req.user!.id);
-    if (!driver) throw createError(404, "DRIVER_NOT_FOUND", "Driver not found");
-    if (!driver.active) throw createError(403, "DRIVER_INACTIVE", "Driver is inactive");
-
-    const device = await getDriverDevice(req.user!.id);
-    if (!device || !(device as any).authorized) {
-      throw createError(403, "DEVICE_UNAUTHORIZED", "Device is not authorized or has been revoked");
-    }
-
-    const callerDeviceId = req.user?.deviceId || (req.headers["x-device-id"] as string) || device.id;
-    if (device.id !== callerDeviceId && device.deviceIdentifier !== callerDeviceId) {
-      throw createError(403, "DEVICE_UNAUTHORIZED", "Device authorization has been revoked or replaced");
-    }
-
-    const activeShifts = await listDriverShiftsForUser(req.user!.id, { status: "ACTIVE", limit: 1 });
-    const activeShift = activeShifts.items[0];
-    if (!activeShift) {
-      throw createError(409, "SHIFT_NOT_ACTIVE", "Driver does not have an active shift");
-    }
-
-    const telemetryToken = signTelemetryToken(req.user!.id, "DRIVER", device.id, activeShift.id);
-    res.status(200).json({ telemetryToken, expiresIn: TELEMETRY_TOKEN_EXPIRY_SECONDS, shiftId: activeShift.id });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/me/shifts/end", requireAuth, requireRole("DRIVER"), async (req: AuthenticatedRequest, res, next) => {
-  try {
-    const shift = await endDriverShift(req.user!.id);
-    res.status(200).json({ shift });
   } catch (error) {
     next(error);
   }

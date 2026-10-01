@@ -29,6 +29,12 @@ export const translations = {
       error: 'خطأ',
       save: 'حفظ التغييرات',
       cancel: 'إلغاء',
+      ok: 'موافق',
+      confirm: 'تأكيد',
+      close: 'إغلاق',
+      yes: 'نعم',
+      no: 'لا',
+      delete: 'حذف',
       loading: 'جاري التحميل...',
       loadingFleet: 'جاري تحميل بيانات الأسطول...',
       checkingSession: 'جاري التحقق من الجلسة...',
@@ -189,12 +195,22 @@ export const translations = {
       unread: 'جديد',
     },
     errors: {
+      AUTH_FORBIDDEN: 'تم رفض الوصول. لا تملك الصلاحية لتنفيذ هذا الإجراء.',
+      ACCESS_DENIED: 'تم رفض الوصول. لا تملك الصلاحية لتنفيذ هذا الإجراء.',
       AUTH_DEVICE_MISMATCH: 'هذا الحساب مرتبط بجهاز آخر. يجب على المشرف إعادة تعيين الجهاز أولاً.',
       DEVICE_UNAUTHORIZED: 'هذا الجهاز غير مصرح أو تم إلغاء اعتماده من قِبل الإدارة. يرجى تسجيل الدخول مجدداً أو مراجعة المشرف.',
       DRIVER_INACTIVE: 'حساب السائق غير نشط حالياً. يرجى التواصل مع المشرف لتفعيل الحساب.',
+      OUTSIDE_GEOFENCE: 'يجب أن يكون السائق داخل نطاق المطعم لبدء الوردية.',
+      GEOFENCE_LOCATION_REQUIRED: 'إحداثيات الموقع الحالي مطلوبة لبدء وردية العمل.',
+      INVALID_COORDINATES: 'إحداثيات الموقع غير صالحة.',
+      SHIFT_START_FAILED: 'تعذر بدء الوردية، يرجى المحاولة مجدداً.',
+      SHIFT_END_FAILED: 'تعذر إنهاء وردية العمل، يرجى المحاولة مجدداً.',
       SHIFT_ALREADY_ACTIVE: 'توجد وردية نشطة بالفعل لهذا السائق. يرجى إنهاء الوردية الحالية قبل بدء وردية جديدة.',
       SHIFT_NOT_ACTIVE: 'لا توجد وردية نشطة حالياً. يرجى بدء وردية العمل أولاً لتفعيل التتبع.',
       NO_ACTIVE_SHIFT: 'لا توجد وردية نشطة لإنهائها.',
+      EMPLOYEE_ID_REQUIRED: 'الرقم الوظيفي مطلوب للسائق.',
+      CANNOT_CHANGE_ROLE_ACTIVE_SHIFT: 'لا يمكن تغيير دور سائق لديه وردية نشطة. يجب إنهاء الوردية أولاً.',
+      CANNOT_DEMOTE_DRIVER_WITH_SHIFTS: 'لا يمكن تغيير دور سائق لديه سجل وراديات سابقة.',
       PHONE_EXISTS: 'رقم الهاتف مسجل مسبقاً لمستخدم آخر في النظام.',
       EMAIL_EXISTS: 'البريد الإلكتروني مسجل مسبقاً لمستخدم آخر في النظام.',
       DRIVER_EMPLOYEE_ID_EXISTS: 'الرقم الوظيفي مسجل مسبقاً لسائق آخر.',
@@ -238,6 +254,12 @@ export const translations = {
       error: 'Error',
       save: 'Save Changes',
       cancel: 'Cancel',
+      ok: 'OK',
+      confirm: 'Confirm',
+      close: 'Close',
+      yes: 'Yes',
+      no: 'No',
+      delete: 'Delete',
       loading: 'Loading...',
       loadingFleet: 'Loading fleet data...',
       checkingSession: 'Checking session...',
@@ -398,12 +420,22 @@ export const translations = {
       unread: 'New',
     },
     errors: {
+      AUTH_FORBIDDEN: 'Access denied. You do not have permission for this action.',
+      ACCESS_DENIED: 'Access denied. You do not have permission for this action.',
       AUTH_DEVICE_MISMATCH: 'This account is linked to another device. An administrator must reset the device authorization.',
       DEVICE_UNAUTHORIZED: 'This device is unauthorized or its authorization has been revoked. Please sign in again or contact an administrator.',
       DRIVER_INACTIVE: 'Driver account is currently inactive. Please contact an administrator to activate your account.',
+      OUTSIDE_GEOFENCE: 'Driver must be inside restaurant geofence to start shift.',
+      GEOFENCE_LOCATION_REQUIRED: 'Current location coordinates are required to start shift.',
+      INVALID_COORDINATES: 'Invalid location coordinates provided.',
+      SHIFT_START_FAILED: 'Could not start shift. Please try again.',
+      SHIFT_END_FAILED: 'Could not end shift. Please try again.',
       SHIFT_ALREADY_ACTIVE: 'An active shift is already in progress. Please end your current shift before starting a new one.',
       SHIFT_NOT_ACTIVE: 'No active shift in progress. Please start your shift first to begin tracking.',
       NO_ACTIVE_SHIFT: 'No active shift found to end.',
+      EMPLOYEE_ID_REQUIRED: 'Employee ID is required for driver.',
+      CANNOT_CHANGE_ROLE_ACTIVE_SHIFT: 'Cannot change role of a driver with an active shift. End the shift first.',
+      CANNOT_DEMOTE_DRIVER_WITH_SHIFTS: 'Cannot change role of a driver with existing shift history.',
       PHONE_EXISTS: 'A user with this phone number already exists.',
       EMAIL_EXISTS: 'A user with this email address already exists.',
       DRIVER_EMPLOYEE_ID_EXISTS: 'A driver with this employee ID already exists.',
@@ -565,7 +597,31 @@ export function getLocalizedErrorMessage(
     return errorMap[code];
   }
 
-  // 2. Check if rawMessage contains known code
+  // 2. Map known code / message aliases (e.g. "Access denied" -> AUTH_FORBIDDEN)
+  const combinedText = `${code || ''} ${rawMessage || ''} ${fallbackMessage || ''}`.toLowerCase();
+  if (combinedText.includes('access denied') || combinedText.includes('auth_forbidden') || combinedText.includes('forbidden')) {
+    return errorMap.AUTH_FORBIDDEN;
+  }
+  if (combinedText.includes('outside_geofence') || combinedText.includes('outside restaurant geofence')) {
+    return errorMap.OUTSIDE_GEOFENCE;
+  }
+  if (combinedText.includes('no_active_shift') || combinedText.includes('no active shift')) {
+    return errorMap.NO_ACTIVE_SHIFT;
+  }
+  if (combinedText.includes('shift_not_active') || combinedText.includes('not on an active shift')) {
+    return errorMap.SHIFT_NOT_ACTIVE;
+  }
+  if (combinedText.includes('shift_already_active') || combinedText.includes('already active')) {
+    return errorMap.SHIFT_ALREADY_ACTIVE;
+  }
+  if (combinedText.includes('device_unauthorized') || combinedText.includes('not authorized or has been revoked')) {
+    return errorMap.DEVICE_UNAUTHORIZED;
+  }
+  if (combinedText.includes('driver_inactive') || combinedText.includes('account is inactive')) {
+    return errorMap.DRIVER_INACTIVE;
+  }
+
+  // 3. Check if rawMessage contains known code
   if (rawMessage) {
     for (const key of Object.keys(errorMap)) {
       if (rawMessage.includes(key)) {
@@ -574,12 +630,20 @@ export function getLocalizedErrorMessage(
     }
   }
 
-  // 3. Fallback message provided by caller
+  // 4. Fallback message provided by caller
   if (fallbackMessage && fallbackMessage.trim().length > 0) {
-    return fallbackMessage;
+    if (currentLang === 'ar') {
+      // In Arabic mode, do not leak pure-English technical error strings
+      const hasArabic = /[\u0600-\u06FF]/.test(fallbackMessage);
+      if (hasArabic) {
+        return fallbackMessage;
+      }
+    } else {
+      return fallbackMessage;
+    }
   }
 
-  // 4. Default localized fallback
+  // 5. Default localized fallback
   return errorMap.UNKNOWN_ERROR;
 }
 

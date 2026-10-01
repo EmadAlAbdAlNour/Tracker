@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { colors, radius, fonts, shadows } from '../designSystem';
 import { AppIcon, type IconName } from './AppIcon';
-import { isRtl } from '../i18n';
+import { isRtl, getRowDirection } from '../i18n';
 
 export interface TrackerDialogProps {
   visible: boolean;
@@ -32,7 +32,7 @@ export function TrackerDialog({
   title,
   message,
   type = 'notice',
-  primaryButtonText = 'حسناً',
+  primaryButtonText,
   onPrimaryPress,
   secondaryButtonText,
   onSecondaryPress,
@@ -42,6 +42,8 @@ export function TrackerDialog({
   onClose,
 }: TrackerDialogProps): React.JSX.Element {
   const rtl = isRtl();
+  const rowDir = getRowDirection();
+  const resolvedPrimaryText = primaryButtonText || (rtl ? 'موافق' : 'OK');
 
   const getTheme = () => {
     switch (type) {
@@ -121,7 +123,7 @@ export function TrackerDialog({
               <View
                 style={[
                   styles.actionsRow,
-                  { flexDirection: rtl ? 'row-reverse' : 'row' },
+                  { flexDirection: rowDir },
                 ]}
               >
                 {secondaryButtonText && onSecondaryPress && (
@@ -148,7 +150,7 @@ export function TrackerDialog({
                   {loading ? (
                     <ActivityIndicator color="#ffffff" size="small" />
                   ) : (
-                    <Text style={styles.primaryBtnText}>{primaryButtonText}</Text>
+                    <Text style={styles.primaryBtnText}>{resolvedPrimaryText}</Text>
                   )}
                 </TouchableOpacity>
               </View>

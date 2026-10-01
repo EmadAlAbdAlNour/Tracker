@@ -233,4 +233,56 @@ describe('Production Hardening Pass — API Server Regression Suite', () => {
       });
     });
   });
+
+  describe('PAR-01: Threshold Constant Centralization', () => {
+    it('defines STOP_SPEED_THRESHOLD_MPS canonically as 1.0 m/s', () => {
+      expect(STOP_SPEED_THRESHOLD_MPS).toBe(1.0);
+    });
+
+    it('defines MOVEMENT_SPEED_THRESHOLD_MPS canonically as 1.5 m/s', () => {
+      expect(MOVEMENT_SPEED_THRESHOLD_MPS).toBe(1.5);
+    });
+  });
+
+  describe('Driver Shift End Route Ordering (Shadowing Prevention)', () => {
+    it('registers /me/shifts/end BEFORE /:id/shifts/end to prevent 403 AUTH_FORBIDDEN route shadowing', async () => {
+      const driversRouter = (await import('./routes/drivers')).default;
+      
+      const routeLayers = driversRouter.stack
+        .filter((l: any) => l.route && l.route.path)
+        .map((l: any) => ({
+          path: l.route.path,
+          methods: Object.keys(l.route.methods),
+        }));
+
+      const matchesPath = (routePath: any, target: string) => {
+        if (Array.isArray(routePath)) return routePath.includes(target);
+        return routePath === target;
+      };
+
+      const meEndIndex = routeLayers.findIndex(
+        (r: any) => matchesPath(r.path, '/me/shifts/end') && r.methods.includes('post')
+      );
+      const idEndIndex = routeLayers.findIndex(
+        (r: any) => matchesPath(r.path, '/:id/shifts/end') && r.methods.includes('post')
+      );
+      const meTokenIndex = routeLayers.findIndex(
+        (r: any) => matchesPath(r.path, '/me/telemetry-token') && r.methods.includes('post')
+      );
+      const idForceEndIndex = routeLayers.findIndex(
+        (r: any) => matchesPath(r.path, '/:id/shifts/force-end') && r.methods.includes('post')
+      );
+
+      expect(meEndIndex).toBeGreaterThan(-1);
+      expect(idEndIndex).toBeGreaterThan(-1);
+      expect(meTokenIndex).toBeGreaterThan(-1);
+      expect(idForceEndIndex).toBeGreaterThan(-1);
+
+      // CRITICAL: /me/shifts/end must be encountered BEFORE /:id/shifts/end
+      expect(meEndIndex).toBeLessThan(idEndIndex);
+      // /me/telemetry-token must be encountered BEFORE /:id/shifts/force-end
+      expect(meTokenIndex).toBeLessThan(idForceEndIndex);
+    });
+  });
 });
+

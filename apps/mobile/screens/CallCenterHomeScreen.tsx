@@ -23,6 +23,7 @@ import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import { RealGeographicMapView, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
 import { formatWesternNumber, getLocale, getRowDirection, isRtl, setStoredLocale, t, type Locale } from '../i18n';
+import { resolveBatteryFreshness } from '../telemetry';
 import { type Session } from '../session';
 import { NotificationService } from '../notificationService';
 
@@ -327,7 +328,7 @@ export function CallCenterHomeScreen({
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             >
             {/* Read-Only Notice Banner */}
-            <View style={[styles.readOnlyBanner, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+            <View style={[styles.readOnlyBanner, { flexDirection: rowDir }]}>
               <AppIcon name="warning" size={14} color="#0284c7" />
               <Text style={styles.readOnlyBannerText}>{t('callCenter.readOnlyNotice')}</Text>
             </View>
@@ -393,7 +394,7 @@ export function CallCenterHomeScreen({
 
             {/* Map Preview */}
             <View style={styles.section}>
-              <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
                 <Text style={styles.sectionTitle}>{rtl ? 'خريطة التوزيع الميداني' : 'Fleet Radar Map'}</Text>
                 <TouchableOpacity onPress={() => setActiveTab('map')}>
                   <Text style={styles.sectionActionLink}>{rtl ? 'عرض الخريطة الكاملة ←' : 'Full Map →'}</Text>
@@ -412,7 +413,7 @@ export function CallCenterHomeScreen({
 
             {/* Active Drivers Overview */}
             <View style={styles.section}>
-              <View style={[styles.sectionHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
                 <Text style={styles.sectionTitle}>{rtl ? 'السائقون النشطون' : 'Active Drivers'}</Text>
                 <TouchableOpacity onPress={() => setActiveTab('drivers')}>
                   <Text style={styles.sectionActionLink}>{rtl ? 'عرض الكل ←' : 'View All →'}</Text>
@@ -422,10 +423,16 @@ export function CallCenterHomeScreen({
               {(fleet?.drivers ?? []).slice(0, 4).map((d: any) => {
                 const isDOnline = d.isOnline ?? (d.operationalStatus !== 'OFFLINE');
                 const isMoving = d.operationalStatus === 'MOVING';
+                const batteryFreshness = resolveBatteryFreshness({
+                  batteryPercentage: d.device?.batteryPercentage,
+                  lastSeen: d.device?.lastSeen,
+                  isOnline: isDOnline,
+                });
+                const batteryText = rtl ? batteryFreshness.labelAr : batteryFreshness.labelEn;
                 return (
                   <TouchableOpacity
                     key={d.driverId}
-                    style={[styles.driverRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}
+                    style={[styles.driverRow, { flexDirection: rowDir }]}
                     onPress={() => {
                       setSelectedDriver(d);
                       setDriverModalVisible(true);
@@ -450,7 +457,7 @@ export function CallCenterHomeScreen({
                           : isDOnline ? t('operator.stopped') : t('operator.offline')}
                       </Text>
                       <Text style={styles.driverBatteryText}>
-                        {d.device?.batteryPercentage != null ? `${formatWesternNumber(d.device.batteryPercentage)}%` : '—'}
+                        {batteryText}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -479,7 +486,7 @@ export function CallCenterHomeScreen({
             </View>
           ) : (
             <View style={styles.mapScreenContainer}>
-              <View style={[styles.filterBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.filterBar, { flexDirection: rowDir }]}>
                 {['ALL', 'MOVING', 'AT_RESTAURANT', 'STOPPED', 'OFFLINE'].map((statusKey) => (
                   <TouchableOpacity
                     key={statusKey}
@@ -560,6 +567,12 @@ export function CallCenterHomeScreen({
                 const isDOnline = d.isOnline ?? (d.operationalStatus !== 'OFFLINE');
                 const isMoving = d.operationalStatus === 'MOVING';
                 const speed = isMoving && d.location?.speed != null ? Math.round(Number(d.location.speed) * 3.6) : null;
+                const batteryFreshness = resolveBatteryFreshness({
+                  batteryPercentage: d.device?.batteryPercentage,
+                  lastSeen: d.device?.lastSeen,
+                  isOnline: isDOnline,
+                });
+                const batteryText = rtl ? batteryFreshness.labelAr : batteryFreshness.labelEn;
                 return (
                   <TouchableOpacity
                     key={d.driverId}
@@ -612,7 +625,7 @@ export function CallCenterHomeScreen({
                         {speed != null ? `${formatWesternNumber(speed)} ${t('driverDetail.speedUnit')}` : '—'}
                       </Text>
                       <Text style={styles.driverCardBattery}>
-                        {d.device?.batteryPercentage != null ? `${formatWesternNumber(d.device.batteryPercentage)}%` : '—'}
+                        {batteryText}
                       </Text>
                     </View>
 
@@ -632,7 +645,7 @@ export function CallCenterHomeScreen({
         {activeTab === 'notifications' && (
           <View style={{ flex: 1 }}>
             {notifications.length > 0 && unreadCount > 0 && (
-              <View style={[styles.notificationsActionBar, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+              <View style={[styles.notificationsActionBar, { flexDirection: rowDir }]}>
                 <TouchableOpacity
                   onPress={handleMarkAllNotificationsRead}
                   style={styles.markAllReadButton}
@@ -672,7 +685,7 @@ export function CallCenterHomeScreen({
                       onPress={() => handleNotificationTap(n)}
                       style={[styles.notificationCard, !n.read && styles.unreadNotification]}
                     >
-                      <View style={[styles.notificationHeaderRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <View style={[styles.notificationHeaderRow, { flexDirection: rowDir }]}>
                         <Text style={styles.notificationTitle}>{itemTitle}</Text>
                         {!n.read && (
                           <View style={styles.unreadPill}>
@@ -683,12 +696,12 @@ export function CallCenterHomeScreen({
                       <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
                         {itemMessage}
                       </Text>
-                      <View style={[styles.notificationMetaRow, { flexDirection: rtl ? 'row-reverse' : 'row' }]}>
+                      <View style={[styles.notificationMetaRow, { flexDirection: rowDir }]}>
                         <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
                           {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </Text>
                         {n.driverId && (
-                          <View style={{ flexDirection: rtl ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}>
+                          <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 4 }}>
                             <AppIcon name="map" size={12} color={colors.primary} />
                             <Text style={styles.viewDriverHintText}>
                               {rtl ? 'عرض على الخريطة' : 'View on Map'}
