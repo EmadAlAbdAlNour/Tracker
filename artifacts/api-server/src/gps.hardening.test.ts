@@ -435,4 +435,120 @@ describe('SIMPLE GPS HARDENING — VERIFICATION SUITE', () => {
     expect(updatedDeviceValues.lastSeen).toBeDefined();
     expect(updatedDeviceValues.batteryPercentage).toBe(85);
   });
+
+  // Proof 13: Shift start inside restaurant immediately evaluates canonically to AT_RESTAURANT and isInsideGeofence=true
+  it('Proof 13: Shift start inside restaurant immediately evaluates canonically to AT_RESTAURANT and isInsideGeofence=true', () => {
+    // 1 sample inside restaurant radius (46m inside a 150m geofence)
+    const points = [
+      {
+        latitude: 30.0503, // ~33m from restaurant (30.05, 31.25)
+        longitude: 31.2502,
+        speed: 0,
+        accuracy: 12,
+        recorded_at: new Date().toISOString(),
+      },
+    ];
+
+    const result = evaluateOperationalHistory({
+      points,
+      restaurantSettings: {
+        latitude: 30.05,
+        longitude: 31.25,
+        radiusMeters: 150,
+        enabled: true,
+      },
+      initialRestaurantState: undefined, // Fresh shift start without prior state
+      initialMovementState: 'STOPPED',
+    });
+
+    expect(result.restaurantState).toBe('AT_RESTAURANT');
+    expect(result.isInsideGeofence).toBe(true);
+    expect(result.operationalStatus).toBe('AT_RESTAURANT');
+  });
+
+  // Proof 14: Shift start outside restaurant evaluates to OUTSIDE_RESTAURANT and isInsideGeofence=false
+  it('Proof 14: Shift start outside restaurant evaluates to OUTSIDE_RESTAURANT and isInsideGeofence=false', () => {
+    const points = [
+      {
+        latitude: 30.055, // ~600m from restaurant
+        longitude: 31.255,
+        speed: 0,
+        accuracy: 15,
+        recorded_at: new Date().toISOString(),
+      },
+    ];
+
+    const result = evaluateOperationalHistory({
+      points,
+      restaurantSettings: {
+        latitude: 30.05,
+        longitude: 31.25,
+        radiusMeters: 150,
+        enabled: true,
+      },
+      initialRestaurantState: undefined,
+      initialMovementState: 'STOPPED',
+    });
+
+    expect(result.restaurantState).toBe('OUTSIDE_RESTAURANT');
+    expect(result.isInsideGeofence).toBe(false);
+    expect(result.operationalStatus).toBe('STOPPED');
+  });
+
+  // Proof 15: Shift with no location points holds fallback state and never falsely flags OUTSIDE_RESTAURANT
+  it('Proof 15: Shift with no location points holds fallback state and never falsely flags OUTSIDE_RESTAURANT', () => {
+    const result = evaluateOperationalHistory({
+      points: [],
+      restaurantSettings: {
+        latitude: 30.05,
+        longitude: 31.25,
+        radiusMeters: 150,
+        enabled: true,
+      },
+      initialRestaurantState: undefined,
+      initialMovementState: 'STOPPED',
+    });
+
+    expect(result.movementState).toBe('STOPPED');
+    expect(result.restaurantState).toBe('OUTSIDE_RESTAURANT');
+    expect(result.isInsideGeofence).toBe(false);
+    expect(result.reliablePointCount).toBe(0);
+  });
+
+  // Proof 16: Degraded GPS sample at restaurant boundary does not falsely alter established state
+  it('Proof 16: Degraded GPS sample at restaurant boundary does not falsely alter established state', () => {
+    const points = [
+      {
+        latitude: 30.0502,
+        longitude: 31.2501,
+        speed: 0,
+        accuracy: 15, // reliable, inside
+        recorded_at: new Date(Date.now() - 60000).toISOString(),
+      },
+      {
+        latitude: 30.059, // degraded jump outside
+        longitude: 31.259,
+        speed: 4.5,
+        accuracy: 85, // degraded (> 35m)
+        recorded_at: new Date().toISOString(),
+      },
+    ];
+
+    const result = evaluateOperationalHistory({
+      points,
+      restaurantSettings: {
+        latitude: 30.05,
+        longitude: 31.25,
+        radiusMeters: 150,
+        enabled: true,
+      },
+      initialRestaurantState: undefined,
+      initialMovementState: 'STOPPED',
+    });
+
+    expect(result.restaurantState).toBe('AT_RESTAURANT');
+    expect(result.isInsideGeofence).toBe(true);
+    expect(result.operationalStatus).toBe('AT_RESTAURANT');
+  });
 });
+

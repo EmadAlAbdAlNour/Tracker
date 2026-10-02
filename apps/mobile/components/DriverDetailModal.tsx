@@ -324,7 +324,9 @@ export function DriverDetailModal({
               {/* Status & Freshness Header Card */}
               <View style={styles.card}>
                 <View style={[styles.rowBetween, { flexDirection: rowDir }]}>
-                  <Text style={styles.cardSectionTitle}>{rtl ? 'الحالة والاتصال الميداني' : 'Connection & Status'}</Text>
+                  <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
+                    {rtl ? 'الحالة والاتصال الميداني' : 'Connection & Status'}
+                  </Text>
                   <View style={[styles.badgePill, { backgroundColor: connBadge.bg, borderColor: connBadge.border }]}>
                     <Text style={[styles.badgePillText, { color: connBadge.text }]}>{connBadge.label}</Text>
                   </View>
@@ -370,7 +372,7 @@ export function DriverDetailModal({
               {/* Telemetry Card (Explicit Stale vs Live Semantics) */}
               <View style={styles.card}>
                 <View style={[styles.telemetryHeaderRow, { flexDirection: rowDir }]}>
-                  <Text style={styles.cardSectionTitle}>
+                  <Text style={[styles.cardSectionTitle, { textAlign: rtl ? 'right' : 'left' }]}>
                     {isAwaitingTelemetry
                       ? (rtl ? 'في انتظار أول إشارة موقع' : 'Awaiting Initial Location Signal')
                       : isOnline
@@ -388,23 +390,23 @@ export function DriverDetailModal({
                   ) : null}
                 </View>
 
-                <View style={styles.grid2Col}>
+                <View style={[styles.grid2Col, { flexDirection: rowDir }]}>
                   {/* Speed */}
                   <View style={styles.gridCell}>
-                    <Text style={styles.gridCellLabel}>
+                    <Text style={[styles.gridCellLabel, { textAlign: rtl ? 'right' : 'left' }]}>
                       {speedSemantics.isCurrent
                         ? (rtl ? 'السرعة الحالية' : 'Current Speed')
                         : speedSemantics.isHistorical
                         ? (rtl ? 'آخر سرعة مسجلة' : 'Last Recorded Speed')
                         : (rtl ? 'السرعة' : 'Speed')}
                     </Text>
-                    <Text style={styles.gridCellValue}>
+                    <Text style={[styles.gridCellValue, { textAlign: rtl ? 'right' : 'left' }]}>
                       {speedSemantics.speedKmh != null
                         ? `${formatWesternNumber(speedSemantics.speedKmh)} ${t('driverDetail.speedUnit')}`
                         : '—'}
                     </Text>
                     {speedSemantics.isHistorical && speedSemantics.ageMinutes != null ? (
-                      <Text style={styles.gridCellSublabel}>
+                      <Text style={[styles.gridCellSublabel, { textAlign: rtl ? 'right' : 'left' }]}>
                         {rtl ? `منذ ${formatWesternNumber(speedSemantics.ageMinutes)} دقيقة` : `${formatWesternNumber(speedSemantics.ageMinutes)}m ago`}
                       </Text>
                     ) : null}
@@ -412,21 +414,21 @@ export function DriverDetailModal({
 
                   {/* Heading */}
                   <View style={styles.gridCell}>
-                    <Text style={styles.gridCellLabel}>
+                    <Text style={[styles.gridCellLabel, { textAlign: rtl ? 'right' : 'left' }]}>
                       {isOnline ? rtl ? 'الاتجاه' : 'Heading' : rtl ? 'الاتجاه وقت آخر تحديث' : 'Heading at last update'}
                     </Text>
-                    <Text style={styles.gridCellValue}>
+                    <Text style={[styles.gridCellValue, { textAlign: rtl ? 'right' : 'left' }]}>
                       {driver.location?.heading != null ? `${formatWesternNumber(Math.round(driver.location.heading))}°` : '—'}
                     </Text>
                   </View>
 
                   {/* Geofence */}
                   <View style={styles.gridCell}>
-                    <Text style={styles.gridCellLabel}>{rtl ? 'نطاق المطعم' : 'Geofence'}</Text>
+                    <Text style={[styles.gridCellLabel, { textAlign: rtl ? 'right' : 'left' }]}>{rtl ? 'نطاق المطعم' : 'Geofence'}</Text>
                     <Text
                       style={[
                         styles.gridCellValue,
-                        { color: geofenceColor },
+                        { color: geofenceColor, textAlign: rtl ? 'right' : 'left' },
                       ]}
                     >
                       {geofenceLabel}
@@ -435,14 +437,14 @@ export function DriverDetailModal({
 
                   {/* Distance & GPS Accuracy */}
                   <View style={styles.gridCell}>
-                    <Text style={styles.gridCellLabel}>{rtl ? 'المسافة عن المطعم' : 'Distance'}</Text>
-                    <Text style={styles.gridCellValue}>
+                    <Text style={[styles.gridCellLabel, { textAlign: rtl ? 'right' : 'left' }]}>{rtl ? 'المسافة عن المطعم' : 'Distance'}</Text>
+                    <Text style={[styles.gridCellValue, { textAlign: rtl ? 'right' : 'left' }]}>
                       {driver.distanceToRestaurantMeters != null
                         ? `~${formatWesternNumber(Math.round(driver.distanceToRestaurantMeters))} ${t('driverDetail.meters')}`
                         : '—'}
                     </Text>
                     {driver.location?.accuracy != null && (
-                      <Text style={[styles.gridCellSublabel, Number(driver.location.accuracy) > 35 && { color: colors.status.warning }]}>
+                      <Text style={[styles.gridCellSublabel, { textAlign: rtl ? 'right' : 'left' }, Number(driver.location.accuracy) > 35 && { color: colors.status.warning }]}>
                         {rtl
                           ? `دقة GPS: ±${formatWesternNumber(Math.round(Number(driver.location.accuracy)))}م${Number(driver.location.accuracy) > 35 ? ' (منخفضة)' : ''}`
                           : `GPS ±${formatWesternNumber(Math.round(Number(driver.location.accuracy)))}m${Number(driver.location.accuracy) > 35 ? ' (Degraded)' : ''}`}
@@ -552,9 +554,15 @@ export function DriverDetailModal({
                       <View key={act.id} style={[styles.activityItem, { flexDirection: rowDir }]}>
                         <View style={[styles.activityDot, { backgroundColor: dotColor }]} />
                         <View style={{ flex: 1, marginHorizontal: 8, alignItems: rtl ? 'flex-end' : 'flex-start' }}>
-                          <Text style={styles.activityTitle}>{presentation.title}</Text>
-                          {presentation.description ? <Text style={styles.activityDesc}>{presentation.description}</Text> : null}
-                          <Text style={styles.activityTime}>
+                          <Text style={[styles.activityTitle, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                            {presentation.title}
+                          </Text>
+                          {presentation.description ? (
+                            <Text style={[styles.activityDesc, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                              {presentation.description}
+                            </Text>
+                          ) : null}
+                          <Text style={[styles.activityTime, { textAlign: rtl ? 'right' : 'left' }]}>
                             {formatWesternNumber(new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}
                           </Text>
                         </View>

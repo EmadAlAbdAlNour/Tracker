@@ -271,16 +271,15 @@ export function CallCenterHomeScreen({
     const online = driversList.filter((d: any) => d.isOnline ?? (d.operationalStatus !== 'OFFLINE')).length;
     const tracking = driversList.filter((d: any) => (d.isOnline ?? (d.operationalStatus !== 'OFFLINE')) && d.location).length;
     const offline = total - online;
-    const activeAlerts = (fleet?.alerts ?? []).length;
 
-    return { total, inShift, tracking, online, offline, activeAlerts };
-  }, [fleet]);
+    return { total, inShift, tracking, online, offline, unreadNotifications: unreadCount };
+  }, [fleet, unreadCount]);
 
   const bottomTabs: TabItem[] = [
     { id: 'dashboard', label: rtl ? 'الرئيسية' : 'Dashboard', icon: 'dashboard' },
     { id: 'map', label: rtl ? 'الخريطة' : 'Map', icon: 'map' },
     { id: 'drivers', label: rtl ? 'السائقون' : 'Drivers', icon: 'driver', badgeCount: metrics.online > 0 ? metrics.online : undefined },
-    { id: 'notifications', label: rtl ? 'الإشعارات' : 'Alerts', icon: 'bell', badgeCount: unreadCount > 0 ? unreadCount : undefined },
+    { id: 'notifications', label: t('notifications.title'), icon: 'bell', badgeCount: unreadCount > 0 ? unreadCount : undefined },
   ];
 
   return (
@@ -296,7 +295,7 @@ export function CallCenterHomeScreen({
             ? rtl ? 'الخريطة الميدانية' : 'Live Fleet Map'
             : activeTab === 'drivers'
             ? rtl ? 'السائقون الميدانيون' : 'Active Drivers'
-            : rtl ? 'الإشعارات والتنبيهات' : 'Alerts & Incidents'
+            : t('notifications.title')
         }
         role="CALL_CENTER"
         userName={session.user.name}
@@ -384,9 +383,9 @@ export function CallCenterHomeScreen({
                 </View>
 
                 <View style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>{rtl ? 'تنبيهات' : 'Alerts'}</Text>
-                  <Text style={[styles.kpiValue, { color: metrics.activeAlerts > 0 ? colors.status.critical : colors.text.muted }]}>
-                    {formatWesternNumber(metrics.activeAlerts)}
+                  <Text style={styles.kpiLabel}>{t('admin.unreadNotifications')}</Text>
+                  <Text style={[styles.kpiValue, { color: metrics.unreadNotifications > 0 ? colors.status.critical : colors.text.muted }]}>
+                    {formatWesternNumber(metrics.unreadNotifications)}
                   </Text>
                 </View>
               </View>
@@ -686,14 +685,16 @@ export function CallCenterHomeScreen({
                       style={[styles.notificationCard, !n.read && styles.unreadNotification]}
                     >
                       <View style={[styles.notificationHeaderRow, { flexDirection: rowDir }]}>
-                        <Text style={styles.notificationTitle}>{itemTitle}</Text>
+                        <Text style={[styles.notificationTitle, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                          {itemTitle}
+                        </Text>
                         {!n.read && (
                           <View style={styles.unreadPill}>
                             <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
                           </View>
                         )}
                       </View>
-                      <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
+                      <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
                         {itemMessage}
                       </Text>
                       <View style={[styles.notificationMetaRow, { flexDirection: rowDir }]}>

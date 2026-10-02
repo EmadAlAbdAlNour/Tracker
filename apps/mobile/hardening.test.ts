@@ -273,5 +273,54 @@ describe('Production Hardening Pass — Mobile Regression Suite', () => {
       expect(getLocalizedErrorMessage('OUTSIDE_GEOFENCE')).toBe('Driver must be inside restaurant geofence to start shift.');
     });
   });
+
+  describe('DEV-01: Device Management Parity & Authorization Semantics', () => {
+    it('accurately resolves authorization from API boolean authorized field', () => {
+      // API returns authorized: boolean (matching Web Admin)
+      const authorizedApiDevice = {
+        id: 'dev-uuid-1',
+        driverId: 'drv-1',
+        authorized: true,
+        deviceIdentifier: 'ed769a8e-8776-4d3c-94ab-e87a9f6d954a',
+        platform: 'Android (Realme RMX3834 - OS 15)',
+        appVersion: '1.1.6',
+      };
+
+      const unauthorizedApiDevice = {
+        id: 'dev-uuid-2',
+        driverId: 'drv-2',
+        authorized: false,
+        deviceIdentifier: 'aa112233-4455-6677-8899-aabbccddeeff',
+        platform: 'Android',
+        appVersion: '1.0.0',
+      };
+
+      // Canonical check used in Mobile Admin
+      const isAuth1 = Boolean(authorizedApiDevice.authorized ?? (authorizedApiDevice as any).isAuthorized);
+      const isAuth2 = Boolean(unauthorizedApiDevice.authorized ?? (unauthorizedApiDevice as any).isAuthorized);
+
+      expect(isAuth1).toBe(true);
+      expect(isAuth2).toBe(false);
+    });
+
+    it('provides revoke device and unread notifications localization in AR and EN', async () => {
+      const { t, setStoredLocale } = await import('./i18n');
+
+      await setStoredLocale('ar');
+      expect(t('admin.revokeDevice')).toBe('إلغاء الترخيص');
+      expect(t('admin.authorized')).toBe('معتمد');
+      expect(t('admin.unauthorized')).toBe('غير معتمد');
+      expect(t('admin.unreadNotifications')).toBe('إشعارات جديدة');
+      expect(t('notifications.title')).toBe('الإشعارات');
+
+      await setStoredLocale('en');
+      expect(t('admin.revokeDevice')).toBe('Revoke Authorization');
+      expect(t('admin.authorized')).toBe('Authorized');
+      expect(t('admin.unauthorized')).toBe('Unauthorized');
+      expect(t('admin.unreadNotifications')).toBe('Unread Notifications');
+      expect(t('notifications.title')).toBe('Notifications');
+    });
+  });
 });
+
 

@@ -84,30 +84,5 @@ router.post("/read-all", requireAuth, requireRole("ADMIN", "CALL_CENTER", "DRIVE
   }
 });
 
-router.post("/test", requireAuth, requireRole("ADMIN", "CALL_CENTER"), async (req: AuthenticatedRequest, res, next) => {
-  try {
-    const { createNotification } = await import("../services/notificationService");
-    const created = await createNotification({
-      type: "SYSTEM_NOTICE",
-      severity: "INFO",
-      titleAr: "إشعار اختباري للنظام",
-      titleEn: "System Test Notification",
-      messageAr: "هذا إشعار تجريبي للتحقق من وصول التنبيهات في شريط إشعارات أندرويد بنجاح.",
-      messageEn: "This is a test notification to verify Android notification shade delivery.",
-      metadata: { isTest: true, createdBy: req.user!.id, timestamp: new Date().toISOString() },
-    });
-    res.status(201).json({
-      notification: {
-        ...created,
-        title: req.headers["accept-language"]?.includes("ar") ? created.titleAr : created.titleEn,
-        message: req.headers["accept-language"]?.includes("ar") ? created.messageAr : created.messageEn,
-        read: false,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
 export default router;
 

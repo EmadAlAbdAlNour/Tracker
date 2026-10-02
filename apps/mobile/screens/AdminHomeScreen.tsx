@@ -454,6 +454,49 @@ export function AdminHomeScreen({
     }
   };
 
+  const promptRevokeDevice = (dev: any) => {
+    setDialogConfig({
+      visible: true,
+      title: t('admin.confirmResetTitle'),
+      message: t('admin.confirmResetMessage'),
+      type: 'warning',
+      isDestructive: true,
+      primaryButtonText: t('admin.revokeDevice'),
+      secondaryButtonText: t('app.cancel'),
+      onSecondaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+      onPrimaryPress: async () => {
+        setDialogConfig((prev) => ({ ...prev, loading: true }));
+        try {
+          await apiRequest(`/api/drivers/${dev.driverId}/device/reset`, { method: 'POST' });
+          setDialogConfig({
+            visible: true,
+            title: t('app.notice'),
+            message: t('admin.resetSuccess'),
+            type: 'success',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+          await loadFleet();
+          if (moreSection === 'devices') await loadDevices();
+          if (selectedDriver && selectedDriver.driverId === dev.driverId) {
+            setSelectedDriver((prev: any) =>
+              prev ? { ...prev, device: prev.device ? { ...prev.device, authorized: false } : null } : null
+            );
+          }
+        } catch (err: any) {
+          setDialogConfig({
+            visible: true,
+            title: t('app.error'),
+            message: err?.message || t('admin.resetFailed'),
+            type: 'error',
+            primaryButtonText: t('app.ok'),
+            onPrimaryPress: () => setDialogConfig((prev) => ({ ...prev, visible: false })),
+          });
+        }
+      },
+    });
+  };
+
   // Force End Driver Shift
   const handleForceEndShift = async (driverId: string) => {
     await apiRequest(`/api/drivers/${driverId}/shifts/force-end`, { method: 'POST' });
@@ -684,39 +727,6 @@ export function AdminHomeScreen({
     }
   };
 
-  const handleSendTestNotification = async () => {
-    try {
-      await NotificationService.requestPermission();
-      const res = await apiRequest<any>('/api/notifications/test', { method: 'POST' });
-      const notif = res?.notification;
-      if (notif) {
-        await NotificationService.recordNotificationPosted(notif.id);
-        const itemTitle = rtl
-          ? notif.titleAr || notif.title || 'إشعار اختباري للنظام'
-          : notif.titleEn || notif.title || 'System Test Notification';
-        const itemMessage = rtl
-          ? notif.messageAr || notif.message || 'تم إرسال إشعار تجريبي لاختبار شريط الإشعارات'
-          : notif.messageEn || notif.message || 'Test notification sent to shade';
-
-        await NotificationService.showNotification({
-          id: Math.floor(Math.random() * 90000) + 10000,
-          channelId: settingsAlerts.soundEnabled ? 'tracker_alerts_channel' : 'tracker_system_channel',
-          title: itemTitle,
-          body: itemMessage,
-          data: { notificationId: notif.id },
-        });
-      }
-      await loadNotifications();
-      showDialog(
-        t('app.notice'),
-        rtl ? 'تم إرسال الإشعار لشريط إشعارات أندرويد بنجاح' : 'Notification posted to Android shade',
-        'success'
-      );
-    } catch (err: any) {
-      showDialog(t('app.error'), err?.message || 'Failed to send test notification', 'error');
-    }
-  };
-
   const handleMarkAllNotificationsRead = async () => {
     try {
       await apiRequest('/api/notifications/read-all', { method: 'POST' });
@@ -771,10 +781,9 @@ export function AdminHomeScreen({
     const online = driversList.filter((d: any) => d.isOnline ?? (d.operationalStatus !== 'OFFLINE')).length;
     const tracking = driversList.filter((d: any) => (d.isOnline ?? (d.operationalStatus !== 'OFFLINE')) && d.location).length;
     const offline = total - online;
-    const activeAlerts = (fleet?.alerts ?? []).length;
 
-    return { total, inShift, tracking, online, offline, activeAlerts };
-  }, [fleet]);
+    return { total, inShift, tracking, online, offline, unreadNotifications: unreadCount };
+  }, [fleet, unreadCount]);
 
   // Bottom tabs definition
   const bottomTabs: TabItem[] = [
@@ -898,42 +907,17 @@ export function AdminHomeScreen({
                   </Text>
                 </View>
 
-                {/* Active Alerts */}
+                {/* Unread Notifications */}
                 <View style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>{rtl ? 'تنبيهات نشطة' : 'Active Alerts'}</Text>
-                  <Text style={[styles.kpiValue, { color: metrics.activeAlerts > 0 ? colors.status.critical : colors.text.muted }]}>
-                    {formatWesternNumber(metrics.activeAlerts)}
+                  <Text style={styles.kpiLabel}>{t('admin.unreadNotifications')}</Text>
+                  <Text style={[styles.kpiValue, { color: metrics.unreadNotifications > 0 ? colors.status.critical : colors.text.muted }]}>
+                    {formatWesternNumber(metrics.unreadNotifications)}
                   </Text>
                 </View>
               </View>
             </View>
 
-            {/* Section 2: Active Critical Alerts (If any) */}
-            {(fleet?.alerts ?? []).length > 0 && (
-              <View style={styles.section}>
-                <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
-                  <Text style={styles.sectionTitle}>{rtl ? 'التنبيهات الميدانية النشطة' : 'Active Alerts'}</Text>
-                  <View style={styles.alertCountBadge}>
-                    <Text style={styles.alertCountText}>{formatWesternNumber((fleet.alerts ?? []).length)}</Text>
-                  </View>
-                </View>
-
-                {(fleet.alerts ?? []).slice(0, 3).map((al: any) => (
-                  <View key={al.id} style={[styles.alertCard, { flexDirection: rowDir }]}>
-                    <AppIcon name="warning" size={16} color={colors.status.critical} />
-                    <View style={styles.alertBody}>
-                      <Text style={[styles.alertTitle, { textAlign: rtl ? 'right' : 'left' }]}>{al.title || al.type}</Text>
-                      <Text style={[styles.alertMessage, { textAlign: rtl ? 'right' : 'left' }]}>{al.message}</Text>
-                    </View>
-                    <Text style={styles.alertTime}>
-                      {al.createdAt ? new Date(al.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* Section 3: Live Map Preview Container */}
+            {/* Section 2: Live Map Preview Container */}
             <View style={styles.section}>
               <View style={[styles.sectionHeaderRow, { flexDirection: rowDir }]}>
                 <Text style={styles.sectionTitle}>{rtl ? 'معاينة الخريطة الميدانية' : 'Fleet Map Preview'}</Text>
@@ -1333,54 +1317,72 @@ export function AdminHomeScreen({
                   ) : devices.length === 0 ? (
                     <Text style={styles.emptyText}>{rtl ? 'لا توجد أجهزة مسجلة' : 'No devices found'}</Text>
                   ) : (
-                    devices.map((dev: any) => (
-                      <View key={dev.id} style={styles.deviceCard}>
-                        <View style={[styles.deviceCardHeader, { flexDirection: rowDir }]}>
-                          <View>
-                            <Text style={styles.deviceDriverName}>{dev.driverName || 'Driver'}</Text>
-                            <Text style={styles.deviceIdText}>{dev.deviceIdentifier}</Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.authBadge,
-                              {
-                                backgroundColor: dev.isAuthorized ? colors.status.onlineBg : colors.status.criticalBg,
-                                borderColor: dev.isAuthorized ? colors.status.onlineBorder : colors.status.criticalBorder,
-                              },
-                            ]}
-                          >
-                            <Text
+                    devices.map((dev: any) => {
+                      const isAuth = Boolean(dev.authorized ?? dev.isAuthorized);
+                      const uuid = dev.deviceIdentifier || dev.id || '—';
+                      const deviceName = `${dev.platform || 'Android'} • v${dev.appVersion || '1.0.0'}`;
+                      return (
+                        <View key={dev.id} style={styles.deviceCard}>
+                          {/* Row 1: Driver Name (start) + Authorization Status (end) */}
+                          <View style={[styles.deviceCardHeader, { flexDirection: rowDir }]}>
+                            <Text style={[styles.deviceDriverName, { textAlign: rtl ? 'right' : 'left' }]}>
+                              {dev.driverName || 'Driver'}
+                            </Text>
+                            <View
                               style={[
-                                styles.authBadgeText,
-                                { color: dev.isAuthorized ? colors.status.online : colors.status.critical },
+                                styles.authBadge,
+                                {
+                                  backgroundColor: isAuth ? colors.status.onlineBg : colors.status.criticalBg,
+                                  borderColor: isAuth ? colors.status.onlineBorder : colors.status.criticalBorder,
+                                },
                               ]}
                             >
-                              {dev.isAuthorized ? t('admin.authorized') : t('admin.unauthorized')}
-                            </Text>
+                              <Text
+                                style={[
+                                  styles.authBadgeText,
+                                  { color: isAuth ? colors.status.online : colors.status.critical },
+                                ]}
+                              >
+                                {isAuth ? t('admin.authorized') : t('admin.unauthorized')}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
 
-                        <View style={[styles.deviceMetaRow, { flexDirection: rowDir }]}>
-                          <Text style={styles.deviceMetaItem}>
-                            {dev.platform || 'Android'} • v{dev.appVersion || '1.0.0'}
-                          </Text>
-                          <Text style={styles.deviceMetaItem}>
-                            {dev.lastSeenAt
-                              ? new Date(dev.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              : t('admin.never')}
-                          </Text>
-                        </View>
-
-                        {dev.isAuthorized && (
-                          <TouchableOpacity
-                            style={styles.deviceResetButton}
-                            onPress={() => handleDeviceReset(dev.driverId)}
+                          {/* Row 2: Full UUID */}
+                          <Text
+                            style={[
+                              styles.deviceIdText,
+                              { textAlign: rtl ? 'right' : 'left', writingDirection: 'ltr' },
+                            ]}
+                            selectable
                           >
-                            <Text style={styles.deviceResetButtonText}>{t('admin.resetDevice')}</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ))
+                            {uuid}
+                          </Text>
+
+                          {/* Row 3: Device Name */}
+                          <View style={[styles.deviceMetaRow, { flexDirection: rowDir }]}>
+                            <Text style={[styles.deviceMetaItem, { textAlign: rtl ? 'right' : 'left' }]}>
+                              {deviceName}
+                            </Text>
+                            {dev.lastSeen && (
+                              <Text style={[styles.deviceMetaItem, { textAlign: rtl ? 'left' : 'right' }]}>
+                                {new Date(dev.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </Text>
+                            )}
+                          </View>
+
+                          {/* Row 4: Action Button */}
+                          {isAuth && (
+                            <TouchableOpacity
+                              style={styles.deviceResetButton}
+                              onPress={() => promptRevokeDevice(dev)}
+                            >
+                              <Text style={styles.deviceResetButtonText}>{t('admin.revokeDevice')}</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      );
+                    })
                   )}
                 </ScrollView>
               </View>
@@ -1653,11 +1655,6 @@ export function AdminHomeScreen({
             {moreSection === 'notifications' && (
               <View style={{ flex: 1 }}>
                 <View style={[styles.notificationsToolbar, { flexDirection: rowDir }]}>
-                  <TouchableOpacity onPress={handleSendTestNotification} style={[styles.markAllReadButton, { backgroundColor: '#e0f2fe' }]}>
-                    <Text style={[styles.markAllReadText, { color: colors.accent }]}>
-                      {rtl ? 'إرسال تجريبي' : 'Send Test'}
-                    </Text>
-                  </TouchableOpacity>
                   <TouchableOpacity onPress={handleMarkAllNotificationsRead} style={styles.markAllReadButton}>
                     <Text style={styles.markAllReadText}>{t('notifications.markAllRead')}</Text>
                   </TouchableOpacity>
@@ -1677,90 +1674,92 @@ export function AdminHomeScreen({
                       const itemMessage = rtl
                         ? n.messageAr || n.message || n.messageEn || ''
                         : n.messageEn || n.message || n.messageAr || '';
-                        const isCritical = n.severity === 'CRITICAL';
-                        const isWarning = n.severity === 'WARNING';
-                        return (
-                          <TouchableOpacity
-                            key={n.id}
-                            activeOpacity={0.7}
-                            onPress={() => handleMarkNotificationRead(n.id)}
-                            style={[styles.notificationCard, !n.read && styles.unreadNotification]}
-                          >
-                            <View style={[styles.notificationHeaderRow, { flexDirection: rowDir }]}>
-                              <Text style={styles.notificationTitle}>{itemTitle}</Text>
-                              <View style={{ flexDirection: rowDir, gap: 4, alignItems: 'center' }}>
-                                <View
+                      const isCritical = n.severity === 'CRITICAL';
+                      const isWarning = n.severity === 'WARNING';
+                      return (
+                        <TouchableOpacity
+                          key={n.id}
+                          activeOpacity={0.7}
+                          onPress={() => handleMarkNotificationRead(n.id)}
+                          style={[styles.notificationCard, !n.read && styles.unreadNotification]}
+                        >
+                          <View style={[styles.notificationHeaderRow, { flexDirection: rowDir }]}>
+                            <Text style={[styles.notificationTitle, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                              {itemTitle}
+                            </Text>
+                            <View style={{ flexDirection: rowDir, gap: 4, alignItems: 'center' }}>
+                              <View
+                                style={[
+                                  styles.severityBadge,
+                                  {
+                                    backgroundColor: isCritical
+                                      ? colors.status.criticalBg
+                                      : isWarning
+                                      ? colors.status.warningBg
+                                      : '#eff6ff',
+                                    borderColor: isCritical
+                                      ? colors.status.criticalBorder
+                                      : isWarning
+                                      ? colors.status.warningBorder
+                                      : '#bfdbfe',
+                                  },
+                                ]}
+                              >
+                                <Text
                                   style={[
-                                    styles.severityBadge,
+                                    styles.severityBadgeText,
                                     {
-                                      backgroundColor: isCritical
-                                        ? colors.status.criticalBg
+                                      color: isCritical
+                                        ? colors.status.critical
                                         : isWarning
-                                        ? colors.status.warningBg
-                                        : '#eff6ff',
-                                      borderColor: isCritical
-                                        ? colors.status.criticalBorder
-                                        : isWarning
-                                        ? colors.status.warningBorder
-                                        : '#bfdbfe',
+                                        ? colors.status.warning
+                                        : '#2563eb',
                                     },
                                   ]}
                                 >
-                                  <Text
-                                    style={[
-                                      styles.severityBadgeText,
-                                      {
-                                        color: isCritical
-                                          ? colors.status.critical
-                                          : isWarning
-                                          ? colors.status.warning
-                                          : '#2563eb',
-                                      },
-                                    ]}
-                                  >
-                                    {n.severity === 'CRITICAL'
-                                      ? (rtl ? 'حرج' : 'CRITICAL')
-                                      : n.severity === 'WARNING'
-                                      ? (rtl ? 'تحذير' : 'WARNING')
-                                      : (rtl ? 'معلومة' : 'INFO')}
-                                  </Text>
-                                </View>
-                                {!n.read && (
-                                  <View style={styles.unreadPill}>
-                                    <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
-                                  </View>
-                                )}
-                              </View>
-                            </View>
-                            <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left' }]}>
-                              {itemMessage}
-                            </Text>
-                            <View style={[styles.rowBetween, { flexDirection: rowDir, marginTop: 8 }]}>
-                              <Text style={styles.notificationTime}>
-                                {n.createdAt ? formatWesternNumber(new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : ''}
-                              </Text>
-                              {!n.resolved ? (
-                                <TouchableOpacity
-                                  style={styles.resolveAlertButton}
-                                  onPress={() => handleResolveNotification(n.id)}
-                                >
-                                  <Text style={styles.resolveAlertButtonText}>
-                                    {rtl ? 'حل التنبيه' : 'Resolve'}
-                                  </Text>
-                                </TouchableOpacity>
-                              ) : (
-                                <Text style={styles.resolvedBadgeText}>
-                                  {rtl ? 'تم الحل' : 'Resolved'}
+                                  {n.severity === 'CRITICAL'
+                                    ? (rtl ? 'حرج' : 'CRITICAL')
+                                    : n.severity === 'WARNING'
+                                    ? (rtl ? 'تحذير' : 'WARNING')
+                                    : (rtl ? 'معلومة' : 'INFO')}
                                 </Text>
+                              </View>
+                              {!n.read && (
+                                <View style={styles.unreadPill}>
+                                  <Text style={styles.unreadPillText}>{t('notifications.unread')}</Text>
+                                </View>
                               )}
                             </View>
-                          </TouchableOpacity>
-                        );
-                      })
-                    )}
-                  </ScrollView>
-                </View>
-              )}
+                          </View>
+                          <Text style={[styles.notificationMessage, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                            {itemMessage}
+                          </Text>
+                          <View style={[styles.rowBetween, { flexDirection: rowDir, marginTop: 8 }]}>
+                            <Text style={[styles.notificationTime, { textAlign: rtl ? 'right' : 'left' }]}>
+                              {n.createdAt ? formatWesternNumber(new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : ''}
+                            </Text>
+                            {!n.resolved ? (
+                              <TouchableOpacity
+                                style={styles.resolveAlertButton}
+                                onPress={() => handleResolveNotification(n.id)}
+                              >
+                                <Text style={styles.resolveAlertButtonText}>
+                                  {rtl ? 'حل التنبيه' : 'Resolve'}
+                                </Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <Text style={styles.resolvedBadgeText}>
+                                {rtl ? 'تم الحل' : 'Resolved'}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            )}
 
               {/* SUBVIEW: OPERATIONAL REPORTS */}
               {moreSection === 'reports' && (

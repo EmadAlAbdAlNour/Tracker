@@ -115,11 +115,37 @@ export function evaluateOperationalHistory(params: {
     points,
     restaurantSettings,
     exitBufferMeters = GEOFENCE_EXIT_BUFFER_METERS,
-    initialRestaurantState = "OUTSIDE_RESTAURANT",
+    initialRestaurantState: explicitInitialState,
     initialMovementState = "STOPPED",
   } = params;
 
-  let currentRestaurantState = initialRestaurantState;
+  // Determine initial restaurant state:
+  // If explicitly specified by caller, respect it.
+  // Otherwise, inspect the first reliable point in the history window:
+  // If the first reliable point is inside restaurant radius, initial state is AT_RESTAURANT.
+  // Otherwise (or if empty / geofence disabled), default to OUTSIDE_RESTAURANT.
+  let resolvedInitialRestaurantState: "AT_RESTAURANT" | "OUTSIDE_RESTAURANT" = "OUTSIDE_RESTAURANT";
+  if (explicitInitialState !== undefined) {
+    resolvedInitialRestaurantState = explicitInitialState;
+  } else if (restaurantSettings && restaurantSettings.enabled && points && points.length > 0) {
+    const firstReliable = points.find((p) => {
+      const acc = p.accuracy != null ? Number(p.accuracy) : null;
+      return acc == null || acc <= DEFAULT_RELIABLE_ACCURACY_METERS;
+    });
+    if (firstReliable) {
+      const d = calculateDistanceMeters(
+        Number(firstReliable.latitude),
+        Number(firstReliable.longitude),
+        restaurantSettings.latitude,
+        restaurantSettings.longitude,
+      );
+      if (d <= restaurantSettings.radiusMeters) {
+        resolvedInitialRestaurantState = "AT_RESTAURANT";
+      }
+    }
+  }
+
+  let currentRestaurantState = resolvedInitialRestaurantState;
   let currentMovementState = initialMovementState;
   let consecutiveInside = 0;
   let consecutiveOutside = 0;
@@ -246,6 +272,7 @@ export function computeOperationalStatus(params: {
     radiusMeters: number;
     enabled: boolean;
   } | null;
+  initialRestaurantState?: "AT_RESTAURANT" | "OUTSIDE_RESTAURANT";
   now?: number;
 }): "AT_RESTAURANT" | "MOVING" | "STOPPED" | "OFFLINE" {
   const {
@@ -255,6 +282,7 @@ export function computeOperationalStatus(params: {
     location,
     recentLocations,
     restaurantSettings,
+    initialRestaurantState,
     now = Date.now(),
   } = params;
 
@@ -267,6 +295,7 @@ export function computeOperationalStatus(params: {
     const historyResult = evaluateOperationalHistory({
       points: recentLocations,
       restaurantSettings,
+      initialRestaurantState,
     });
     return historyResult.operationalStatus;
   }
@@ -443,6 +472,15 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
       }).catch((err) => console.error("Fleet offline alert evaluation error:", err));
     }
 
+    let historyResult: ReturnType<typeof evaluateOperationalHistory> | null = null;
+    if (recentLocations && recentLocations.length > 0) {
+      historyResult = evaluateOperationalHistory({
+        points: recentLocations,
+        restaurantSettings,
+      });
+    }
+
+    let isInsideGeofence = false;
     let distanceToRestaurant: number | null = null;
     if (location && restaurantSettings.enabled) {
       distanceToRestaurant = Math.round(
@@ -453,19 +491,23 @@ export async function getLiveFleetStatus(options?: { activeOnly?: boolean }): Pr
           restaurantSettings.longitude,
         ),
       );
+      if (historyResult) {
+        isInsideGeofence = historyResult.isInsideGeofence;
+      } else {
+        isInsideGeofence = distanceToRestaurant <= restaurantSettings.radiusMeters;
+      }
     }
 
     // Operational status calculation with telemetry freshness and multi-sample history check
     const operationalStatus = computeOperationalStatus({
       hasActiveShift,
       isOnline,
+      isInsideGeofence,
       location,
       recentLocations,
       restaurantSettings,
       now,
     });
-
-    const isInsideGeofence = operationalStatus === "AT_RESTAURANT";
 
     if (operationalStatus === "OFFLINE") {
       offlineCount++;

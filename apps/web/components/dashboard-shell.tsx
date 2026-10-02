@@ -135,7 +135,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const navItems = [
     { href: '/dashboard', label: t('nav.overview'), icon: LayoutDashboard, roles: ['ADMIN', 'CALL_CENTER'] },
     { href: '/dashboard/drivers', label: t('nav.drivers'), icon: BriefcaseBusiness, roles: ['ADMIN', 'CALL_CENTER'] },
-    { href: '/dashboard/alerts', label: t('nav.alerts'), icon: AlertTriangle, roles: ['ADMIN', 'CALL_CENTER'] },
     { href: '/dashboard/reports', label: t('nav.reports'), icon: BarChart3, roles: ['ADMIN', 'CALL_CENTER'] },
     { href: '/dashboard/devices', label: t('nav.devices'), icon: ShieldCheck, roles: ['ADMIN'] },
     { href: '/dashboard/users', label: t('nav.users'), icon: Users, roles: ['ADMIN'] },
