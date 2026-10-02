@@ -1,6 +1,6 @@
 import { db, shiftsTable, locationPointsTable, driversTable, usersTable, notificationsTable } from "@workspace/db";
 import { eq, and, gte, lte, asc, desc, inArray } from "drizzle-orm";
-import { getRestaurantSettings } from "./settingsService";
+import { getRestaurantSettings, getAlertSettings } from "./settingsService";
 import { calculateDistanceMeters } from "./alertService";
 import { DEFAULT_RELIABLE_ACCURACY_METERS, MOVEMENT_SPEED_THRESHOLD_MPS } from "./fleetService";
 
@@ -90,7 +90,10 @@ export async function generateOperationalReport(params: {
     driverMap.set(d.driverId, { employeeId: d.employeeId, name: d.name });
   }
 
-  const restaurantSettings = await getRestaurantSettings();
+  const [restaurantSettings, alertSettings] = await Promise.all([
+    getRestaurantSettings(),
+    getAlertSettings(),
+  ]);
 
   // 3. Aggregate metrics per driver
   const perDriver = new Map<string, DriverReportMetrics>();
@@ -163,7 +166,9 @@ export async function generateOperationalReport(params: {
 
     const shiftEnd = shift.endedAt ? shift.endedAt.getTime() : Math.min(Date.now(), toDate.getTime());
     const shiftStart = shift.startedAt.getTime();
-    const durationMins = Math.max(0, Math.round((shiftEnd - shiftStart) / 60000));
+    const maxShiftMinutes = (alertSettings?.maxShiftDurationHours ?? 12) * 60;
+    const rawDurationMins = Math.max(0, Math.round((shiftEnd - shiftStart) / 60000));
+    const durationMins = shift.endedAt ? rawDurationMins : Math.min(rawDurationMins, maxShiftMinutes);
     metrics.totalDurationMinutes += durationMins;
 
     const points = pointsByShiftId.get(shift.id) || [];
@@ -224,10 +229,10 @@ export async function generateOperationalReport(params: {
       prevReliable = p;
     }
 
-    metrics.totalDistanceMeters += Math.round(shiftDistance);
-    metrics.movingDurationMinutes += Math.round(shiftMovingMins);
-    metrics.restaurantDurationMinutes += Math.round(shiftRestaurantMins);
-    metrics.stoppedDurationMinutes += Math.round(shiftStoppedMins);
+    metrics.totalDistanceMeters += shiftDistance;
+    metrics.movingDurationMinutes += shiftMovingMins;
+    metrics.restaurantDurationMinutes += shiftRestaurantMins;
+    metrics.stoppedDurationMinutes += shiftStoppedMins;
   }
 
   // 5. Aggregate alert counts per driver within range
@@ -257,6 +262,10 @@ export async function generateOperationalReport(params: {
   // 6. Compute fleet summary and populate compatibility aliases
   const driverMetricsArray = Array.from(perDriver.values());
   for (const d of driverMetricsArray) {
+    d.totalDistanceMeters = Math.round(d.totalDistanceMeters);
+    d.movingDurationMinutes = Math.round(d.movingDurationMinutes);
+    d.stoppedDurationMinutes = Math.round(d.stoppedDurationMinutes);
+    d.restaurantDurationMinutes = Math.round(d.restaurantDurationMinutes);
     d.durationMinutes = d.totalDurationMinutes;
     d.distanceMeters = d.totalDistanceMeters;
     d.movingMinutes = d.movingDurationMinutes;

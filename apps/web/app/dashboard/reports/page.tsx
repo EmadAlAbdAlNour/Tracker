@@ -49,9 +49,11 @@ export default function ReportsPage() {
     } else if (type === '7days') {
       start.setDate(start.getDate() - 7);
       start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
     } else if (type === '30days') {
       start.setDate(start.getDate() - 30);
       start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
     }
 
     return {
@@ -84,14 +86,29 @@ export default function ReportsPage() {
   const drivers = data?.drivers || data?.driverBreakdown || [];
 
   const formatHours = (minutes: number) => {
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
+    if (minutes == null || isNaN(minutes) || minutes <= 0) {
+      return rtl ? '0 دقيقة' : '0m';
+    }
+    const totalMins = Math.round(minutes);
+    if (totalMins === 0) return rtl ? '0 دقيقة' : '0m';
+    const hrs = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    if (rtl) {
+      if (hrs === 0) return `${formatWesternNumber(mins)} دقيقة`;
+      if (mins === 0) return `${formatWesternNumber(hrs)} ساعة`;
+      return `${formatWesternNumber(hrs)}س ${formatWesternNumber(mins)}د`;
+    }
     if (hrs === 0) return `${formatWesternNumber(mins)}m`;
+    if (mins === 0) return `${formatWesternNumber(hrs)}h`;
     return `${formatWesternNumber(hrs)}h ${formatWesternNumber(mins)}m`;
   };
 
   const formatKm = (meters: number) => {
-    return `${formatWesternNumber((meters / 1000).toFixed(1))} km`;
+    const unit = rtl ? 'كم' : 'km';
+    if (meters == null || isNaN(meters) || meters <= 0) {
+      return `0.0 ${unit}`;
+    }
+    return `${(meters / 1000).toFixed(1)} ${unit}`;
   };
 
   return (

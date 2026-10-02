@@ -667,3 +667,57 @@ export function formatTimeAgo(dateString: string | null | undefined, forceRtl?: 
   return rtl ? `منذ ${formatWesternNumber(days)} يوم` : `${formatWesternNumber(days)}d ago`;
 }
 
+/**
+ * Canonical reports duration formatter matching Web semantics.
+ * Formats minutes into human-readable duration strings with explicit Arabic/English units.
+ * Never silently rounds <30 min to 0h.
+ * Example (AR): 0 دقيقة, 13 دقيقة, 1 ساعة, 1س 25د, 372 ساعة
+ * Example (EN): 0m, 13m, 1h, 1h 25m, 372h
+ */
+export function formatReportDuration(minutes: number | null | undefined, forceRtl?: boolean): string {
+  const rtl = forceRtl !== undefined ? forceRtl : isRtl();
+  if (minutes == null || isNaN(minutes) || minutes <= 0) {
+    return rtl ? '0 دقيقة' : '0m';
+  }
+  const totalMins = Math.round(minutes);
+  if (totalMins === 0) {
+    return rtl ? '0 دقيقة' : '0m';
+  }
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+
+  if (rtl) {
+    if (hrs === 0) {
+      return `${formatWesternNumber(mins)} دقيقة`;
+    }
+    if (mins === 0) {
+      return `${formatWesternNumber(hrs)} ساعة`;
+    }
+    return `${formatWesternNumber(hrs)}س ${formatWesternNumber(mins)}د`;
+  } else {
+    if (hrs === 0) {
+      return `${formatWesternNumber(mins)}m`;
+    }
+    if (mins === 0) {
+      return `${formatWesternNumber(hrs)}h`;
+    }
+    return `${formatWesternNumber(hrs)}h ${formatWesternNumber(mins)}m`;
+  }
+}
+
+/**
+ * Canonical reports distance formatter matching Web semantics.
+ * Converts meters to kilometers with 1 decimal place.
+ * Example (AR): 0.0 كم, 7.6 كم
+ * Example (EN): 0.0 km, 7.6 km
+ */
+export function formatReportDistance(meters: number | null | undefined, forceRtl?: boolean): string {
+  const rtl = forceRtl !== undefined ? forceRtl : isRtl();
+  const unit = rtl ? 'كم' : 'km';
+  if (meters == null || isNaN(meters) || meters <= 0) {
+    return `0.0 ${unit}`;
+  }
+  const km = (meters / 1000).toFixed(1);
+  return `${km} ${unit}`;
+}
+

@@ -24,7 +24,18 @@ import { BottomTabBar, type TabItem } from '../components/BottomTabBar';
 import { RealGeographicMapView, type MapDriverPoint, type MapRestaurantPoint } from '../components/RealGeographicMapView';
 import { DriverDetailModal } from '../components/DriverDetailModal';
 import { TrackerDialog } from '../components/TrackerDialog';
-import { formatWesternNumber, getLocale, getRowDirection, isRtl, setStoredLocale, t, type Locale } from '../i18n';
+import {
+  formatWesternNumber,
+  formatReportDuration,
+  formatReportDistance,
+  getLocalizedErrorMessage,
+  getLocale,
+  getRowDirection,
+  isRtl,
+  setStoredLocale,
+  t,
+  type Locale,
+} from '../i18n';
 import { type Session } from '../session';
 import { NotificationService } from '../notificationService';
 import { resolveBatteryFreshness } from '../telemetry';
@@ -93,6 +104,8 @@ export function AdminHomeScreen({
   const [reportData, setReportData] = useState<any | null>(null);
   const [reportPreset, setReportPreset] = useState<'today' | 'yesterday' | '7days' | '30days'>('today');
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportDateRange, setReportDateRange] = useState<{ from: string; to: string } | null>(null);
 
   // Audit Logs Data
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -228,6 +241,7 @@ export function AdminHomeScreen({
   // 4b. Load Reports
   const loadReports = useCallback(async (preset: 'today' | 'yesterday' | '7days' | '30days') => {
     setReportLoading(true);
+    setReportError(null);
     try {
       const now = new Date();
       const end = new Date(now);
@@ -243,16 +257,19 @@ export function AdminHomeScreen({
       } else if (preset === '7days') {
         start.setDate(start.getDate() - 7);
         start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
       } else if (preset === '30days') {
         start.setDate(start.getDate() - 30);
         start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
       }
+      setReportDateRange({ from: start.toISOString(), to: end.toISOString() });
       const data = await apiRequest<any>(
         `/api/reports/summary?from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}`
       );
       setReportData(data);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      setReportError(getLocalizedErrorMessage(err?.message || 'FAILED_TO_LOAD_REPORT'));
     } finally {
       setReportLoading(false);
     }
@@ -1781,85 +1798,314 @@ export function AdminHomeScreen({
                             : p === 'yesterday'
                             ? rtl ? 'الأمس' : 'Yesterday'
                             : p === '7days'
-                            ? rtl ? '7 أيام' : '7 Days'
-                            : rtl ? '30 يوماً' : '30 Days'}
+                            ? rtl ? 'آخر 7 أيام' : 'Last 7 Days'
+                            : rtl ? 'آخر 30 يوماً' : 'Last 30 Days'}
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
 
+                  {/* Subheader: Date Range & Manual Refresh */}
+                  <View style={[styles.reportSubheaderRow, { flexDirection: rowDir }]}>
+                    <Text style={styles.reportDateRangeText}>
+                      {formatWesternNumber(
+                        (() => {
+                          const fromIso = reportData?.summary?.from || reportDateRange?.from;
+                          if (!fromIso) return '';
+                          try {
+                            const d = new Date(fromIso);
+                            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                          } catch {
+                            return fromIso;
+                          }
+                        })()
+                      )}
+                      {' — '}
+                      {formatWesternNumber(
+                        (() => {
+                          const toIso = reportData?.summary?.to || reportDateRange?.to;
+                          if (!toIso) return '';
+                          try {
+                            const d = new Date(toIso);
+                            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                          } catch {
+                            return toIso;
+                          }
+                        })()
+                      )}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.reportRefreshButton}
+                      onPress={() => loadReports(reportPreset)}
+                      disabled={reportLoading}
+                      activeOpacity={0.7}
+                    >
+                      {reportLoading ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <AppIcon name="sync" size={13} color={colors.text.muted} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
                   <ScrollView contentContainerStyle={styles.subviewScroll}>
                     {reportLoading ? (
-                      <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 24 }} />
+                      <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 28 }} />
+                    ) : reportError ? (
+                      <View style={styles.reportErrorBanner}>
+                        <Text style={styles.reportErrorText}>{reportError}</Text>
+                        <TouchableOpacity
+                          style={styles.reportRetryButton}
+                          onPress={() => loadReports(reportPreset)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.reportRetryButtonText}>{rtl ? 'إعادة المحاولة' : 'Retry'}</Text>
+                        </TouchableOpacity>
+                      </View>
                     ) : !reportData ? (
                       <Text style={styles.emptyText}>{rtl ? 'لا توجد بيانات متاحة' : 'No report data'}</Text>
                     ) : (
                       <>
-                        {/* Summary Metrics Grid */}
-                        <View style={styles.metricsGrid}>
+                        {/* 6 Key Metrics Cards Matching Web Hierarchy */}
+                        <View style={[styles.metricsGrid, { flexDirection: rowDir }]}>
+                          {/* 1. Total Shifts */}
                           <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>{rtl ? 'إجمالي الورديات' : 'Shifts'}</Text>
-                            <Text style={styles.metricVal}>{formatWesternNumber(reportData.summary?.totalShifts ?? 0)}</Text>
-                          </View>
-                          <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>{rtl ? 'المسافة' : 'Distance'}</Text>
-                            <Text style={[styles.metricVal, { color: colors.primary }]}>
-                              {formatWesternNumber(((reportData.summary?.totalDistanceMeters ?? 0) / 1000).toFixed(1))} {rtl ? 'كم' : 'km'}
+                            <View style={[styles.metricHeaderRow, { flexDirection: rowDir }]}>
+                              <Text style={[styles.metricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                {rtl ? 'إجمالي الورديات' : 'Total Shifts'}
+                              </Text>
+                              <View style={[styles.metricIconBox, { backgroundColor: '#ecfdf5' }]}>
+                                <AppIcon name="dashboard" size={11} color="#059669" />
+                              </View>
+                            </View>
+                            <Text style={[styles.metricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: 'ltr' }]}>
+                              {formatWesternNumber(reportData.summary?.totalShifts ?? 0)}
                             </Text>
                           </View>
+
+                          {/* 2. Total Distance */}
                           <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>{rtl ? 'ساعات العمل' : 'Duration'}</Text>
-                            <Text style={styles.metricVal}>
-                              {formatWesternNumber(Math.round((reportData.summary?.totalDurationMinutes ?? 0) / 60))}{rtl ? 'س' : 'h'}
+                            <View style={[styles.metricHeaderRow, { flexDirection: rowDir }]}>
+                              <Text style={[styles.metricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                {rtl ? 'المسافة المقطوعة' : 'Distance'}
+                              </Text>
+                              <View style={[styles.metricIconBox, { backgroundColor: '#eff6ff' }]}>
+                                <AppIcon name="target" size={11} color="#2563eb" />
+                              </View>
+                            </View>
+                            <Text style={[styles.metricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr', color: '#2563eb' }]}>
+                              {formatReportDistance(reportData.summary?.totalDistanceMeters ?? 0, rtl)}
                             </Text>
                           </View>
+
+                          {/* 3. Total Hours */}
                           <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>{rtl ? 'وقت الحركة' : 'Moving'}</Text>
-                            <Text style={[styles.metricVal, { color: colors.status.online }]}>
-                              {formatWesternNumber(Math.round(((reportData.summary?.movingDurationMinutes ?? reportData.summary?.totalMovingMinutes ?? 0)) / 60))}{rtl ? 'س' : 'h'}
+                            <View style={[styles.metricHeaderRow, { flexDirection: rowDir }]}>
+                              <Text style={[styles.metricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                {rtl ? 'إجمالي الساعات' : 'Total Hours'}
+                              </Text>
+                              <View style={[styles.metricIconBox, { backgroundColor: '#eef2ff' }]}>
+                                <AppIcon name="more" size={11} color="#4f46e5" />
+                              </View>
+                            </View>
+                            <Text style={[styles.metricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                              {formatReportDuration(reportData.summary?.totalDurationMinutes ?? 0, rtl)}
                             </Text>
                           </View>
+
+                          {/* 4. Moving Time */}
                           <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>{rtl ? 'وقت التوقف' : 'Stopped'}</Text>
-                            <Text style={[styles.metricVal, { color: colors.status.warning }]}>
-                              {formatWesternNumber(Math.round(((reportData.summary?.stoppedDurationMinutes ?? reportData.summary?.totalStoppedMinutes ?? 0)) / 60))}{rtl ? 'س' : 'h'}
+                            <View style={[styles.metricHeaderRow, { flexDirection: rowDir }]}>
+                              <Text style={[styles.metricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                {rtl ? 'وقت الحركة' : 'Moving Time'}
+                              </Text>
+                              <View style={[styles.metricIconBox, { backgroundColor: '#f0fdfa' }]}>
+                                <AppIcon name="play" size={11} color="#0d9488" />
+                              </View>
+                            </View>
+                            <Text style={[styles.metricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr', color: '#0d9488' }]}>
+                              {formatReportDuration(reportData.summary?.movingDurationMinutes ?? reportData.summary?.totalMovingMinutes ?? 0, rtl)}
                             </Text>
                           </View>
+
+                          {/* 5. At Restaurant (Matches Web KPI 5) */}
                           <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>{rtl ? 'التنبيهات' : 'Alerts'}</Text>
-                            <Text style={[styles.metricVal, { color: colors.status.critical }]}>
+                            <View style={[styles.metricHeaderRow, { flexDirection: rowDir }]}>
+                              <Text style={[styles.metricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                {rtl ? 'في المطعم' : 'At Restaurant'}
+                              </Text>
+                              <View style={[styles.metricIconBox, { backgroundColor: '#fffbeb' }]}>
+                                <AppIcon name="restaurant" size={11} color="#d97706" />
+                              </View>
+                            </View>
+                            <Text style={[styles.metricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr', color: '#d97706' }]}>
+                              {formatReportDuration(reportData.summary?.restaurantDurationMinutes ?? reportData.summary?.totalRestaurantMinutes ?? 0, rtl)}
+                            </Text>
+                          </View>
+
+                          {/* 6. Alerts */}
+                          <View style={styles.metricCard}>
+                            <View style={[styles.metricHeaderRow, { flexDirection: rowDir }]}>
+                              <Text style={[styles.metricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                {rtl ? 'التنبيهات' : 'Alerts'}
+                              </Text>
+                              <View style={[styles.metricIconBox, { backgroundColor: '#fff1f2' }]}>
+                                <AppIcon name="warning" size={11} color="#e11d48" />
+                              </View>
+                            </View>
+                            <Text style={[styles.metricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: 'ltr', color: colors.status.critical }]}>
                               {formatWesternNumber(reportData.summary?.alertCount ?? reportData.summary?.totalAlerts ?? 0)}
                             </Text>
                           </View>
                         </View>
 
-                        {/* Driver Breakdown Header */}
-                        <Text style={[styles.moreGroupTitle, { textAlign: rtl ? 'right' : 'left', marginTop: 16 }]}>
-                          {rtl ? 'تفاصيل أداء السائقين' : 'Driver Breakdown'}
-                        </Text>
-
-                        {((reportData.drivers ?? reportData.driverBreakdown ?? [])).map((drv: any) => (
-                          <View key={drv.driverId} style={styles.deviceCard}>
-                            <View style={[styles.rowBetween, { flexDirection: rowDir }]}>
-                              <Text style={styles.deviceDriverName}>{drv.driverName}</Text>
-                              <Text style={styles.deviceIdText}>{formatWesternNumber(drv.employeeId)}</Text>
-                            </View>
-                            <View style={[styles.deviceMetaRow, { flexDirection: rowDir, marginTop: 6 }]}>
-                              <Text style={styles.deviceMetaItem}>
-                                {rtl ? 'الورديات:' : 'Shifts:'} {formatWesternNumber(drv.shiftCount)}
-                              </Text>
-                              <Text style={[styles.deviceMetaItem, { color: colors.primary, fontWeight: '700' }]}>
-                                {formatWesternNumber((((drv.totalDistanceMeters ?? drv.distanceMeters ?? 0)) / 1000).toFixed(1))} {rtl ? 'كم' : 'km'}
-                              </Text>
-                              <Text style={styles.deviceMetaItem}>
-                                {rtl ? 'المدة:' : 'Duration:'} {formatWesternNumber(Math.round(((drv.totalDurationMinutes ?? drv.durationMinutes ?? 0)) / 60))}{rtl ? 'س' : 'h'}
-                              </Text>
-                              <Text style={[styles.deviceMetaItem, { color: colors.status.critical }]}>
-                                {rtl ? 'التنبيهات:' : 'Alerts:'} {formatWesternNumber(drv.alertCount ?? drv.alerts ?? 0)}
-                              </Text>
-                            </View>
+                        {/* Driver Breakdown Section Header */}
+                        <View style={[styles.reportSectionHeader, { flexDirection: rowDir }]}>
+                          <View style={{ flexDirection: rowDir, alignItems: 'center', gap: 6 }}>
+                            <AppIcon name="driver" size={15} color={colors.primary} />
+                            <Text style={styles.reportSectionTitle}>
+                              {rtl ? 'تفاصيل أداء السائقين' : 'Driver Performance Breakdown'}
+                            </Text>
                           </View>
-                        ))}
+                          <View style={styles.reportDriverBadge}>
+                            <Text style={styles.reportDriverBadgeText}>
+                              {formatWesternNumber((reportData.drivers ?? reportData.driverBreakdown ?? []).length)} {rtl ? 'سائق' : 'drivers'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Driver Cards */}
+                        {((reportData.drivers ?? reportData.driverBreakdown ?? []).length === 0) ? (
+                          <View style={[styles.reportDriverCard, { alignItems: 'center', paddingVertical: 24 }]}>
+                            <Text style={styles.emptyText}>
+                              {rtl ? 'لا توجد بيانات مسجلة للفترة المحددة' : 'No records found for the selected period'}
+                            </Text>
+                          </View>
+                        ) : (
+                          (reportData.drivers ?? reportData.driverBreakdown ?? []).map((drv: any) => (
+                            <TouchableOpacity
+                              key={drv.driverId}
+                              style={styles.reportDriverCard}
+                              activeOpacity={0.7}
+                              onPress={() => {
+                                const fleetDriver = fleet?.drivers?.find((d: any) => d.driverId === drv.driverId) || {
+                                  driverId: drv.driverId,
+                                  name: drv.driverName,
+                                  employeeId: drv.employeeId,
+                                };
+                                setSelectedDriver(fleetDriver);
+                                setDriverModalVisible(true);
+                              }}
+                            >
+                              {/* Driver Header */}
+                              <View style={[styles.reportDriverHeader, { flexDirection: rowDir }]}>
+                                <View style={{ flex: 1, alignItems: rtl ? 'flex-end' : 'flex-start' }}>
+                                  <Text style={[styles.reportDriverName, { textAlign: rtl ? 'right' : 'left' }]}>
+                                    {drv.driverName}
+                                  </Text>
+                                  {drv.employeeId ? (
+                                    <Text style={[styles.reportDriverEmpId, { textAlign: rtl ? 'right' : 'left', writingDirection: 'ltr' }]}>
+                                      {formatWesternNumber(drv.employeeId)}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                                <View style={styles.reportShiftBadge}>
+                                  <Text style={styles.reportShiftBadgeText}>
+                                    {formatWesternNumber(drv.shiftCount ?? 0)} {rtl ? 'ورديات' : 'shifts'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* 2-Column Metrics Grid */}
+                              <View style={styles.reportDriverGrid}>
+                                {/* Row 1: Distance & Total Duration */}
+                                <View style={[styles.reportDriverMetricRow, { flexDirection: rowDir }]}>
+                                  <View style={styles.reportDriverMetricCol}>
+                                    <Text style={[styles.reportDriverMetricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                      {rtl ? 'المسافة' : 'Distance'}
+                                    </Text>
+                                    <Text style={[styles.reportDriverMetricVal, { color: '#2563eb', textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                                      {formatReportDistance(drv.totalDistanceMeters ?? drv.distanceMeters ?? 0, rtl)}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.reportDriverMetricCol}>
+                                    <Text style={[styles.reportDriverMetricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                      {rtl ? 'إجمالي الساعات' : 'Duration'}
+                                    </Text>
+                                    <Text style={[styles.reportDriverMetricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                                      {formatReportDuration(drv.totalDurationMinutes ?? drv.durationMinutes ?? 0, rtl)}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                {/* Row 2: Moving & Restaurant */}
+                                <View style={[styles.reportDriverMetricRow, { flexDirection: rowDir }]}>
+                                  <View style={styles.reportDriverMetricCol}>
+                                    <Text style={[styles.reportDriverMetricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                      {rtl ? 'وقت الحركة' : 'Moving'}
+                                    </Text>
+                                    <Text style={[styles.reportDriverMetricVal, { color: '#0d9488', textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                                      {formatReportDuration(drv.movingDurationMinutes ?? drv.movingMinutes ?? 0, rtl)}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.reportDriverMetricCol}>
+                                    <Text style={[styles.reportDriverMetricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                      {rtl ? 'في المطعم' : 'Restaurant'}
+                                    </Text>
+                                    <Text style={[styles.reportDriverMetricVal, { color: '#d97706', textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                                      {formatReportDuration(drv.restaurantDurationMinutes ?? drv.restaurantMinutes ?? 0, rtl)}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                {/* Row 3: Stopped & Alerts */}
+                                <View style={[styles.reportDriverMetricRow, { flexDirection: rowDir }]}>
+                                  <View style={styles.reportDriverMetricCol}>
+                                    <Text style={[styles.reportDriverMetricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                      {rtl ? 'وقت التوقف' : 'Stopped'}
+                                    </Text>
+                                    <Text style={[styles.reportDriverMetricVal, { textAlign: rtl ? 'right' : 'left', writingDirection: rtl ? 'rtl' : 'ltr' }]}>
+                                      {formatReportDuration(drv.stoppedDurationMinutes ?? drv.stoppedMinutes ?? 0, rtl)}
+                                    </Text>
+                                  </View>
+                                  <View style={styles.reportDriverMetricCol}>
+                                    <Text style={[styles.reportDriverMetricLabel, { textAlign: rtl ? 'right' : 'left' }]}>
+                                      {rtl ? 'التنبيهات' : 'Alerts'}
+                                    </Text>
+                                    <View
+                                      style={[
+                                        styles.reportAlertBadge,
+                                        {
+                                          backgroundColor: (drv.alertCount ?? drv.alerts ?? 0) > 0 ? '#ffe4e6' : '#f1f5f9',
+                                        },
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.reportAlertBadgeText,
+                                          {
+                                            color: (drv.alertCount ?? drv.alerts ?? 0) > 0 ? '#be123c' : '#64748b',
+                                            writingDirection: 'ltr',
+                                          },
+                                        ]}
+                                      >
+                                        {formatWesternNumber(drv.alertCount ?? drv.alerts ?? 0)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              </View>
+
+                              {/* Footer Action */}
+                              <View style={[styles.reportDriverFooter, { flexDirection: rowDir }]}>
+                                <Text style={styles.reportDriverFooterText}>
+                                  {rtl ? 'عرض التفاصيل' : 'View Details'}
+                                </Text>
+                                <AppIcon name={rtl ? 'arrow-left' : 'arrow-right'} size={12} color={colors.primary} />
+                              </View>
+                            </TouchableOpacity>
+                          ))
+                        )}
                       </>
                     )}
                   </ScrollView>
@@ -2970,7 +3216,7 @@ const styles = StyleSheet.create({
   },
   presetChip: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceSubtle,
     alignItems: 'center',
@@ -2981,38 +3227,210 @@ const styles = StyleSheet.create({
   },
   presetChipText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: fonts.medium,
     color: colors.text.muted,
   },
   presetChipTextActive: {
     color: '#ffffff',
-    fontWeight: '700',
+    fontFamily: fonts.bold,
+  },
+  reportSubheaderRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    backgroundColor: colors.surfaceSubtle,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reportDateRangeText: {
+    fontSize: 11,
+    fontFamily: fonts.medium,
+    color: colors.text.muted,
+  },
+  reportRefreshButton: {
+    padding: 5,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportErrorBanner: {
+    backgroundColor: '#fff1f2',
+    borderWidth: 1,
+    borderColor: '#fecdd3',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  reportErrorText: {
+    fontSize: 12,
+    fontFamily: fonts.medium,
+    color: '#be123c',
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  reportRetryButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+  },
+  reportRetryButtonText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: '#ffffff',
   },
   metricsGrid: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.xs + 2,
     marginBottom: spacing.md,
   },
   metricCard: {
-    flexBasis: '31%',
+    flexBasis: '48%',
     flexGrow: 1,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    minHeight: 66,
+    justifyContent: 'space-between',
+  },
+  metricHeaderRow: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   metricLabel: {
-    fontSize: 10,
+    fontSize: 11,
+    fontFamily: fonts.medium,
     color: colors.text.muted,
-    marginBottom: 2,
+    flexShrink: 1,
+  },
+  metricIconBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metricVal: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontFamily: fonts.bold,
     color: colors.text.primary,
-    fontFamily: 'monospace',
+  },
+  reportSectionHeader: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  reportSectionTitle: {
+    fontSize: 13,
+    fontFamily: fonts.bold,
+    color: colors.text.primary,
+  },
+  reportDriverBadge: {
+    backgroundColor: colors.surfaceSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reportDriverBadgeText: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: colors.text.muted,
+  },
+  reportDriverCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.sm + 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  reportDriverHeader: {
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: spacing.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    marginBottom: spacing.xs + 4,
+  },
+  reportDriverName: {
+    fontSize: 13,
+    fontFamily: fonts.bold,
+    color: colors.text.primary,
+  },
+  reportDriverEmpId: {
+    fontSize: 10,
+    fontFamily: fonts.regular,
+    color: colors.text.muted,
+    marginTop: 1,
+  },
+  reportShiftBadge: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  reportShiftBadgeText: {
+    fontSize: 10,
+    fontFamily: fonts.semiBold,
+    color: '#065f46',
+  },
+  reportDriverGrid: {
+    gap: 6,
+  },
+  reportDriverMetricRow: {
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reportDriverMetricCol: {
+    flex: 1,
+  },
+  reportDriverMetricLabel: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: colors.text.muted,
+    marginBottom: 1,
+  },
+  reportDriverMetricVal: {
+    fontSize: 12,
+    fontFamily: fonts.semiBold,
+    color: colors.text.primary,
+  },
+  reportAlertBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+  },
+  reportAlertBadgeText: {
+    fontSize: 10,
+    fontFamily: fonts.bold,
+  },
+  reportDriverFooter: {
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: spacing.xs + 2,
+    paddingTop: spacing.xs + 2,
+    borderTopWidth: 1,
+    borderTopColor: '#f8fafc',
+    gap: 4,
+  },
+  reportDriverFooterText: {
+    fontSize: 10,
+    fontFamily: fonts.medium,
+    color: colors.primary,
   },
   rowBetween: {
     flexDirection: 'row',
